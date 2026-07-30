@@ -11,8 +11,8 @@ The Nuke adapter launches `python.exe -I -m kyven.server.bootstrap`. On Windows 
 the DLL directory inherited from Nuke before importing PyTorch; this prevents the common
 `c10.dll` / `WinError 1114` startup failure.
 
-Kyven API 3 uses port `8767`. Older development servers may remain on 8765 or 8766, but the adapter
-asks authenticated older servers to unload their models before starting API 3.
+Kyven API 4 uses port `8768`. Older development servers may remain on 8765-8767, but the adapter
+asks authenticated older servers to unload their models before starting API 4.
 
 ## CUDA or model loading fails
 
@@ -36,6 +36,13 @@ Core segmentation and propagation still run, but that post-processing feature is
 - Reprocess after changing ROI; old cached mattes are not transformed automatically.
 - Remember that Nuke Viewer Y coordinates are converted to top-left image coordinates by the host
   adapter.
+
+## The mask contains small black holes
+
+Enable `Fill Enclosed Holes` and reprocess the frame or range. Increase `Max Hole Area (px)` only
+until the unwanted holes disappear; very large values may also fill intentional enclosed openings.
+This cleanup does not expand the exterior edge. A SAM 2 warning about the unavailable optional `_C`
+extension means upstream hole filling was skipped, but Kyven's own post-process still runs.
 
 ## Read or cache problems
 

@@ -40,11 +40,14 @@ unloading is queued behind active inference so it cannot race a running kernel.
 | `box` | Optional model prompt box |
 | `roi` | Optional preprocessing crop, separate from the model prompt |
 | `multimask_output` | Ask the provider for candidate masks and select the best score |
+| `fill_holes` | Enable enclosed-hole post-processing; defaults to `true` |
+| `max_hole_area` | Largest filled component in pixels; `0` means unlimited |
 
 Video jobs use the same prompt and ROI fields plus `frames_dir`, `output_pattern`, frame range,
 key frame, direction, and CPU-offload options. ROI output is always reconstructed to the original
 frame dimensions before the job succeeds.
 
-API version 3 accepts an optional `roi` rectangle separately from the model's `box` prompt. The
+API version 4 accepts an optional `roi` rectangle separately from the model's `box` prompt and
+adds dependency-free enclosed-hole post-processing. The
 server crops inference inputs and restores returned masks to the original dimensions. The Nuke
-adapter uses versioned port `8767` to avoid connecting to stale API processes during development.
+adapter uses versioned port `8768` to avoid connecting to stale API processes during development.

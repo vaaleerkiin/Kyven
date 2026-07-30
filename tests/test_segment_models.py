@@ -38,6 +38,26 @@ class SegmentModelTests(unittest.TestCase):
 
             self.assertNotEqual(first.cache_key("1", "abc"), second.cache_key("1", "abc"))
 
+    def test_postprocess_settings_change_cache_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.bin"
+            source.write_bytes(b"synthetic fixture")
+            enabled = SegmentRequest(
+                source,
+                root / "one.png",
+                points=(PointPrompt(2, 2),),
+                fill_holes=True,
+            )
+            disabled = SegmentRequest(
+                source,
+                root / "two.png",
+                points=(PointPrompt(2, 2),),
+                fill_holes=False,
+            )
+
+            self.assertNotEqual(enabled.cache_key("1", "abc"), disabled.cache_key("1", "abc"))
+
     def test_invalid_box_is_structured_error(self) -> None:
         with self.assertRaises(KyvenError) as caught:
             BoxPrompt(10, 10, 5, 20)

@@ -12,6 +12,7 @@ host-independent server.
 - SAM 2.1 Tiny, Small, Base+, and Large model selection;
 - positive and negative Viewer points;
 - optional Processing ROI that crops inference and restores a full-frame matte;
+- dependency-free enclosed-hole filling with a configurable maximum area;
 - current-frame and independent frame-range segmentation;
 - SAM 2 video propagation forward, backward, or in both directions;
 - Matte, Source + Alpha, Cutout, and Source (Bypass) outputs;

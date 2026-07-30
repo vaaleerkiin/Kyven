@@ -11,9 +11,9 @@ from pathlib import Path
 from kyven_nuke import config
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 
-PORT = 8767
-REQUIRED_API_VERSION = 3
-LEGACY_PORTS = (8765, 8766)
+PORT = 8768
+REQUIRED_API_VERSION = 4
+LEGACY_PORTS = (8765, 8766, 8767)
 
 
 def _check_health(current: NukeKyvenClient) -> None:

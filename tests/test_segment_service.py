@@ -52,7 +52,37 @@ class SyntheticProvider(SegmentationProvider):
         return
 
 
+class HoleProvider(SyntheticProvider):
+    def predict(self, request: SegmentRequest, cancellation: CancellationToken) -> SegmentPrediction:
+        mask = np.ones((5, 5), dtype=np.bool_)
+        mask[2, 2] = False
+        return SegmentPrediction(mask=mask, score=0.8)
+
+
 class SegmentServiceTests(unittest.TestCase):
+    def test_service_fills_enclosed_holes_and_reports_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            Image.new("RGB", (5, 5), color="white").save(source)
+            output = root / "mask.png"
+            registry = ProviderRegistry()
+            registry.register("holes", HoleProvider)
+
+            result = SegmentService(registry).run(
+                SegmentRequest(
+                    source=source,
+                    output=output,
+                    points=(PointPrompt(2, 2),),
+                    provider_id="holes",
+                    max_hole_area=10,
+                )
+            )
+
+            with Image.open(output) as image:
+                self.assertEqual(image.getpixel((2, 2)), 255)
+            self.assertEqual(result.metadata["postprocess"]["filled_holes"], 1)
+
     def test_service_writes_grayscale_png_and_result(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

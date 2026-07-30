@@ -15,6 +15,7 @@ from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
 from kyven.segment.models import BoxPrompt, ExecutionProfile, PointPrompt
 from kyven.segment.output import write_mask_png_atomic
+from kyven.segment.postprocess import fill_enclosed_holes
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.segment.roi import expand_mask, resolve_region, translate_box, translate_points
 
@@ -40,6 +41,8 @@ class VideoSegmentRequest:
     profile: ExecutionProfile = ExecutionProfile.BALANCED
     offload_video_to_cpu: bool = True
     offload_state_to_cpu: bool = True
+    fill_holes: bool = True
+    max_hole_area: int = 2_048
 
     def validate(self) -> None:
         if not self.frames_dir.is_dir():
@@ -66,6 +69,11 @@ class VideoSegmentRequest:
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
                 message="Video output_pattern must contain a printf-style frame placeholder.",
+            )
+        if self.max_hole_area < 0:
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="Maximum hole area must be zero or greater.",
             )
 
     @property
@@ -108,9 +116,39 @@ class VideoSegmentService:
                 code=ErrorCode.PROVIDER_UNAVAILABLE,
                 message=f"Provider does not support video propagation: {request.provider_id}",
             )
-        if request.roi is None:
-            return propagate(request, token)
-        return self._run_with_roi(propagate, request, token)
+        result = (
+            propagate(request, token)
+            if request.roi is None
+            else self._run_with_roi(propagate, request, token)
+        )
+        return self._postprocess_outputs(result, request, token)
+
+    @staticmethod
+    def _postprocess_outputs(
+        result: VideoSegmentResult,
+        request: VideoSegmentRequest,
+        token: CancellationToken,
+    ) -> VideoSegmentResult:
+        if not request.fill_holes:
+            return result
+        filled_holes = 0
+        filled_pixels = 0
+        for output in result.outputs:
+            token.raise_if_cancelled()
+            with Image.open(output) as image:
+                mask = np.asarray(image.convert("L"))
+            filled = fill_enclosed_holes(mask, request.max_hole_area)
+            write_mask_png_atomic(output, filled.mask)
+            filled_holes += filled.filled_holes
+            filled_pixels += filled.filled_pixels
+        metadata = dict(result.metadata)
+        metadata["postprocess"] = {
+            "fill_holes": True,
+            "max_hole_area": request.max_hole_area,
+            "filled_holes": filled_holes,
+            "filled_pixels": filled_pixels,
+        }
+        return replace(result, metadata=metadata)
 
     @staticmethod
     def _run_with_roi(propagate, request, token: CancellationToken) -> VideoSegmentResult:

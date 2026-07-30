@@ -81,11 +81,18 @@ def sync_prompt_visibility(node: Any | None = None) -> None:
             if button_name in node.knobs():
                 node[button_name].setVisible(enabled)
     node["prompt_box"].setVisible(bool(node["box_enabled"].value()))
+    if "max_hole_area" in node.knobs():
+        node["max_hole_area"].setVisible(bool(node["fill_holes"].value()))
 
 
 def prompt_knob_changed() -> None:
     nuke = _nuke()
-    if nuke.thisKnob().name() in {"positive_enabled", "negative_enabled", "box_enabled"}:
+    if nuke.thisKnob().name() in {
+        "positive_enabled",
+        "negative_enabled",
+        "box_enabled",
+        "fill_holes",
+    }:
         sync_prompt_visibility(nuke.thisNode())
 
 
@@ -163,6 +170,9 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
     metadata = job["result"].get("metadata") or {}
     roi = metadata.get("processing_roi")
     suffix = f" | ROI {roi['width']}x{roi['height']}" if roi else ""
+    postprocess = metadata.get("postprocess")
+    if postprocess and int(postprocess.get("filled_holes", 0)):
+        suffix += f" | filled {int(postprocess['filled_holes'])} hole(s)"
     node["kyven_status"].setValue(
         f"Ready - score {float(job['result']['score']):.3f}{suffix}"
     )
@@ -199,6 +209,9 @@ def _apply_video_result(node_name: str, job: dict[str, Any]) -> None:
     _set_matte_read(node, output_pattern, first, last)
     roi = (result.get("metadata") or {}).get("processing_roi")
     suffix = f" | ROI {roi['width']}x{roi['height']}" if roi else ""
+    postprocess = (result.get("metadata") or {}).get("postprocess")
+    if postprocess and int(postprocess.get("filled_holes", 0)):
+        suffix += f" | filled {int(postprocess['filled_holes'])} hole(s)"
     node["kyven_status"].setValue(
         f"SAM 2 tracking ready: {first}-{last} ({result['direction']}){suffix}"
     )
@@ -456,6 +469,10 @@ def _payload_for_paths(node: Any, source: Any, source_path: Path, matte_path: Pa
         negative_points=_collect_points(node, "negative"),
         box_enabled=bool(node["box_enabled"].value()),
         box=tuple(node["prompt_box"].value()),
+        fill_holes=bool(node["fill_holes"].value()) if "fill_holes" in node.knobs() else True,
+        max_hole_area=(
+            int(node["max_hole_area"].value()) if "max_hole_area" in node.knobs() else 2_048
+        ),
     )
 
 
@@ -631,6 +648,10 @@ def propagate_video(direction: str) -> None:
         last_frame=last,
         key_frame=key_frame,
         direction=direction,
+        fill_holes=bool(node["fill_holes"].value()) if "fill_holes" in node.knobs() else True,
+        max_hole_area=(
+            int(node["max_hole_area"].value()) if "max_hole_area" in node.knobs() else 2_048
+        ),
     )
     node["kyven_status"].setValue("Starting SAM 2 video predictor...")
     threading.Thread(
@@ -731,6 +752,7 @@ def _restyle_node_ui(node: Any) -> None:
         "positive_section": "POSITIVE POINTS / OBJECT TO KEEP",
         "negative_section": "NEGATIVE POINTS / AREAS TO REMOVE",
         "box_section": "PROCESSING ROI / MODEL CROP",
+        "postprocess_section": "MASK POST-PROCESS",
         "processing_section": "INDEPENDENT FRAME PROCESSING",
         "tracking_section": "SAM 2 VIDEO TRACKING",
         "output_section": "OUTPUT",
@@ -778,7 +800,7 @@ def _restyle_node_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 3</font>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 4</font>'
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
@@ -892,6 +914,31 @@ def _ensure_cache_controls(node: Any) -> None:
     )
 
 
+def _ensure_postprocess_controls(node: Any) -> None:
+    """Add safe mask cleanup controls to a Segment node."""
+    nuke = _nuke()
+    if "fill_holes" in node.knobs():
+        return
+    _add_section(nuke, node, "postprocess_section", "MASK POST-PROCESS")
+    fill_holes = nuke.Boolean_Knob("fill_holes", "Fill Enclosed Holes")
+    fill_holes.setValue(True)
+    _add_knob(nuke, node, fill_holes)
+    max_area = nuke.Int_Knob("max_hole_area", "Max Hole Area (px)")
+    max_area.setRange(0, 10_000_000)
+    max_area.setValue(2_048)
+    _add_knob(nuke, node, max_area)
+    _add_knob(
+        nuke,
+        node,
+        nuke.Text_Knob(
+            "postprocess_help",
+            "",
+            "Fills only enclosed black islands; the outer silhouette is unchanged. "
+            "Set 0 to fill all enclosed holes.",
+        ),
+    )
+
+
 def _upgrade_roi_controls(node: Any) -> None:
     """Update legacy prompt-box labels to the Processing ROI terminology."""
     if "box_section" in node.knobs():
@@ -915,6 +962,7 @@ def upgrade_selected_segment_node() -> None:
     try:
         _ensure_output_controls(node)
         _ensure_cache_controls(node)
+        _ensure_postprocess_controls(node)
         _upgrade_roi_controls(node)
         _restyle_node_ui(node)
         sync_prompt_visibility(node)
@@ -940,7 +988,7 @@ def create_segment_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 3</font>',
+            '<font color="#91a3b0">SAM 2 | Local inference | API 4</font>',
         ),
     )
 
@@ -1048,6 +1096,7 @@ def create_segment_node() -> Any:
             "Crops frames before SAM; points are translated and the matte returns at full size.",
         ),
     )
+    _ensure_postprocess_controls(node)
 
     _add_section(nuke, node, "processing_section", "INDEPENDENT FRAME PROCESSING")
     _add_knob(

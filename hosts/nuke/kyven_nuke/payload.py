@@ -41,6 +41,8 @@ def segment_payload(
     negative_points: Sequence[tuple[float, float]],
     box_enabled: bool,
     box: tuple[float, float, float, float],
+    fill_holes: bool = True,
+    max_hole_area: int = 2_048,
 ) -> dict[str, Any]:
     points = [point(*xy, image_height, "positive") for xy in positive_points]
     points.extend(point(*xy, image_height, "negative") for xy in negative_points)
@@ -62,6 +64,8 @@ def segment_payload(
         "box": None,
         "roi": roi_payload,
         "multimask_output": True,
+        "fill_holes": bool(fill_holes),
+        "max_hole_area": int(max_hole_area),
     }
 
 
@@ -80,6 +84,8 @@ def segment_video_payload(
     last_frame: int,
     key_frame: int,
     direction: str,
+    fill_holes: bool = True,
+    max_hole_area: int = 2_048,
 ) -> dict[str, Any]:
     image_payload = segment_payload(
         source="unused",
@@ -91,6 +97,8 @@ def segment_video_payload(
         negative_points=negative_points,
         box_enabled=box_enabled,
         box=box,
+        fill_holes=fill_holes,
+        max_hole_area=max_hole_area,
     )
     return {
         "frames_dir": frames_dir,
@@ -106,4 +114,6 @@ def segment_video_payload(
         "direction": direction,
         "offload_video_to_cpu": True,
         "offload_state_to_cpu": True,
+        "fill_holes": image_payload["fill_holes"],
+        "max_hole_area": image_payload["max_hole_area"],
     }

@@ -51,6 +51,16 @@ format and returns active points near its center.
 SAM 2 resizes inputs to a fixed encoder resolution. ROI improves focus and effective detail but
 does not guarantee proportional GPU-time or VRAM savings.
 
+### Mask post-process
+
+`Fill Enclosed Holes` removes black islands fully surrounded by the foreground mask. It runs after
+SAM and after ROI reconstruction, so it does not affect inference or point coordinates. The outer
+silhouette is never dilated or eroded.
+
+`Max Hole Area (px)` limits which connected holes are filled. The default is `2048`; use a smaller
+value to preserve intentional openings, or `0` to fill every enclosed hole. The Status field reports
+how many holes were filled. Changing these controls changes cache identity and requires reprocessing.
+
 ### Processing modes
 
 `Process Current Frame` creates one matte for the playhead frame.
@@ -102,7 +112,7 @@ Typical files include exported source frames, `matte.%04d.png`, video JPEGs, and
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:8767` and requires API 3. A
+The adapter starts an external hidden Python process on `127.0.0.1:8768` and requires API 4. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 
