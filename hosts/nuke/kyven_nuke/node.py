@@ -26,6 +26,11 @@ def _inside(group: Any, name: str) -> Any:
         group.end()
 
 
+def _nuke_file_path(path: Path) -> str:
+    """Return an absolute path using the separators expected by Nuke file knobs."""
+    return path.resolve().as_posix()
+
+
 def _set_status(node_name: str, status: str) -> None:
     node = _nuke().toNode(node_name)
     if node is not None:
@@ -41,7 +46,7 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
         error = job.get("error") or {}
         node["kyven_status"].setValue(f"Failed: {error.get('message', job['status'])}")
         return
-    output = str(job["result"]["output"])
+    output = _nuke_file_path(Path(job["result"]["output"]))
     node.begin()
     try:
         matte = nuke.toNode("KyvenMatteRead")
@@ -112,7 +117,7 @@ def process_current_frame() -> None:
     )
 
     writer = _inside(node, "KyvenSourceWrite")
-    writer["file"].setValue(str(source_path))
+    writer["file"].setValue(_nuke_file_path(source_path))
     node["kyven_status"].setValue("Exporting source frame...")
     try:
         nuke.execute(writer, frame, frame)
