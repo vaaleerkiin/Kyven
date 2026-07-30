@@ -101,7 +101,12 @@ not appropriate.
 
 Nuke exports high-quality temporary JPEG frames. Kyven creates one fresh SAM 2 tracking state,
 offloads frames and state to system RAM, propagates from the key frame, and writes lossless full-size
-PNG mattes. Corrections from multiple key frames are not implemented yet.
+PNG mattes. Points are evaluated explicitly on the selected key frame. An animated Processing ROI is
+evaluated separately on every frame without moving the timeline or changing its keyframes; Kyven
+crops each frame, normalizes the crop to the key-frame ROI size for tracking, then restores the matte
+to that frame's original full-size coordinates. The native Nuke progress window shows export and
+model stages, percentage, an estimated remaining time, and a Cancel control. Corrections from
+multiple key frames are not implemented yet.
 
 ## Output modes
 
@@ -133,7 +138,7 @@ sequences under their own UUID folder.
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18768` and requires API 5. A
+The adapter starts an external hidden Python process on `127.0.0.1:18769` and requires API 6. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 
@@ -143,7 +148,7 @@ Server output for the latest launch is written to `.runtime/server.log`.
 
 - one object per Segment node;
 - no multi-key-frame tracking corrections yet;
-- range resumption and per-frame progress metadata are not complete;
+- range resumption is not implemented yet;
 - Refine is frame-independent and has no temporal propagation yet;
 - the Nuke host adapter has been developed on Windows and still needs broader production testing.
 

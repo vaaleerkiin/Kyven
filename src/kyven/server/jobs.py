@@ -52,6 +52,7 @@ class JobRecord:
     error: dict[str, Any] | None = None
 
     def snapshot(self) -> dict[str, Any]:
+        progress, progress_message = self.cancellation.progress_snapshot()
         return {
             "job_id": self.job_id,
             "status": self.status.value,
@@ -60,6 +61,8 @@ class JobRecord:
             "finished_at": self.finished_at,
             "result": self.result,
             "error": self.error,
+            "progress": progress,
+            "progress_message": progress_message,
         }
 
 
@@ -160,6 +163,18 @@ class JobManager:
         )
         box = JobManager._box_from_payload(payload, "box")
         roi = JobManager._box_from_payload(payload, "roi")
+        rois = tuple(
+            (
+                int(item["frame"]),
+                BoxPrompt(
+                    float(item["x0"]),
+                    float(item["y0"]),
+                    float(item["x1"]),
+                    float(item["y1"]),
+                ),
+            )
+            for item in payload.get("rois", [])
+        )
         return VideoSegmentRequest(
             frames_dir=frames_dir,
             output_pattern=output_pattern,
@@ -170,6 +185,7 @@ class JobManager:
             points=points,
             box=box,
             roi=roi,
+            rois=rois,
             provider_id=str(payload.get("model_id", "sam2.1-small")),
             profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
             offload_video_to_cpu=bool(payload.get("offload_video_to_cpu", True)),

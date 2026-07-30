@@ -17,7 +17,7 @@ around the same host-independent server.
 - optional Processing ROI that crops inference and restores a full-frame matte;
 - dependency-free enclosed-hole filling with a configurable maximum area;
 - current-frame and independent frame-range segmentation;
-- SAM 2 video propagation forward, backward, or in both directions;
+- SAM 2 video propagation forward, backward, or in both directions, with animated ROI and progress;
 - Matte, Source + Alpha, Cutout, and Source (Bypass) outputs;
 - per-node cache paths, native Read creation, and cache cleanup;
 - asynchronous jobs, cancellation, and automatic local-server startup;

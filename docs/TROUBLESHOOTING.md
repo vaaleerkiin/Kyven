@@ -29,8 +29,8 @@ The Nuke adapter launches `python.exe -I -m kyven.server.bootstrap`. On Windows 
 the DLL directory inherited from Nuke before importing PyTorch; this prevents the common
 `c10.dll` / `WinError 1114` startup failure.
 
-Kyven API 5 uses port `18768`. Older development servers may remain on 8765-8769, but the adapter
-asks authenticated older servers to unload their models before starting API 5.
+Kyven API 6 uses port `18769`. Older development servers may remain on 8765-8769 or 18768, but the
+adapter asks authenticated older servers to unload their models before starting API 6.
 
 ## Refine fails or returns the coarse mask unchanged
 
@@ -40,7 +40,7 @@ asks authenticated older servers to unload their models before starting API 5.
 - Select Red as `Input 1 Channel` when the mask/trimap is stored in RGB instead of alpha.
 - Increase erosion/dilation to give ViTMatte a wider unknown edge region.
 - Use Low Memory (512 px tiles) when VRAM is limited.
-- After updating from API 4, restart Nuke so it launches the server on port 18768.
+- After updating from an older API, restart Nuke so it launches the server on port 18769.
 
 ## CUDA or model loading fails
 
@@ -61,6 +61,8 @@ Core segmentation and propagation still run, but that post-processing feature is
 
 - Keep every positive point inside the enabled ROI.
 - Reset the ROI if it no longer overlaps the input.
+- During video propagation, points are read on `Key Frame`; make sure they are inside the ROI on that
+  frame. The ROI itself may be animated and is sampled independently for every rendered frame.
 - Reprocess after changing ROI; old cached mattes are not transformed automatically.
 - Remember that Nuke Viewer Y coordinates are converted to top-left image coordinates by the host
   adapter.

@@ -119,7 +119,7 @@ class ServerTests(unittest.TestCase):
             try:
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
                 self.assertEqual(client.health()["status"], "ok")
-                self.assertEqual(client.health()["api_version"], 5)
+                self.assertEqual(client.health()["api_version"], 6)
                 self.assertEqual(len(client.models()), 5)
                 job_id = client.submit_segment(
                     {
@@ -156,6 +156,8 @@ class ServerTests(unittest.TestCase):
                 )
                 video_result = client.wait(video_job_id, timeout_seconds=5)
                 self.assertEqual(video_result["status"], "succeeded")
+                self.assertEqual(video_result["progress"], 1.0)
+                self.assertEqual(video_result["progress_message"], "Propagation complete")
                 self.assertEqual(video_result["result"]["output_count"], 2)
                 self.assertTrue((root / "video_matte.0002.png").is_file())
                 with Image.open(root / "video_matte.0002.png") as video_mask:

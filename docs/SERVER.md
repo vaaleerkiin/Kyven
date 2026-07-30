@@ -51,6 +51,9 @@ frame dimensions before the job succeeds.
 Refine jobs contain absolute `source`, `mask`, and `output` paths, optional `roi`, trimap generation
 settings, and tiling controls. Outside an enabled Refine ROI, the coarse mask is preserved.
 
-API version 5 adds refinement while retaining the optional Segment ROI and enclosed-hole cleanup. The
-server crops inference inputs and restores returned masks to the original dimensions. The Nuke
-adapter uses versioned port `18768` to avoid connecting to stale API processes during development.
+API version 6 adds per-frame animated ROI data and job progress fields while retaining refinement,
+the optional static Segment ROI, and enclosed-hole cleanup. `GET /v1/jobs/{id}` returns `progress`
+(0.0-1.0) and `progress_message`. A video request may include `rois`, with exactly one
+`{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
+returned masks to the original dimensions. The Nuke adapter uses versioned port `18769` to avoid
+connecting to stale API processes during development.

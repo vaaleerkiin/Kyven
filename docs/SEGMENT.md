@@ -69,7 +69,9 @@ error suitable for display by a host adapter.
 
 ## Implemented host workflow
 
-The Nuke adapter supports multiple Viewer points, Processing ROI, independent ranges, SAM 2 video
-tracking, four output modes, native Read creation, and cache cleanup. Remaining Segment work
+The Nuke adapter supports multiple Viewer points, static or animated Processing ROI, independent
+ranges, SAM 2 video tracking with progress/ETA/cancellation, four output modes, native Read creation,
+and cache cleanup. Video points are sampled on the key frame while the animated ROI is sampled for
+each frame and reconstructed into full-resolution coordinates. Remaining Segment work
 includes multi-key-frame corrections, resumable per-frame metadata, explicit out-of-memory retry
 profiles, broader host testing, and Fusion/Resolve adapters.

@@ -260,6 +260,7 @@ class Sam2Provider(SegmentationProvider):
 
         request.validate()
         cancellation.raise_if_cancelled()
+        cancellation.report_progress(0.10, "Loading SAM 2 video model")
         predictor = self._load_video()
         point_coords = None
         point_labels = None
@@ -283,7 +284,10 @@ class Sam2Provider(SegmentationProvider):
                 else nullcontext()
             )
             outputs: dict[int, Path] = {}
+            expected_outputs = request.last_frame - request.first_frame + 1
+            produced_indices: set[int] = set()
             with torch.inference_mode(), autocast:
+                cancellation.report_progress(0.18, "Initializing SAM 2 tracking state")
                 state = predictor.init_state(
                     video_path=str(request.frames_dir),
                     offload_video_to_cpu=request.offload_video_to_cpu,
@@ -298,6 +302,7 @@ class Sam2Provider(SegmentationProvider):
                     labels=point_labels,
                     box=box,
                 )
+                cancellation.report_progress(0.25, "Propagating masks")
                 passes = []
                 if request.direction in {VideoDirection.BACKWARD, VideoDirection.BOTH}:
                     passes.append(True)
@@ -314,6 +319,11 @@ class Sam2Provider(SegmentationProvider):
                         output = request.output_for_index(frame_index)
                         write_mask_png_atomic(output, np.asarray(mask, dtype=np.bool_))
                         outputs[frame_index] = output
+                        produced_indices.add(frame_index)
+                        cancellation.report_progress(
+                            0.25 + 0.60 * len(produced_indices) / expected_outputs,
+                            f"Propagated {len(produced_indices)}/{expected_outputs} frames",
+                        )
                 predictor.reset_state(state)
         except KyvenError:
             raise

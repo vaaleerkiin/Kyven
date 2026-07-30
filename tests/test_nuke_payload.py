@@ -101,6 +101,37 @@ class NukePayloadTests(unittest.TestCase):
         self.assertIsNone(payload["roi"])
         self.assertTrue(payload["fill_holes"])
         self.assertEqual(payload["max_hole_area"], 2_048)
+        self.assertEqual(payload["rois"], [])
+
+    def test_video_payload_serializes_animated_roi_per_frame(self) -> None:
+        payload = segment_video_payload(
+            frames_dir="D:/cache/frames",
+            output_pattern="D:/cache/matte.%04d.png",
+            model_index=1,
+            profile="balanced",
+            image_height=100,
+            positive_points=[(25, 40)],
+            negative_points=[],
+            box_enabled=True,
+            box=(10, 20, 50, 60),
+            first_frame=10,
+            last_frame=11,
+            key_frame=10,
+            direction="forward",
+            animated_rois=[
+                (10, (10, 20, 50, 60)),
+                (11, (20, 25, 70, 65)),
+            ],
+        )
+
+        self.assertIsNone(payload["roi"])
+        self.assertEqual(
+            payload["rois"],
+            [
+                {"frame": 10, "x0": 10.0, "y0": 40.0, "x1": 50.0, "y1": 80.0},
+                {"frame": 11, "x0": 20.0, "y0": 35.0, "x1": 70.0, "y1": 75.0},
+            ],
+        )
 
     def test_prompt_defaults_use_input_dimensions(self) -> None:
         center, box = _prompt_defaults(2048.0, 858.0)

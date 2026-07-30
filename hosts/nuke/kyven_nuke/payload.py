@@ -33,6 +33,20 @@ def point(x: float, nuke_y: float, image_height: int, label: str) -> dict[str, A
     }
 
 
+def roi_box(
+    box: tuple[float, float, float, float], image_height: int
+) -> dict[str, float]:
+    """Convert a Nuke bottom-left BBox into a top-left Processing ROI."""
+
+    x0, y0, x1, y1 = box
+    return {
+        "x0": float(x0),
+        "y0": float(image_height) - float(y1),
+        "x1": float(x1),
+        "y1": float(image_height) - float(y0),
+    }
+
+
 def segment_payload(
     *,
     source: str,
@@ -51,13 +65,7 @@ def segment_payload(
     points.extend(point(*xy, image_height, "negative") for xy in negative_points)
     roi_payload = None
     if box_enabled:
-        x0, y0, x1, y1 = box
-        roi_payload = {
-            "x0": float(x0),
-            "y0": float(image_height) - float(y1),
-            "x1": float(x1),
-            "y1": float(image_height) - float(y0),
-        }
+        roi_payload = roi_box(box, image_height)
     return {
         "source": source,
         "output": output,
@@ -89,6 +97,7 @@ def segment_video_payload(
     direction: str,
     fill_holes: bool = True,
     max_hole_area: int = 2_048,
+    animated_rois: Sequence[tuple[int, tuple[float, float, float, float]]] = (),
 ) -> dict[str, Any]:
     image_payload = segment_payload(
         source="unused",
@@ -110,7 +119,11 @@ def segment_video_payload(
         "profile": profile,
         "points": image_payload["points"],
         "box": None,
-        "roi": image_payload["roi"],
+        "roi": None if animated_rois else image_payload["roi"],
+        "rois": [
+            {"frame": int(frame), **roi_box(frame_box, image_height)}
+            for frame, frame_box in animated_rois
+        ],
         "first_frame": int(first_frame),
         "last_frame": int(last_frame),
         "key_frame": int(key_frame),
