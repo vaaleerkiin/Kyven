@@ -75,6 +75,8 @@ class SegmentRequest:
     provider_id: str = "sam2"
     profile: ExecutionProfile = ExecutionProfile.BALANCED
     multimask_output: bool = True
+    fill_holes: bool = True
+    max_hole_area: int = 2_048
 
     def validate(self) -> None:
         if not self.source.is_file():
@@ -89,6 +91,11 @@ class SegmentRequest:
                 message="At least one point or box prompt is required.",
                 suggested_action="Add a positive point or draw a prompt box.",
             )
+        if self.max_hole_area < 0:
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="Maximum hole area must be zero or greater.",
+            )
 
     def canonical(self) -> dict[str, Any]:
         """Return fields that affect inference output, excluding destination path."""
@@ -100,6 +107,8 @@ class SegmentRequest:
             "provider_id": self.provider_id,
             "profile": self.profile.value,
             "multimask_output": self.multimask_output,
+            "fill_holes": self.fill_holes,
+            "max_hole_area": self.max_hole_area,
         }
 
     def cache_key(self, provider_version: str, model_checksum: str) -> str:

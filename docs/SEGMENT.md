@@ -59,6 +59,10 @@ The local server API additionally accepts `roi: {x0, y0, x1, y1}`. `SegmentServi
 prompts into ROI coordinates, runs the provider on a temporary crop, and expands the mask back to
 the source dimensions. ROI participates in deterministic cache identity.
 
+After inference, optional enclosed-hole filling labels black connected components and fills only
+those that do not touch the frame border and fit under `max_hole_area`. This changes neither the
+outer silhouette nor model inference. Post-process settings are also part of cache identity.
+
 On success the CLI prints structured JSON with the output path, selected-mask score,
 deterministic cache key, device, and provider metadata. On failure it prints a structured Kyven
 error suitable for display by a host adapter.

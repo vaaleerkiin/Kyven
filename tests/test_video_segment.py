@@ -4,14 +4,58 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 
+from kyven.cancellation import CancellationToken
 from kyven.errors import KyvenError
 from kyven.segment.models import PointPrompt
-from kyven.segment.video import VideoDirection, VideoSegmentRequest
+from kyven.segment.output import write_mask_png_atomic
+from kyven.segment.video import (
+    VideoDirection,
+    VideoSegmentRequest,
+    VideoSegmentResult,
+    VideoSegmentService,
+)
 
 
 class VideoSegmentRequestTests(unittest.TestCase):
+    def test_video_outputs_receive_hole_postprocess(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "matte.0001.png"
+            mask = np.ones((5, 5), dtype=np.bool_)
+            mask[2, 2] = False
+            write_mask_png_atomic(output, mask)
+            request = VideoSegmentRequest(
+                frames_dir=root,
+                output_pattern=root / "matte.%04d.png",
+                first_frame=1,
+                last_frame=1,
+                key_frame=1,
+                direction=VideoDirection.FORWARD,
+                points=(PointPrompt(2, 2),),
+                max_hole_area=10,
+            )
+            result = VideoSegmentResult(
+                outputs=(output,),
+                first_frame=1,
+                last_frame=1,
+                key_frame=1,
+                direction=VideoDirection.FORWARD,
+                metadata={},
+            )
+
+            processed = VideoSegmentService._postprocess_outputs(
+                result,
+                request,
+                CancellationToken(),
+            )
+
+            with Image.open(output) as image:
+                self.assertEqual(image.getpixel((2, 2)), 255)
+            self.assertEqual(processed.metadata["postprocess"]["filled_holes"], 1)
+
     def test_key_index_and_output_mapping_preserve_nuke_frames(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

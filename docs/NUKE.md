@@ -3,7 +3,21 @@
 The Nuke adapter is a Group node that exports frames to the local Kyven Server and reads cached
 PNG mattes back into the graph. Nuke remains responsive while server inference runs.
 
-## Install
+## Portable install
+
+Clone or extract Kyven into its final writable directory and double-click `install.cmd`. To launch
+the same installer from PowerShell, run from the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+All runtime files stay inside that repository. The installer does not require administrator access,
+does not alter `PATH`, and does not edit Nuke settings. It prints the exact plugin path when done.
+Its console menu allows one or several SAM 2 models to be selected according to available VRAM.
+Choose the final repository location before installing; after moving it, rerun `install.ps1`.
+
+## Connect Nuke manually
 
 Add the repository host folder to the user's existing `.nuke/init.py`:
 
@@ -50,6 +64,16 @@ format and returns active points near its center.
 
 SAM 2 resizes inputs to a fixed encoder resolution. ROI improves focus and effective detail but
 does not guarantee proportional GPU-time or VRAM savings.
+
+### Mask post-process
+
+`Fill Enclosed Holes` removes black islands fully surrounded by the foreground mask. It runs after
+SAM and after ROI reconstruction, so it does not affect inference or point coordinates. The outer
+silhouette is never dilated or eroded.
+
+`Max Hole Area (px)` limits which connected holes are filled. The default is `2048`; use a smaller
+value to preserve intentional openings, or `0` to fill every enclosed hole. The Status field reports
+how many holes were filled. Changing these controls changes cache identity and requires reprocessing.
 
 ### Processing modes
 
@@ -102,7 +126,7 @@ Typical files include exported source frames, `matte.%04d.png`, video JPEGs, and
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:8767` and requires API 3. A
+The adapter starts an external hidden Python process on `127.0.0.1:8768` and requires API 4. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

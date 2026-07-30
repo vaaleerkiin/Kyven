@@ -12,6 +12,7 @@ from PIL import Image
 from kyven.cancellation import CancellationToken
 from kyven.segment.models import SegmentPrediction, SegmentRequest, SegmentResult
 from kyven.segment.output import write_mask_png_atomic
+from kyven.segment.postprocess import fill_enclosed_holes
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.segment.roi import expand_mask, resolve_region, translate_box, translate_points
 
@@ -37,7 +38,18 @@ class SegmentService:
         prediction = self._predict(provider, request, token)
         token.raise_if_cancelled()
 
-        write_mask_png_atomic(request.output, np.asarray(prediction.mask))
+        mask = np.asarray(prediction.mask)
+        metadata = dict(prediction.metadata)
+        if request.fill_holes:
+            filled = fill_enclosed_holes(mask, request.max_hole_area)
+            mask = filled.mask
+            metadata["postprocess"] = {
+                "fill_holes": True,
+                "max_hole_area": request.max_hole_area,
+                "filled_holes": filled.filled_holes,
+                "filled_pixels": filled.filled_pixels,
+            }
+        write_mask_png_atomic(request.output, mask)
 
         cache_key = request.cache_key(
             provider_version=capabilities.provider_version,
@@ -47,7 +59,7 @@ class SegmentService:
             output=request.output,
             score=prediction.score,
             cache_key=cache_key,
-            metadata=prediction.metadata,
+            metadata=metadata,
         )
 
     @staticmethod

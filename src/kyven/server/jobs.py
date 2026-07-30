@@ -116,6 +116,8 @@ class JobManager:
             provider_id=str(payload.get("model_id", "sam2.1-small")),
             profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
             multimask_output=bool(payload.get("multimask_output", True)),
+            fill_holes=bool(payload.get("fill_holes", True)),
+            max_hole_area=int(payload.get("max_hole_area", 2_048)),
         )
 
     def submit_segment(self, payload: dict[str, Any]) -> str:
@@ -168,6 +170,8 @@ class JobManager:
             profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
             offload_video_to_cpu=bool(payload.get("offload_video_to_cpu", True)),
             offload_state_to_cpu=bool(payload.get("offload_state_to_cpu", True)),
+            fill_holes=bool(payload.get("fill_holes", True)),
+            max_hole_area=int(payload.get("max_hole_area", 2_048)),
         )
 
     def submit_video(self, payload: dict[str, Any]) -> str:

@@ -1,5 +1,23 @@
 # Troubleshooting
 
+## Portable installer fails
+
+Double-click `install.cmd`, or run the installer from the repository root in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Python 3.10-3.13 must already be installed; Python 3.12 is preferred. If it is not detected, pass
+its full path with `-PythonExe`. The installer does not need Git, administrator access, or an EXE
+installer. Internet access is required for the first dependency and model download.
+
+Choose the final repository location before installation. A Windows virtual environment contains
+absolute paths, so after moving the Kyven folder, rerun `install.ps1` to rebuild or repair `.venv`.
+It is safe to rerun after pulling an update; verified model files are reused.
+If necessary, it stops only a `kyven.exe` launched from this repository's own `.venv` before
+updating the package. Restart Nuke after installation so it starts the newly installed server.
+
 ## Server does not become ready
 
 1. Close Nuke completely and start it again.
@@ -11,8 +29,8 @@ The Nuke adapter launches `python.exe -I -m kyven.server.bootstrap`. On Windows 
 the DLL directory inherited from Nuke before importing PyTorch; this prevents the common
 `c10.dll` / `WinError 1114` startup failure.
 
-Kyven API 3 uses port `8767`. Older development servers may remain on 8765 or 8766, but the adapter
-asks authenticated older servers to unload their models before starting API 3.
+Kyven API 4 uses port `8768`. Older development servers may remain on 8765-8767, but the adapter
+asks authenticated older servers to unload their models before starting API 4.
 
 ## CUDA or model loading fails
 
@@ -36,6 +54,13 @@ Core segmentation and propagation still run, but that post-processing feature is
 - Reprocess after changing ROI; old cached mattes are not transformed automatically.
 - Remember that Nuke Viewer Y coordinates are converted to top-left image coordinates by the host
   adapter.
+
+## The mask contains small black holes
+
+Enable `Fill Enclosed Holes` and reprocess the frame or range. Increase `Max Hole Area (px)` only
+until the unwanted holes disappear; very large values may also fill intentional enclosed openings.
+This cleanup does not expand the exterior edge. A SAM 2 warning about the unavailable optional `_C`
+extension means upstream hole filling was skipped, but Kyven's own post-process still runs.
 
 ## Read or cache problems
 
