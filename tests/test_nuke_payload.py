@@ -9,9 +9,20 @@ sys.path.insert(0, str(NUKE_ROOT))
 
 from kyven_nuke.node import _nuke_file_path
 from kyven_nuke.payload import segment_payload
+from kyven_nuke.runtime import _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_server_environment_removes_nuke_python_overrides(self) -> None:
+        environment = _server_environment(
+            {"PATH": "keep", "PYTHONHOME": "Nuke", "PYTHONPATH": "Nuke/python"}
+        )
+
+        self.assertEqual(environment["PATH"], "keep")
+        self.assertNotIn("PYTHONHOME", environment)
+        self.assertNotIn("PYTHONPATH", environment)
+        self.assertEqual(environment["PYTHONNOUSERSITE"], "1")
+
     def test_nuke_file_paths_use_forward_slashes(self) -> None:
         path = _nuke_file_path(Path("D:/Kyven/.runtime/source.1.png"))
 
