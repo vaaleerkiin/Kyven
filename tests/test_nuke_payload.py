@@ -7,11 +7,14 @@ from pathlib import Path
 NUKE_ROOT = Path(__file__).parents[1] / "hosts" / "nuke"
 sys.path.insert(0, str(NUKE_ROOT))
 
-from kyven_nuke.node import _single_frame_ranges
+from kyven_nuke.node import _background_limits, _single_frame_ranges
 from kyven_nuke.payload import segment_payload
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_background_limits_use_nuke_memory_string(self) -> None:
+        self.assertEqual(_background_limits(), {"maxThreads": 2, "maxCache": "256M"})
+
     def test_background_render_uses_nuke_frame_ranges_type(self) -> None:
         class FakeFrameRanges:
             def __init__(self, value: str) -> None:

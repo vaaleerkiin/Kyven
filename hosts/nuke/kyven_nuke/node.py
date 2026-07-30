@@ -121,6 +121,11 @@ def _single_frame_ranges(nuke: Any, frame: int) -> Any:
     return nuke.FrameRanges(str(frame))
 
 
+def _background_limits() -> dict[str, Any]:
+    """Use the string memory format expected by Nuke's background renderer."""
+    return {"maxThreads": 2, "maxCache": "256M"}
+
+
 def process_current_frame() -> None:
     nuke = _nuke()
     node = nuke.thisNode()
@@ -157,7 +162,7 @@ def process_current_frame() -> None:
         [writer],
         _single_frame_ranges(nuke, frame),
         [nuke.views()[0]],
-        {"maxThreads": 2, "maxCache": 256 * 1024 * 1024},
+        _background_limits(),
     )
     if task_id == -1:
         node["kyven_status"].setValue("Failed to start background Nuke render.")
