@@ -38,6 +38,11 @@ actual model crop are black in the trimap preview because they were not sent to 
 - `Create Read from Current Matte` creates a standard Nuke Read for the cached frame or sequence.
 - `Cancel` stops queued work cooperatively.
 
+The cached files for a processed frame are `refine_source`, `refine_mask`, `refined_matte`, and
+`trimap`. Range processing writes matching `%04d` sequences and connects internal Reads to both the
+refined matte and trimap. `Create Read from Current Matte` creates a Read for the refined matte; use
+the node's trimap output modes to inspect the cached trimap in context.
+
 Processing ROI crops both image and mask before inference, then pastes the refined alpha into the
 full-size coarse mask. Low Memory uses 512 px tiles, Balanced uses 1024 px tiles, and Quality uses a
 full-frame pass unless a custom tile size is set. Overlap blending reduces tile seams.
@@ -50,3 +55,10 @@ kyven refine --input source.png --mask coarse.png --output alpha.png \
 ```
 
 Add `--manual-trimap` when the mask path is already a trimap.
+
+## Updating an existing node
+
+After updating the repository and restarting Nuke, select an older Refine Group and choose
+`Kyven > Upgrade Selected Refine Node`. The command adds the current seven output modes without
+discarding the existing refined matte. Process a frame or range once to create the exact trimap
+cache required by the three trimap output modes.

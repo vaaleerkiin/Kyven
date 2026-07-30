@@ -1,4 +1,4 @@
-# Kyven Segment for Nuke
+# Kyven for Nuke
 
 The Nuke adapter is a Group node that exports frames to the local Kyven Server and reads cached
 PNG mattes back into the graph. Nuke remains responsive while server inference runs.
@@ -14,7 +14,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 All runtime files stay inside that repository. The installer does not require administrator access,
 does not alter `PATH`, and does not edit Nuke settings. It prints the exact plugin path when done.
-Its console menu allows one or several SAM 2 models to be selected according to available VRAM.
+Its console menu allows one or several SAM 2 models plus ViTMatte to be selected according to
+available VRAM.
 Choose the final repository location before installing; after moving it, rerun `install.ps1`.
 
 ## Connect Nuke manually
@@ -27,12 +28,16 @@ import nuke
 nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 ```
 
-Set `KYVEN_ROOT` before starting Nuke if the repository is not located at `D:/Kyven`. Restart Nuke
-and choose `Kyven > Segment` from the Nodes menu.
+The adapter discovers the repository from its own installed plugin path, so the folder may be placed
+anywhere. `KYVEN_ROOT` is only an optional override for custom deployments. Restart Nuke and choose
+`Kyven > Segment` or `Kyven > Refine` from the Nodes menu.
 
-After updating Kyven, select an existing Segment node and choose
-`Kyven > Upgrade Selected Segment Node`. This preserves its UUID, cached matte, prompts, and input.
-A newly created node always receives the latest control order and styling.
+After updating Kyven, select an existing node and use the matching command:
+
+- `Kyven > Upgrade Selected Segment Node` preserves its UUID, cached matte, prompts, and input;
+- `Kyven > Upgrade Selected Refine Node` preserves its refined matte and adds current trimap outputs.
+
+A newly created node always receives the latest controls and output graph.
 
 ## Live mode
 
@@ -110,6 +115,8 @@ multiple key frames are not implemented yet.
 
 ## Output modes
 
+New Segment nodes default to `Source + Alpha`.
+
 | Mode | Result |
 | --- | --- |
 | `Matte` | Mask in RGB and alpha |
@@ -118,6 +125,21 @@ multiple key frames are not implemented yet.
 | `Source (Bypass)` | Unchanged input |
 
 Changing output mode uses native Nuke nodes and never reruns SAM.
+
+Refine has its own output list:
+
+| Mode | Result |
+| --- | --- |
+| `Refined Matte` | ViTMatte alpha in RGB and alpha |
+| `Source + Refined Alpha` | Original RGB with refined alpha; default |
+| `Refined Cutout` | Source premultiplied by refined alpha |
+| `Trimap` | Exact black / gray / white ViTMatte guidance in RGB and alpha |
+| `Source + Trimap Alpha` | Original RGB with the exact trimap in alpha |
+| `Trimap Cutout` | Source premultiplied by the trimap |
+| `Source (Bypass)` | Unchanged input |
+
+Trimap modes become exact after a Refine frame or range succeeds. Before the first result they show
+the selected input mask channel as a useful preview. Switching modes never reruns ViTMatte.
 
 ## Cache
 
@@ -128,8 +150,8 @@ D:/Kyven/.runtime/nuke_cache/<node-uuid>/
 ```
 
 Typical files include exported source frames, `matte.%04d.png`, video JPEGs, and
-`tracked_matte.%04d.png`. Refine nodes add `refine_source`, `refine_mask`, and `refined_matte`
-sequences under their own UUID folder.
+`tracked_matte.%04d.png`. Refine nodes add `refine_source.%04d.png`, `refine_mask.%04d.png`,
+`refined_matte.%04d.png`, and the exact `trimap.%04d.png` sequence under their own UUID folder.
 
 - `Create Matte Read` creates a normal Nuke Read pointing to the current cached matte or sequence.
 - `Delete Node Cache` disconnects and removes only the current node's cache after confirmation.
@@ -152,7 +174,5 @@ Server output for the latest launch is written to `.runtime/server.log`.
 - Refine is frame-independent and has no temporal propagation yet;
 - the Nuke host adapter has been developed on Windows and still needs broader production testing.
 
-See [Troubleshooting](TROUBLESHOOTING.md) when the server does not start or a cached frame is missing.
-See [Refine](REFINE.md) for trimap generation, tiling, and the two-input refinement workflow.
-Both newly created Segment and Refine nodes default to Source RGB plus the generated alpha. Refine
-also exposes its exact cached trimap as matte, Source + Trimap Alpha, or a trimap-premultiplied cutout.
+See [Installation](INSTALLATION.md), [Troubleshooting](TROUBLESHOOTING.md), and
+[Refine](REFINE.md) for the complete setup and trimap workflow.

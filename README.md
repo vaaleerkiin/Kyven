@@ -32,7 +32,7 @@ Nuke Group node
       |
       | authenticated HTTP on 127.0.0.1
       v
-Kyven Server -> job queue -> provider registry -> SAM 2
+Kyven Server -> job queue -> provider registry -> SAM 2 / ViTMatte
       |
       v
 Atomic grayscale PNG matte cache
@@ -56,10 +56,8 @@ The script installs everything beside the repository and does not modify Nuke or
 - `models` contains verified checkpoints;
 - `.runtime` contains the pip cache, server files, and generated Nuke cache.
 
-SAM 2.1 Small and ViTMatte Small are selected by default. Other combinations can be selected:
-
-The console asks which model or models to install. Enter one or several numbers,
-for example `1,2,5`. Press Enter to install SAM 2.1 Small and ViTMatte Small, the recommended
+The console asks which model or models to install. Enter one or several numbers such as `1,2,5`.
+Press Enter without typing anything to install SAM 2.1 Small and ViTMatte Small, the recommended
 complete setup for an 8 GB GPU.
 For unattended installation, models can also be selected explicitly:
 
@@ -76,7 +74,7 @@ The installer is safe to run again after `git pull`. It reuses `.venv` and exist
 files. It does not require administrator access and does not add anything to the system `PATH`.
 Choose the repository's final location before installation. If it is moved later, run
 `install.ps1` again in the new location so the private Python environment is rebuilt correctly.
-During an update, the script stops a running Kyven server launched from that same repository.
+Restart Nuke after an update so it reloads the adapter and starts the required API revision.
 
 After installation, manually add the path printed by the script to the existing Nuke `init.py`:
 
@@ -86,9 +84,9 @@ import nuke
 nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 ```
 
-The script intentionally never edits `init.py`. Restart Nuke and choose `Kyven > Segment`.
-Existing nodes can be migrated with
-`Kyven > Upgrade Selected Segment Node`.
+The script intentionally never edits `init.py`. Restart Nuke and choose `Kyven > Segment` or
+`Kyven > Refine`. Existing nodes can be migrated with `Upgrade Selected Segment Node` or
+`Upgrade Selected Refine Node` in the same menu.
 
 ## Typical Nuke workflow
 
@@ -101,6 +99,8 @@ Existing nodes can be migrated with
 For refinement, connect the original image to Refine input 0 and a coarse mask (for example the
 Segment output) to input 1. Keep `Generate Trimap from Mask` enabled, then use Live, process one
 frame, or render a range. Disable the option only when input 1 is already a black/gray/white trimap.
+`Source + Refined Alpha` is the default; choose a trimap output to inspect the exact 0/128/255 image
+used by ViTMatte.
 
 See [Nuke workflow](docs/NUKE.md) for every control and [Troubleshooting](docs/TROUBLESHOOTING.md)
 for server, cache, CUDA, and logging help.
@@ -124,6 +124,7 @@ dependency licenses are recorded in [Third-party notices](THIRD_PARTY_NOTICES.md
 ## Documentation
 
 - [Nuke workflow and UI](docs/NUKE.md)
+- [Portable installation and updates](docs/INSTALLATION.md)
 - [Refine and trimap workflow](docs/REFINE.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Segment engine and CLI](docs/SEGMENT.md)

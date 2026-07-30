@@ -75,3 +75,6 @@ and cache cleanup. Video points are sampled on the key frame while the animated 
 each frame and reconstructed into full-resolution coordinates. Remaining Segment work
 includes multi-key-frame corrections, resumable per-frame metadata, explicit out-of-memory retry
 profiles, broader host testing, and Fusion/Resolve adapters.
+
+New Segment nodes default to `Source + Alpha`. Updating an older Group through
+`Kyven > Upgrade Selected Segment Node` preserves its prompts, UUID, input, and cached matte.

@@ -44,17 +44,37 @@ unloading is queued behind active inference so it cannot race a running kernel.
 | `fill_holes` | Enable enclosed-hole post-processing; defaults to `true` |
 | `max_hole_area` | Largest filled component in pixels; `0` means unlimited |
 
-Video jobs use the same prompt and ROI fields plus `frames_dir`, `output_pattern`, frame range,
-key frame, direction, and CPU-offload options. ROI output is always reconstructed to the original
-frame dimensions before the job succeeds.
+### Video propagation fields
 
-Refine jobs contain absolute `source`, `mask`, and `output` paths, optional `roi`, trimap generation
-settings, and tiling controls. Outside an enabled Refine ROI, the coarse mask is preserved.
+| Field | Meaning |
+| --- | --- |
+| `frames_dir`, `output_pattern` | Absolute JPEG input directory and printf-style PNG destination |
+| `first_frame`, `last_frame`, `key_frame` | Nuke frame range and prompt frame |
+| `direction` | `forward`, `backward`, or `both` |
+| `points` | Prompts sampled on the key frame |
+| `roi` | Optional static Processing ROI |
+| `rois` | Optional animated ROI: exactly one `{frame, x0, y0, x1, y1}` item per frame |
+| `offload_video_to_cpu`, `offload_state_to_cpu` | Reduce persistent GPU memory use |
 
-API version 7 adds optional persisted `trimap_output` for refinement. API version 6 added per-frame
-animated ROI data and job progress fields while retaining refinement,
-the optional static Segment ROI, and enclosed-hole cleanup. `GET /v1/jobs/{id}` returns `progress`
-(0.0-1.0) and `progress_message`. A video request may include `rois`, with exactly one
+Animated crops are normalized to the key-frame ROI size for SAM 2 and reconstructed into each
+frame's original coordinates before the job succeeds.
+
+### Refine fields
+
+| Field | Meaning |
+| --- | --- |
+| `source`, `mask`, `output` | Absolute Source, mask/trimap, and refined-alpha paths |
+| `trimap_output` | Optional absolute path for the exact normalized/generated trimap PNG |
+| `roi` | Optional Processing ROI |
+| `generate_trimap` | Generate three-state guidance from a coarse mask when true |
+| `foreground_radius`, `background_radius` | Erosion and dilation radii in pixels |
+| `tile_size`, `tile_overlap` | ViTMatte memory/performance controls |
+
+Outside an enabled Refine ROI, the coarse alpha is preserved in the refined result. The persisted
+trimap is black outside the ROI because those pixels were not sent to ViTMatte.
+
+API version 7 adds optional persisted `trimap_output` for refinement. `GET /v1/jobs/{id}` returns
+`progress` (0.0-1.0) and `progress_message`. A video request may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
 returned masks to the original dimensions. The Nuke adapter uses versioned port `18770` to avoid
 connecting to stale API processes during development.

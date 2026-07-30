@@ -14,9 +14,9 @@ installer. Internet access is required for the first dependency and model downlo
 
 Choose the final repository location before installation. A Windows virtual environment contains
 absolute paths, so after moving the Kyven folder, rerun `install.ps1` to rebuild or repair `.venv`.
-It is safe to rerun after pulling an update; verified model files are reused.
-If necessary, it stops only a `kyven.exe` launched from this repository's own `.venv` before
-updating the package. Restart Nuke after installation so it starts the newly installed server.
+It is safe to rerun after pulling an update; verified model files are reused. The installer targets
+only legacy `kyven.exe` launchers from this repository and never terminates unrelated Python jobs.
+Restart Nuke after installation so it starts the newly installed API revision.
 
 ## Server does not become ready
 
@@ -41,6 +41,16 @@ the adapter asks authenticated older servers to unload their models before start
 - Increase erosion/dilation to give ViTMatte a wider unknown edge region.
 - Use Low Memory (512 px tiles) when VRAM is limited.
 - After updating from an older API, restart Nuke so it launches the server on port 18770.
+
+## Trimap output is missing or shows only the input mask
+
+- Restart Nuke after updating, select the Refine node, and run
+  `Kyven > Upgrade Selected Refine Node`.
+- Process the current frame or range at least once. Before that, trimap modes intentionally preview
+  the selected Input 1 channel because no exact cached trimap exists yet.
+- With Processing ROI enabled, black outside the ROI is expected: ViTMatte did not receive those
+  pixels. The refined-alpha output still preserves the coarse mask outside the ROI.
+- Confirm that `.runtime/nuke_cache/<node-uuid>/trimap.<frame>.png` exists.
 
 ## CUDA or model loading fails
 
@@ -88,7 +98,7 @@ after a frame, range, or tracking job succeeds. If files were deleted externally
 | --- | --- |
 | `.runtime/server.log` | Latest server startup and inference output |
 | `.runtime/server.token` | Local bearer token; do not share or commit it |
-| `.runtime/nuke_cache/` | Exported frames and generated mattes |
+| `.runtime/nuke_cache/` | Exported frames, generated/refined mattes, and exact trimaps |
 | `models/` | Verified model checkpoints |
 
 When reporting a failure, include the Status text, the latest `server.log`, Nuke version, selected
