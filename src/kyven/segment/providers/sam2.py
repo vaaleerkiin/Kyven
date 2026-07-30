@@ -194,6 +194,7 @@ class Sam2Provider(SegmentationProvider):
     ) -> SegmentPrediction:
         request.validate()
         cancellation.raise_if_cancelled()
+        cancellation.report_progress(0.15, "Loading SAM 2 model")
         predictor = self._load()
 
         image = np.array(Image.open(request.source).convert("RGB"), copy=True)
@@ -219,14 +220,17 @@ class Sam2Provider(SegmentationProvider):
                 else nullcontext()
             )
             with torch.inference_mode(), autocast:
+                cancellation.report_progress(0.30, "Encoding image with SAM 2")
                 predictor.set_image(image)
                 cancellation.raise_if_cancelled()
+                cancellation.report_progress(0.75, "Predicting mask")
                 masks, scores, _ = predictor.predict(
                     point_coords=point_coords,
                     point_labels=point_labels,
                     box=box,
                     multimask_output=request.multimask_output,
                 )
+            cancellation.report_progress(0.88, "SAM 2 inference complete")
         except KyvenError:
             raise
         except Exception as exc:

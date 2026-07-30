@@ -148,6 +148,7 @@ class VitMatteProvider(RefinementProvider):
 
     def predict(self, request: RefineRequest, cancellation: CancellationToken) -> RefinePrediction:
         request.validate()
+        cancellation.report_progress(0.18, "Loading ViTMatte model")
         image = Image.open(request.source).convert("RGB")
         trimap = Image.open(request.mask).convert("L")
         if image.size != trimap.size:
@@ -157,14 +158,19 @@ class VitMatteProvider(RefinementProvider):
             )
         tile = request.tile_size
         if not tile or (image.width <= tile and image.height <= tile):
+            cancellation.report_progress(0.25, "Running ViTMatte inference")
             alpha = self._infer(image, trimap, cancellation)
             tiles = 1
+            cancellation.report_progress(0.90, "ViTMatte inference complete")
         else:
             alpha_sum = np.zeros((image.height, image.width), dtype=np.float32)
             weights = np.zeros_like(alpha_sum)
             tiles = 0
-            for y in self._starts(image.height, tile, request.tile_overlap):
-                for x in self._starts(image.width, tile, request.tile_overlap):
+            y_starts = self._starts(image.height, tile, request.tile_overlap)
+            x_starts = self._starts(image.width, tile, request.tile_overlap)
+            total_tiles = len(y_starts) * len(x_starts)
+            for y in y_starts:
+                for x in x_starts:
                     cancellation.raise_if_cancelled()
                     box = (x, y, min(x + tile, image.width), min(y + tile, image.height))
                     prediction = self._infer(image.crop(box), trimap.crop(box), cancellation)
@@ -184,6 +190,10 @@ class VitMatteProvider(RefinementProvider):
                     alpha_sum[y : y + height, x : x + width] += prediction * weight
                     weights[y : y + height, x : x + width] += weight
                     tiles += 1
+                    cancellation.report_progress(
+                        0.25 + 0.65 * tiles / total_tiles,
+                        f"Refining tile {tiles}/{total_tiles}",
+                    )
             alpha = alpha_sum / np.maximum(weights, 1e-6)
         trimap_pixels = np.asarray(trimap)
         alpha = np.where(trimap_pixels >= 254, 1.0, np.where(trimap_pixels <= 1, 0.0, alpha))

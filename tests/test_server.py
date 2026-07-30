@@ -119,7 +119,7 @@ class ServerTests(unittest.TestCase):
             try:
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
                 self.assertEqual(client.health()["status"], "ok")
-                self.assertEqual(client.health()["api_version"], 7)
+                self.assertEqual(client.health()["api_version"], 8)
                 self.assertEqual(len(client.models()), 5)
                 job_id = client.submit_segment(
                     {
@@ -132,6 +132,8 @@ class ServerTests(unittest.TestCase):
                 )
                 result = client.wait(job_id, timeout_seconds=5)
                 self.assertEqual(result["status"], "succeeded")
+                self.assertEqual(result["progress"], 1.0)
+                self.assertEqual(result["progress_message"], "Segmentation complete")
                 self.assertTrue(output.is_file())
                 with Image.open(output) as image_mask:
                     self.assertEqual(image_mask.size, (4, 4))
@@ -181,6 +183,8 @@ class ServerTests(unittest.TestCase):
                 )
                 refine_result = client.wait(refine_job_id, timeout_seconds=5)
                 self.assertEqual(refine_result["status"], "succeeded")
+                self.assertEqual(refine_result["progress"], 1.0)
+                self.assertEqual(refine_result["progress_message"], "Refinement complete")
                 self.assertTrue(refine_output.is_file())
                 self.assertEqual(refine_result["result"]["trimap_output"], str(trimap_output))
                 self.assertTrue(trimap_output.is_file())

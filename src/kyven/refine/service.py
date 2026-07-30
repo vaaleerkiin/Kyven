@@ -30,6 +30,7 @@ class RefineService:
         request.validate()
         token = cancellation or CancellationToken()
         token.raise_if_cancelled()
+        token.report_progress(0.03, "Reading Source and mask")
         with Image.open(request.source) as source_file, Image.open(request.mask) as mask_file:
             source = source_file.convert("RGB")
             mask = mask_file.convert("L")
@@ -56,6 +57,7 @@ class RefineService:
             if request.generate_trimap
             else normalize_trimap(mask_pixels)
         )
+        token.report_progress(0.10, "Prepared ViTMatte trimap")
         trimap_output = request.trimap_output
         if trimap_output is not None:
             if region is None:
@@ -66,6 +68,7 @@ class RefineService:
             write_mask_png_atomic(trimap_output, full_trimap)
         provider = self._registry.activate(request.provider_id)
         capabilities = provider.capabilities
+        token.report_progress(0.15, "Loading ViTMatte")
         with tempfile.TemporaryDirectory(prefix="kyven-refine-") as directory:
             root = Path(directory)
             source_path = root / "source.png"
@@ -75,6 +78,7 @@ class RefineService:
             prepared = replace(request, source=source_path, mask=trimap_path, roi=None)
             prediction = provider.predict(prepared, token)
         token.raise_if_cancelled()
+        token.report_progress(0.93, "Writing refined alpha")
         refined = np.asarray(prediction.alpha, dtype=np.float32)
         expected = (source_crop.height, source_crop.width)
         if refined.shape != expected:
@@ -88,6 +92,7 @@ class RefineService:
             full[region.y0 : region.y1, region.x0 : region.x1] = refined
             refined = full
         write_mask_png_atomic(request.output, refined)
+        token.report_progress(1.0, "Refinement complete")
         metadata = dict(prediction.metadata)
         metadata["trimap"] = {
             "generated": request.generate_trimap,

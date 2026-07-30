@@ -22,7 +22,7 @@ from kyven.segment.video import (
 
 
 class VideoSegmentRequestTests(unittest.TestCase):
-    def test_animated_roi_is_reconstructed_at_each_frame_position(self) -> None:
+    def test_key_frame_points_allow_later_animated_roi_to_move_away(self) -> None:
         class AnimatedRoiProvider(SegmentationProvider):
             @property
             def capabilities(self) -> ProviderCapabilities:

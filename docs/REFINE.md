@@ -32,11 +32,15 @@ actual model crop are black in the trimap preview because they were not sent to 
 
 ## Processing
 
-- `Live Current Frame` follows the timeline asynchronously.
+- `Live Current Frame` follows the timeline and regenerates after trimap/ROI setting changes.
 - `Process Current Frame` updates one cached matte.
 - `Process Frame Range` exports and refines every selected frame sequentially.
 - `Create Read from Current Matte` creates a standard Nuke Read for the cached frame or sequence.
 - `Cancel` stops queued work cooperatively.
+
+Manual current-frame processing and frame-range processing open a native Nuke progress window with
+export stage, frame/tile progress, percentage, ETA, and Cancel. Live refreshes remain unobtrusive and
+report through the node Status field instead of opening a new window after every Viewer edit.
 
 The cached files for a processed frame are `refine_source`, `refine_mask`, `refined_matte`, and
 `trimap`. Range processing writes matching `%04d` sequences and connects internal Reads to both the

@@ -73,8 +73,9 @@ frame's original coordinates before the job succeeds.
 Outside an enabled Refine ROI, the coarse alpha is preserved in the refined result. The persisted
 trimap is black outside the ROI because those pixels were not sent to ViTMatte.
 
-API version 7 adds optional persisted `trimap_output` for refinement. `GET /v1/jobs/{id}` returns
-`progress` (0.0-1.0) and `progress_message`. A video request may include `rois`, with exactly one
+API version 8 reports detailed Segment and Refine stages for host progress windows. It retains the
+API 7 persisted `trimap_output`. `GET /v1/jobs/{id}` returns `progress` (0.0-1.0) and
+`progress_message`. A video request may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
-returned masks to the original dimensions. The Nuke adapter uses versioned port `18770` to avoid
+returned masks to the original dimensions. The Nuke adapter uses versioned port `18771` to avoid
 connecting to stale API processes during development.

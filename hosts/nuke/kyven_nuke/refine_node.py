@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -13,13 +14,18 @@ from kyven_nuke.node import (
     _cache_root,
     _ensure_cache_controls,
     _ensure_live_controls,
+    _finish_progress,
+    _format_eta,
     _inside,
     _nuke,
     _nuke_file_path,
     _path_for_frame,
+    _progress_cancelled,
     _set_busy,
     _set_matte_read,
     _set_status,
+    _start_progress,
+    _update_progress,
 )
 from kyven_nuke.payload import REFINE_MODEL_LABELS, refine_payload
 from kyven_nuke.runtime import ensure_server
@@ -99,6 +105,9 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
     node = _nuke().toNode(node_name)
     if node is None:
         return
+    if job["status"] == "cancelled":
+        node["kyven_status"].setValue("Refinement cancelled.")
+        return
     if job["status"] != "succeeded":
         error = job.get("error") or {}
         node["kyven_status"].setValue(f"Refine failed: {error.get('message', job['status'])}")
@@ -149,17 +158,46 @@ def _set_trimap_read(
         node.end()
 
 
-def _submit_and_wait(node_name: str, payload: dict[str, Any]) -> None:
+def _submit_and_wait(
+    node_name: str,
+    payload: dict[str, Any],
+    show_progress: bool,
+) -> None:
     nuke = _nuke()
+    started = time.monotonic()
+    cancellation_sent = False
     try:
         client = ensure_server()
         job_id = client.submit_refine(payload)
         nuke.executeInMainThread(_set_job_id, args=(node_name, job_id))
-        job = client.wait(job_id, timeout_seconds=1800.0)
+        while True:
+            job = client.job(job_id)
+            progress = float(job.get("progress", 0.0))
+            message = str(job.get("progress_message") or "ViTMatte refining")
+            if show_progress:
+                eta = _format_eta(time.monotonic() - started, progress)
+                nuke.executeInMainThread(
+                    _update_progress,
+                    args=(node_name, 15 + round(progress * 84), f"{message} | ETA {eta}"),
+                )
+                cancelled = nuke.executeInMainThreadWithResult(
+                    _progress_cancelled,
+                    args=(node_name,),
+                )
+                if cancelled and not cancellation_sent:
+                    client.cancel(job_id)
+                    cancellation_sent = True
+            if job["status"] in ("succeeded", "failed", "cancelled"):
+                break
+            if time.monotonic() - started > 1800.0:
+                raise RuntimeError(f"Timed out waiting for Kyven job {job_id}.")
+            time.sleep(0.2)
         nuke.executeInMainThread(_apply_result, args=(node_name, job))
     except Exception as exc:  # noqa: BLE001
         nuke.executeInMainThread(_set_status, args=(node_name, f"Refine failed: {exc}"))
     finally:
+        if show_progress:
+            nuke.executeInMainThread(_finish_progress, args=(node_name,))
         nuke.executeInMainThread(_set_busy, args=(node_name, False))
 
 
@@ -197,10 +235,21 @@ def process_current_frame(node: Any | None = None, live: bool = False) -> None:
     if bool(node["kyven_busy"].value()):
         return
     frame = int(nuke.frame())
+    node_name = node.fullName()
+    show_progress = not live
+    if show_progress:
+        _start_progress(node_name, "Kyven ViTMatte Refine", f"Exporting frame {frame}")
+        _update_progress(node_name, 2, "Exporting Source and mask")
+    node["kyven_busy"].setValue(True)
     source_path, mask_path, output_path, trimap_output_path = _cache_paths(node, frame)
     node["kyven_status"].setValue("Exporting source and mask...")
     if not _export(node, frame, source_path, mask_path):
+        if show_progress:
+            _finish_progress(node_name)
+        node["kyven_busy"].setValue(False)
         return
+    if show_progress:
+        _update_progress(node_name, 15, "Starting ViTMatte")
     payload = _payload(
         node,
         source,
@@ -209,11 +258,10 @@ def process_current_frame(node: Any | None = None, live: bool = False) -> None:
         output_path,
         trimap_output_path,
     )
-    node["kyven_busy"].setValue(True)
     node["kyven_live_frame"].setValue(frame)
     threading.Thread(
         target=_submit_and_wait,
-        args=(node.fullName(), payload),
+        args=(node_name, payload, show_progress),
         name="kyven-refine-submit",
         daemon=True,
     ).start()
@@ -242,8 +290,10 @@ def _range_worker(
     last: int,
 ) -> None:
     nuke = _nuke()
+    started = time.monotonic()
     try:
         client = ensure_server()
+        total = len(payloads)
         for index, (frame, payload) in enumerate(payloads, start=1):
             with _range_cancel_lock:
                 if node_name in _range_cancellations:
@@ -258,7 +308,39 @@ def _range_worker(
                 _set_status,
                 args=(node_name, f"Refining frame {frame} ({index}/{len(payloads)})..."),
             )
-            job = client.wait(job_id, timeout_seconds=1800.0)
+            cancellation_sent = False
+            while True:
+                job = client.job(job_id)
+                job_progress = float(job.get("progress", 0.0))
+                overall = (index - 1 + job_progress) / total
+                message = str(job.get("progress_message") or f"Refining frame {frame}")
+                eta = _format_eta(time.monotonic() - started, overall)
+                nuke.executeInMainThread(
+                    _update_progress,
+                    args=(
+                        node_name,
+                        20 + round(overall * 79),
+                        f"Frame {frame} ({index}/{total}) | {message} | ETA {eta}",
+                    ),
+                )
+                cancelled = nuke.executeInMainThreadWithResult(
+                    _progress_cancelled,
+                    args=(node_name,),
+                )
+                if cancelled and not cancellation_sent:
+                    with _range_cancel_lock:
+                        _range_cancellations.add(node_name)
+                    client.cancel(job_id)
+                    cancellation_sent = True
+                if job["status"] in ("succeeded", "failed", "cancelled"):
+                    break
+                time.sleep(0.2)
+            if job["status"] == "cancelled":
+                nuke.executeInMainThread(
+                    _set_status,
+                    args=(node_name, f"Refine range cancelled at frame {frame}."),
+                )
+                return
             if job["status"] != "succeeded":
                 error = job.get("error") or {}
                 raise RuntimeError(error.get("message", job["status"]))
@@ -271,6 +353,7 @@ def _range_worker(
     finally:
         with _range_cancel_lock:
             _range_cancellations.discard(node_name)
+        nuke.executeInMainThread(_finish_progress, args=(node_name,))
         nuke.executeInMainThread(_set_busy, args=(node_name, False))
 
 
@@ -280,6 +363,8 @@ def process_frame_range() -> None:
     source = node.input(0)
     if source is None or node.input(1) is None:
         nuke.message("Kyven Refine requires Source and Mask/Trimap inputs.")
+        return
+    if bool(node["kyven_busy"].value()):
         return
     first = int(node["range_first"].value())
     last = int(node["range_last"].value())
@@ -291,11 +376,28 @@ def process_frame_range() -> None:
     mask_writer = _inside(node, "KyvenRefineMaskWrite")
     source_writer["file"].setValue(_nuke_file_path(source_pattern))
     mask_writer["file"].setValue(_nuke_file_path(mask_pattern))
+    node_name = node.fullName()
+    total = last - first + 1
+    _start_progress(node_name, "Kyven ViTMatte Frame Range", "Preparing input export")
+    node["kyven_busy"].setValue(True)
     node["kyven_status"].setValue(f"Exporting refine inputs {first}-{last}...")
     try:
-        nuke.execute(source_writer, first, last)
-        nuke.execute(mask_writer, first, last)
+        for index, frame in enumerate(range(first, last + 1), start=1):
+            if _progress_cancelled(node_name):
+                node["kyven_status"].setValue(f"Refine range cancelled before frame {frame}.")
+                _finish_progress(node_name)
+                node["kyven_busy"].setValue(False)
+                return
+            _update_progress(
+                node_name,
+                round(20 * (index - 1) / total),
+                f"Exporting frame {frame} ({index}/{total})",
+            )
+            nuke.execute(source_writer, frame, frame)
+            nuke.execute(mask_writer, frame, frame)
     except Exception as exc:  # noqa: BLE001
+        _finish_progress(node_name)
+        node["kyven_busy"].setValue(False)
         node["kyven_status"].setValue(f"Refine range export failed: {exc}")
         return
     payloads = []
@@ -303,6 +405,8 @@ def process_frame_range() -> None:
         source_path = _path_for_frame(source_pattern, frame)
         mask_path = _path_for_frame(mask_pattern, frame)
         if not source_path.is_file() or not mask_path.is_file():
+            _finish_progress(node_name)
+            node["kyven_busy"].setValue(False)
             node["kyven_status"].setValue(f"Missing exported refine input at frame {frame}.")
             return
         output_path = _path_for_frame(output_pattern, frame)
@@ -320,10 +424,8 @@ def process_frame_range() -> None:
                 ),
             )
         )
-    node_name = node.fullName()
     with _range_cancel_lock:
         _range_cancellations.discard(node_name)
-    node["kyven_busy"].setValue(True)
     threading.Thread(
         target=_range_worker,
         args=(
@@ -379,8 +481,11 @@ def knob_changed() -> None:
     node["foreground_radius"].setVisible(generated)
     node["background_radius"].setVisible(generated)
     node["processing_roi"].setVisible(bool(node["roi_enabled"].value()))
-    if name not in {"kyven_status", "kyven_job_id", "kyven_live_frame", "kyven_busy"}:
+    from kyven_nuke.live import affects_live_result, request_live_update
+
+    if affects_live_result(name, "refine"):
         node["kyven_live_frame"].setValue(-2147483647)
+        request_live_update(node)
 
 
 def refresh_models() -> None:
@@ -420,7 +525,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 7</font>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 8</font>'
         )
     created_selector = "output_mode" not in node.knobs()
     previous_label = str(node["output_mode"].value()) if not created_selector else None
@@ -560,7 +665,7 @@ def create_refine_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 7</font>',
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 8</font>',
         ),
     )
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")

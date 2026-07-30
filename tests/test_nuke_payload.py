@@ -8,6 +8,7 @@ from unittest import mock
 NUKE_ROOT = Path(__file__).parents[1] / "hosts" / "nuke"
 sys.path.insert(0, str(NUKE_ROOT))
 
+from kyven_nuke.live import affects_live_result
 from kyven_nuke.node import (
     OUTPUT_MODES,
     _cache_root_path,
@@ -23,6 +24,14 @@ from kyven_nuke.runtime import _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_live_invalidation_tracks_prompts_roi_and_refine_controls(self) -> None:
+        self.assertTrue(affects_live_result("positive_point_3", "segment"))
+        self.assertTrue(affects_live_result("prompt_box", "segment"))
+        self.assertTrue(affects_live_result("processing_roi", "refine"))
+        self.assertTrue(affects_live_result("foreground_radius", "refine"))
+        self.assertFalse(affects_live_result("output_mode", "segment"))
+        self.assertFalse(affects_live_result("output_mode", "refine"))
+
     def test_refine_payload_translates_roi_and_trimap_controls(self) -> None:
         payload = refine_payload(
             source="D:/source.png",

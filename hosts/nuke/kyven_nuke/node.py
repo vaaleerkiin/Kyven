@@ -154,7 +154,8 @@ def sync_prompt_visibility(node: Any | None = None) -> None:
 
 def prompt_knob_changed() -> None:
     nuke = _nuke()
-    if nuke.thisKnob().name() in {
+    knob_name = nuke.thisKnob().name()
+    if knob_name in {
         "positive_enabled",
         "negative_enabled",
         "box_enabled",
@@ -162,13 +163,11 @@ def prompt_knob_changed() -> None:
     }:
         sync_prompt_visibility(nuke.thisNode())
     node = nuke.thisNode()
-    if "kyven_live_frame" in node.knobs() and nuke.thisKnob().name() not in {
-        "kyven_status",
-        "kyven_job_id",
-        "kyven_live_frame",
-        "kyven_busy",
-    }:
+    from kyven_nuke.live import affects_live_result, request_live_update
+
+    if "kyven_live_frame" in node.knobs() and affects_live_result(knob_name, "segment"):
         node["kyven_live_frame"].setValue(-2147483647)
+        request_live_update(node)
 
 
 def _set_busy(node_name: str, busy: bool) -> None:
@@ -241,6 +240,9 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
     nuke = _nuke()
     node = nuke.toNode(node_name)
     if node is None:
+        return
+    if job["status"] == "cancelled":
+        node["kyven_status"].setValue("Segmentation cancelled.")
         return
     if job["status"] != "succeeded":
         error = job.get("error") or {}
@@ -371,6 +373,7 @@ def _submit_range_and_wait(
 ) -> None:
     nuke = _nuke()
     scores: list[float] = []
+    started = time.monotonic()
     try:
         client = ensure_server()
         total = len(payloads)
@@ -387,7 +390,38 @@ def _submit_range_and_wait(
                 _set_status,
                 args=(node_name, f"Segmenting frame {frame} ({position}/{total})..."),
             )
-            job = client.wait(job_id)
+            cancellation_sent = False
+            while True:
+                job = client.job(job_id)
+                job_progress = float(job.get("progress", 0.0))
+                overall = (position - 1 + job_progress) / total
+                eta = _format_eta(time.monotonic() - started, overall)
+                nuke.executeInMainThread(
+                    _update_progress,
+                    args=(
+                        node_name,
+                        20 + round(overall * 79),
+                        f"Frame {frame} ({position}/{total}) | Segmenting | ETA {eta}",
+                    ),
+                )
+                cancelled = nuke.executeInMainThreadWithResult(
+                    _progress_cancelled,
+                    args=(node_name,),
+                )
+                if cancelled and not cancellation_sent:
+                    with _range_cancel_lock:
+                        _range_cancellations.add(node_name)
+                    client.cancel(job_id)
+                    cancellation_sent = True
+                if job["status"] in ("succeeded", "failed", "cancelled"):
+                    break
+                time.sleep(0.2)
+            if job["status"] == "cancelled":
+                nuke.executeInMainThread(
+                    _set_status,
+                    args=(node_name, f"Range cancelled at frame {frame}."),
+                )
+                return
             if job["status"] != "succeeded":
                 error = job.get("error") or {}
                 message = error.get("message", job["status"])
@@ -397,6 +431,14 @@ def _submit_range_and_wait(
                 )
                 return
             scores.append(float(job["result"]["score"]))
+            nuke.executeInMainThread(
+                _update_progress,
+                args=(
+                    node_name,
+                    20 + round(position / total * 79),
+                    f"Completed frame {frame} ({position}/{total})",
+                ),
+            )
         average_score = sum(scores) / len(scores)
         nuke.executeInMainThread(
             _apply_range_result,
@@ -407,6 +449,7 @@ def _submit_range_and_wait(
     finally:
         with _range_cancel_lock:
             _range_cancellations.discard(node_name)
+        nuke.executeInMainThread(_finish_progress, args=(node_name,))
         nuke.executeInMainThread(_set_busy, args=(node_name, False))
 
 
@@ -680,10 +723,27 @@ def process_frame_range() -> None:
     writer = _inside(node, "KyvenSourceWrite")
     writer["file"].setValue(_nuke_file_path(source_pattern))
     total = last - first + 1
+    node_name = node.fullName()
+    _start_progress(node_name, "Kyven Segment Frame Range", "Preparing source export")
+    if "kyven_busy" in node.knobs():
+        node["kyven_busy"].setValue(True)
     node["kyven_status"].setValue(f"Exporting {total} source frames...")
     try:
-        nuke.execute(writer, first, last)
+        for position, frame in enumerate(range(first, last + 1), start=1):
+            if _progress_cancelled(node_name):
+                node["kyven_status"].setValue(f"Range cancelled before frame {frame}.")
+                _finish_progress(node_name)
+                node["kyven_busy"].setValue(False)
+                return
+            _update_progress(
+                node_name,
+                round(20 * (position - 1) / total),
+                f"Exporting frame {frame} ({position}/{total})",
+            )
+            nuke.execute(writer, frame, frame)
     except Exception as exc:  # noqa: BLE001 - host boundary must report useful context
+        _finish_progress(node_name)
+        node["kyven_busy"].setValue(False)
         node["kyven_status"].setValue(f"Range export failed: {exc}")
         nuke.message(f"Kyven range export failed:\n{exc}")
         return
@@ -692,17 +752,16 @@ def process_frame_range() -> None:
     for frame in range(first, last + 1):
         source_path = _path_for_frame(source_pattern, frame)
         if not source_path.is_file():
+            _finish_progress(node_name)
+            node["kyven_busy"].setValue(False)
             node["kyven_status"].setValue(f"Range export failed: frame {frame} was not created.")
             return
         matte_path = _path_for_frame(matte_pattern, frame)
         payloads.append((frame, _payload_for_paths(node, source, source_path, matte_path)))
 
-    node_name = node.fullName()
     with _range_cancel_lock:
         _range_cancellations.discard(node_name)
     node["kyven_status"].setValue(f"Starting range {first}-{last}...")
-    if "kyven_busy" in node.knobs():
-        node["kyven_busy"].setValue(True)
     threading.Thread(
         target=_submit_range_and_wait,
         args=(node_name, payloads, _nuke_file_path(matte_pattern), first, last),
@@ -756,21 +815,6 @@ def propagate_video(direction: str) -> None:
         roi_values = [(frame, _bbox_at(node, frame)) for frame in range(first, last + 1)]
         if any(frame_roi != key_roi for _frame, frame_roi in roi_values):
             animated_rois = roi_values
-        x0, y0, x1, y1 = key_roi
-        outside = [
-            (kind, index, point)
-            for kind, points in (("positive", positive_points), ("negative", negative_points))
-            for index, point in enumerate(points, start=1)
-            if not (x0 <= point[0] <= x1 and y0 <= point[1] <= y1)
-        ]
-        if outside:
-            kind, index, point = outside[0]
-            nuke.message(
-                f"{kind.title()} point {index} at ({point[0]:.1f}, {point[1]:.1f}) is outside "
-                f"the Processing ROI on key frame {key_frame}.\n\n"
-                "Move the point inside the key-frame ROI or enlarge that ROI keyframe."
-            )
-            return
 
     frames_dir, source_pattern, output_pattern = _video_cache_paths(node, first, last)
     writer = _inside(node, "KyvenVideoWrite")
@@ -778,12 +822,15 @@ def propagate_video(direction: str) -> None:
     total = last - first + 1
     node_name = node.fullName()
     _start_progress(node_name, "Kyven SAM 2 Video Tracking", "Preparing frame export")
+    if "kyven_busy" in node.knobs():
+        node["kyven_busy"].setValue(True)
     node["kyven_status"].setValue(f"Exporting {total} tracking frames...")
     try:
         for position, frame in enumerate(range(first, last + 1), start=1):
             if _progress_cancelled(node_name):
                 node["kyven_status"].setValue(f"Tracking cancelled before frame {frame}.")
                 _finish_progress(node_name)
+                node["kyven_busy"].setValue(False)
                 return
             _update_progress(
                 node_name,
@@ -793,12 +840,14 @@ def propagate_video(direction: str) -> None:
             nuke.execute(writer, frame, frame)
     except Exception as exc:  # noqa: BLE001 - host boundary must report useful context
         _finish_progress(node_name)
+        node["kyven_busy"].setValue(False)
         node["kyven_status"].setValue(f"Tracking export failed: {exc}")
         nuke.message(f"Kyven tracking export failed:\n{exc}")
         return
     exported = list(frames_dir.glob("*.jpg"))
     if len(exported) != total:
         _finish_progress(node_name)
+        node["kyven_busy"].setValue(False)
         node["kyven_status"].setValue(
             f"Tracking export failed: expected {total} JPEGs, found {len(exported)}."
         )
@@ -825,8 +874,6 @@ def propagate_video(direction: str) -> None:
         animated_rois=animated_rois,
     )
     node["kyven_status"].setValue("Starting SAM 2 video predictor...")
-    if "kyven_busy" in node.knobs():
-        node["kyven_busy"].setValue(True)
     threading.Thread(
         target=_submit_video_and_wait,
         args=(node_name, payload),
@@ -973,7 +1020,7 @@ def _restyle_node_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 7</font>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 8</font>'
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
@@ -1191,7 +1238,7 @@ def create_segment_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 7</font>',
+            '<font color="#91a3b0">SAM 2 | Local inference | API 8</font>',
         ),
     )
 

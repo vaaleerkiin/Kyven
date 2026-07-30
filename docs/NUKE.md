@@ -43,7 +43,10 @@ A newly created node always receives the latest controls and output graph.
 
 Both Segment and Refine have `Live Current Frame`. When enabled, moving to another timeline frame
 exports and submits that frame automatically. Only one GPU job runs at a time; rapid scrubbing does
-not create concurrent model copies. Disable Live before rendering a range.
+not create concurrent model copies. Editing a Segment point or Processing ROI, or changing a Refine
+trimap/ROI setting, also invalidates and regenerates the visible frame after a short debounce. If an
+older job is still running, the latest edit runs when it finishes. Output-only controls do not rerun
+inference. Disable Live before rendering a range.
 
 ## Segment controls
 
@@ -113,6 +116,10 @@ to that frame's original full-size coordinates. The native Nuke progress window 
 model stages, percentage, an estimated remaining time, and a Cancel control. Corrections from
 multiple key frames are not implemented yet.
 
+Points are used only to initialize the key frame and are checked only against that frame's ROI.
+Animated ROIs on later frames may move away from the original point; they guide only the per-frame
+crop and do not require the key-frame point to remain inside them.
+
 ## Output modes
 
 New Segment nodes default to `Source + Alpha`.
@@ -160,7 +167,7 @@ Typical files include exported source frames, `matte.%04d.png`, video JPEGs, and
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18770` and requires API 7. A
+The adapter starts an external hidden Python process on `127.0.0.1:18771` and requires API 8. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

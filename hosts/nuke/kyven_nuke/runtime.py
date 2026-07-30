@@ -11,9 +11,9 @@ from pathlib import Path
 from kyven_nuke import config
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 
-PORT = 18770
-REQUIRED_API_VERSION = 7
-LEGACY_PORTS = (8765, 8766, 8767, 8768, 8769, 18768, 18769)
+PORT = 18771
+REQUIRED_API_VERSION = 8
+LEGACY_PORTS = (8765, 8766, 8767, 8768, 8769, 18768, 18769, 18770)
 
 
 def _check_health(current: NukeKyvenClient) -> None:
@@ -130,4 +130,6 @@ def ensure_server(timeout_seconds: float = 30.0) -> NukeKyvenClient:
             return current
         except (OSError, NukeKyvenClientError):
             time.sleep(0.2)
-    raise RuntimeError(f"Kyven server did not become ready within 30 seconds. See {log_path}")
+    raise RuntimeError(
+        f"Kyven server did not become ready within {timeout_seconds:g} seconds. See {log_path}"
+    )
