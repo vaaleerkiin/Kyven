@@ -116,6 +116,11 @@ def _cache_paths(node: Any, frame: int) -> tuple[Path, Path]:
     return root / f"source.{frame}.png", root / f"matte.{frame}.png"
 
 
+def _single_frame_ranges(nuke: Any, frame: int) -> Any:
+    """Build the FrameRanges object required by executeBackgroundNuke."""
+    return nuke.FrameRanges(str(frame))
+
+
 def process_current_frame() -> None:
     nuke = _nuke()
     node = nuke.thisNode()
@@ -150,7 +155,7 @@ def process_current_frame() -> None:
     task_id = nuke.executeBackgroundNuke(
         nuke.EXE_PATH,
         [writer],
-        [nuke.FrameRange(str(frame))],
+        _single_frame_ranges(nuke, frame),
         [nuke.views()[0]],
         {"maxThreads": 2, "maxCache": 256 * 1024 * 1024},
     )

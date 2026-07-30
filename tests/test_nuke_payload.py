@@ -7,10 +7,24 @@ from pathlib import Path
 NUKE_ROOT = Path(__file__).parents[1] / "hosts" / "nuke"
 sys.path.insert(0, str(NUKE_ROOT))
 
+from kyven_nuke.node import _single_frame_ranges
 from kyven_nuke.payload import segment_payload
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_background_render_uses_nuke_frame_ranges_type(self) -> None:
+        class FakeFrameRanges:
+            def __init__(self, value: str) -> None:
+                self.value = value
+
+        class FakeNuke:
+            FrameRanges = FakeFrameRanges
+
+        ranges = _single_frame_ranges(FakeNuke, 42)
+
+        self.assertIsInstance(ranges, FakeFrameRanges)
+        self.assertEqual(ranges.value, "42")
+
     def test_coordinates_and_model_selection_are_translated(self) -> None:
         payload = segment_payload(
             source="C:/cache/source.png",
