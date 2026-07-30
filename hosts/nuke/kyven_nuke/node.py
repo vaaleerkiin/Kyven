@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import threading
 import uuid
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,17 +16,6 @@ def _nuke() -> Any:
     import nuke
 
     return nuke
-
-
-@dataclass(frozen=True)
-class RenderTask:
-    node_name: str
-    payload: dict[str, Any]
-
-
-_render_tasks: dict[int, RenderTask] = {}
-_render_lock = threading.RLock()
-_callbacks_installed = False
 
 
 def _inside(group: Any, name: str) -> Any:
@@ -71,16 +59,16 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
     )
 
 
-def _submit_and_wait(task: RenderTask) -> None:
+def _submit_and_wait(node_name: str, payload: dict[str, Any]) -> None:
     nuke = _nuke()
     try:
         client = ensure_server()
-        job_id = client.submit_segment(task.payload)
-        nuke.executeInMainThread(_set_job_id, args=(task.node_name, job_id))
+        job_id = client.submit_segment(payload)
+        nuke.executeInMainThread(_set_job_id, args=(node_name, job_id))
         job = client.wait(job_id)
-        nuke.executeInMainThread(_apply_result, args=(task.node_name, job))
+        nuke.executeInMainThread(_apply_result, args=(node_name, job))
     except Exception as exc:  # noqa: BLE001 - background boundary must report to the host UI
-        nuke.executeInMainThread(_set_status, args=(task.node_name, f"Failed: {exc}"))
+        nuke.executeInMainThread(_set_status, args=(node_name, f"Failed: {exc}"))
 
 
 def _set_job_id(node_name: str, job_id: str) -> None:
@@ -90,40 +78,10 @@ def _set_job_id(node_name: str, job_id: str) -> None:
         node["kyven_status"].setValue("Segmenting…")
 
 
-def _after_background_render(context: dict[str, Any]) -> None:
-    task_id = int(context["id"])
-    with _render_lock:
-        task = _render_tasks.pop(task_id, None)
-    if task is not None:
-        threading.Thread(
-            target=_submit_and_wait,
-            args=(task,),
-            name="kyven-nuke-submit",
-            daemon=True,
-        ).start()
-
-
-def _ensure_callbacks() -> None:
-    global _callbacks_installed
-    if not _callbacks_installed:
-        _nuke().addAfterBackgroundRender(_after_background_render)
-        _callbacks_installed = True
-
-
 def _cache_paths(node: Any, frame: int) -> tuple[Path, Path]:
     root = config.cache_dir() / node["kyven_uuid"].value()
     root.mkdir(parents=True, exist_ok=True)
     return root / f"source.{frame}.png", root / f"matte.{frame}.png"
-
-
-def _single_frame_ranges(nuke: Any, frame: int) -> Any:
-    """Build the FrameRanges object required by executeBackgroundNuke."""
-    return nuke.FrameRanges(str(frame))
-
-
-def _background_limits() -> dict[str, Any]:
-    """Use the string memory format expected by Nuke's background renderer."""
-    return {"maxThreads": 2, "maxCache": "256M"}
 
 
 def process_current_frame() -> None:
@@ -155,20 +113,23 @@ def process_current_frame() -> None:
 
     writer = _inside(node, "KyvenSourceWrite")
     writer["file"].setValue(str(source_path))
-    node["kyven_status"].setValue("Rendering source in background…")
-    _ensure_callbacks()
-    task_id = nuke.executeBackgroundNuke(
-        nuke.EXE_PATH,
-        [writer],
-        _single_frame_ranges(nuke, frame),
-        [nuke.views()[0]],
-        _background_limits(),
-    )
-    if task_id == -1:
-        node["kyven_status"].setValue("Failed to start background Nuke render.")
+    node["kyven_status"].setValue("Exporting source frame...")
+    try:
+        nuke.execute(writer, frame, frame)
+    except Exception as exc:  # noqa: BLE001 - host boundary must report useful context
+        node["kyven_status"].setValue(f"Source export failed: {exc}")
+        nuke.message(f"Kyven source export failed:\n{exc}")
         return
-    with _render_lock:
-        _render_tasks[int(task_id)] = RenderTask(node.fullName(), payload)
+    if not source_path.is_file():
+        node["kyven_status"].setValue("Source export failed: PNG was not created.")
+        return
+    node["kyven_status"].setValue("Starting Kyven server...")
+    threading.Thread(
+        target=_submit_and_wait,
+        args=(node.fullName(), payload),
+        name="kyven-nuke-submit",
+        daemon=True,
+    ).start()
 
 
 def cancel_current_job() -> None:
@@ -283,5 +244,4 @@ def create_segment_node() -> Any:
         writer["channels"].setValue("rgb")
     finally:
         node.end()
-    _ensure_callbacks()
     return node
