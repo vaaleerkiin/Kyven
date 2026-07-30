@@ -37,12 +37,25 @@ class NukePayloadTests(unittest.TestCase):
 
     def test_server_environment_removes_nuke_python_overrides(self) -> None:
         environment = _server_environment(
-            {"PATH": "keep", "PYTHONHOME": "Nuke", "PYTHONPATH": "Nuke/python"}
+            {
+                "PATH": "C:/Program Files/Nuke16.0v4;keep",
+                "SystemRoot": "C:/Windows",
+                "PYTHONHOME": "Nuke",
+                "PYTHONPATH": "Nuke/python",
+                "QT_PLUGIN_PATH": "Nuke/qt",
+                "TCL_LIBRARY": "Nuke/tcl",
+            },
+            Path("D:/Kyven/.venv/Scripts"),
         )
 
-        self.assertEqual(environment["PATH"], "keep")
+        self.assertEqual(
+            environment["PATH"],
+            "D:\\Kyven\\.venv\\Scripts;C:\\Windows\\System32;C:/Windows",
+        )
         self.assertNotIn("PYTHONHOME", environment)
         self.assertNotIn("PYTHONPATH", environment)
+        self.assertNotIn("QT_PLUGIN_PATH", environment)
+        self.assertNotIn("TCL_LIBRARY", environment)
         self.assertEqual(environment["PYTHONNOUSERSITE"], "1")
 
     def test_nuke_file_paths_use_forward_slashes(self) -> None:
