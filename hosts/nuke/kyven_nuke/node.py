@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import threading
 import uuid
 from pathlib import Path
@@ -69,7 +70,16 @@ def sync_prompt_visibility(node: Any | None = None) -> None:
         count = _point_count(node, kind)
         for index, name in enumerate(_point_knob_names(kind, MAX_PROMPT_POINTS), start=1):
             if name in node.knobs():
-                node[name].setVisible(enabled and index <= count)
+                knob = node[name]
+                visible = enabled and index <= count
+                knob.setVisible(visible)
+                if visible:
+                    knob.setFlag(nuke.STARTLINE)
+                else:
+                    knob.clearFlag(nuke.STARTLINE)
+        for button_name in (f"add_{kind}_point", f"remove_{kind}_point"):
+            if button_name in node.knobs():
+                node[button_name].setVisible(enabled)
     node["prompt_box"].setVisible(bool(node["box_enabled"].value()))
 
 
@@ -275,9 +285,128 @@ def _set_job_id(node_name: str, job_id: str) -> None:
 
 
 def _cache_root(node: Any) -> Path:
-    root = config.cache_dir() / node["kyven_uuid"].value()
+    root = _cache_root_path(node)
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _cache_root_path(node: Any) -> Path:
+    cache_root = config.cache_dir().resolve()
+    node_id = str(node["kyven_uuid"].value()).strip()
+    if not node_id:
+        raise RuntimeError("Kyven node UUID is empty.")
+    target = (cache_root / node_id).resolve()
+    if target.parent != cache_root:
+        raise RuntimeError("Kyven node cache path is outside the configured cache directory.")
+    return target
+
+
+def create_read_from_current_matte() -> None:
+    """Create a regular Read node for the matte currently connected inside the Group."""
+    nuke = _nuke()
+    node = nuke.thisNode()
+    node.begin()
+    try:
+        matte = nuke.toNode("KyvenMatteRead")
+        switch = nuke.toNode("KyvenMatteSwitch")
+        if matte is None or switch is None or int(switch["which"].value()) != 1:
+            nuke.message("Process a frame or range first; this node has no current matte yet.")
+            return
+        file_path = str(matte["file"].value())
+        frame_values = {
+            name: int(matte[name].value())
+            for name in ("first", "last", "origfirst", "origlast")
+            if name in matte.knobs()
+        }
+    finally:
+        node.end()
+
+    read = nuke.nodes.Read(file=file_path)
+    for name, value in frame_values.items():
+        if name in read.knobs():
+            read[name].setValue(value)
+    read["label"].setValue("Kyven cached matte")
+    read.setXpos(node.xpos() + 140)
+    read.setYpos(node.ypos() + 120)
+    node["kyven_status"].setValue(f"Created Read: {read.name()}")
+
+
+def delete_node_cache() -> None:
+    """Delete only the cache owned by the current Kyven Segment node."""
+    nuke = _nuke()
+    node = nuke.thisNode()
+    target = _cache_root_path(node)
+    if not target.exists():
+        node["kyven_status"].setValue("This node cache is already empty.")
+        return
+    if not nuke.ask(f"Delete this Kyven node cache?\n\n{target}"):
+        return
+
+    node.begin()
+    try:
+        switch = nuke.toNode("KyvenMatteSwitch")
+        matte = nuke.toNode("KyvenMatteRead")
+        if switch is not None:
+            switch["which"].setValue(0)
+        if matte is not None:
+            nuke.delete(matte)
+    finally:
+        node.end()
+    try:
+        shutil.rmtree(target)
+    except OSError as exc:
+        node["kyven_status"].setValue(f"Cache deletion failed: {exc}")
+        nuke.message(f"Could not delete this node cache:\n{exc}")
+        return
+    node["kyven_status"].setValue("This node cache was deleted.")
+
+
+def _disconnect_cached_matte(node: Any) -> None:
+    nuke = _nuke()
+    node.begin()
+    try:
+        switch = nuke.toNode("KyvenMatteSwitch")
+        matte = nuke.toNode("KyvenMatteRead")
+        if switch is not None:
+            switch["which"].setValue(0)
+        if matte is not None:
+            nuke.delete(matte)
+    finally:
+        node.end()
+
+
+def delete_all_cache() -> None:
+    """Delete the complete Nuke cache while preserving models and server files."""
+    nuke = _nuke()
+    cache_root = config.cache_dir().resolve()
+    expected = (config.runtime_dir().resolve() / "nuke_cache").resolve()
+    if cache_root != expected or cache_root.name != "nuke_cache":
+        nuke.message(f"Refusing to delete an unexpected cache path:\n{cache_root}")
+        return
+    if not cache_root.exists():
+        nuke.message("The Kyven cache is already empty.")
+        return
+    if not nuke.ask(
+        "Delete ALL Kyven Nuke cache?\n\n"
+        f"{cache_root}\n\n"
+        "All generated source frames and mattes will be removed. Models are kept."
+    ):
+        return
+
+    affected = 0
+    for candidate in nuke.allNodes("Group", recurseGroups=True):
+        if "kyven_uuid" not in candidate.knobs():
+            continue
+        _disconnect_cached_matte(candidate)
+        if "kyven_status" in candidate.knobs():
+            candidate["kyven_status"].setValue("All Kyven cache was deleted.")
+        affected += 1
+    try:
+        shutil.rmtree(cache_root)
+    except OSError as exc:
+        nuke.message(f"Could not delete all Kyven cache:\n{exc}")
+        return
+    nuke.message(f"Kyven cache deleted. Updated {affected} Segment node(s).")
 
 
 def _cache_paths(node: Any, frame: int) -> tuple[Path, Path]:
@@ -647,8 +776,49 @@ def _ensure_output_controls(node: Any) -> None:
         node.end()
 
 
-def upgrade_selected_segment_output() -> None:
-    """Add output modes to an already-created Kyven Segment node."""
+def _ensure_cache_controls(node: Any) -> None:
+    """Add cache inspection and maintenance controls to a Segment node."""
+    nuke = _nuke()
+    if "create_matte_read" in node.knobs():
+        return
+    _add_section(nuke, node, "cache_section", "CACHE")
+    cache_location = nuke.String_Knob("cache_location", "Cache Folder")
+    cache_location.setValue(_nuke_file_path(_cache_root_path(node)))
+    cache_location.setFlag(nuke.READ_ONLY)
+    _add_knob(nuke, node, cache_location)
+    _add_knob(
+        nuke,
+        node,
+        nuke.PyScript_Knob(
+            "create_matte_read",
+            "Create Read from Current Matte",
+            "kyven_nuke.node.create_read_from_current_matte()",
+        ),
+    )
+    _add_knob(
+        nuke,
+        node,
+        nuke.PyScript_Knob(
+            "delete_node_cache",
+            "Delete This Node Cache",
+            "kyven_nuke.node.delete_node_cache()",
+        ),
+        start_line=False,
+    )
+    _add_knob(
+        nuke,
+        node,
+        nuke.PyScript_Knob(
+            "delete_all_cache",
+            "Delete All Kyven Cache",
+            "kyven_nuke.node.delete_all_cache()",
+        ),
+        start_line=False,
+    )
+
+
+def upgrade_selected_segment_node() -> None:
+    """Add current UI and output features to an already-created Kyven Segment node."""
     nuke = _nuke()
     try:
         node = nuke.selectedNode()
@@ -657,20 +827,33 @@ def upgrade_selected_segment_output() -> None:
         return
     try:
         _ensure_output_controls(node)
+        _ensure_cache_controls(node)
+        sync_prompt_visibility(node)
     except Exception as exc:  # noqa: BLE001 - host boundary must report useful context
         nuke.message(f"Could not upgrade the selected node:\n{exc}")
         return
     if "kyven_status" in node.knobs():
-        node["kyven_status"].setValue("Output modes installed. Existing matte was preserved.")
+        node["kyven_status"].setValue("Kyven node UI upgraded. Existing matte was preserved.")
 
 
 def create_segment_node() -> Any:
     nuke = _nuke()
     selected = nuke.selectedNode() if nuke.selectedNodes() else None
     node = nuke.nodes.Group(name="KyvenSegment")
+    node_uuid = uuid.uuid4().hex
     node.setInput(0, selected)
     node["label"].setValue("[value kyven_status]")
     node.addKnob(nuke.Tab_Knob("kyven", "Kyven Segment"))
+    _add_knob(
+        nuke,
+        node,
+        nuke.Text_Knob(
+            "kyven_title",
+            "",
+            "<font size=5><b>KYVEN SEGMENT</b></font><br>"
+            "<font color=#9aa7b2>Local AI masking | SAM 2</font>",
+        ),
+    )
 
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(MODEL_LABELS)))
@@ -702,6 +885,7 @@ def create_segment_node() -> Any:
     positive_count.setValue(1)
     positive_count.setVisible(False)
     _add_knob(nuke, node, positive_count)
+    positive_count.clearFlag(nuke.STARTLINE)
     for index, name in enumerate(_point_knob_names("positive", MAX_PROMPT_POINTS), start=1):
         _add_knob(nuke, node, nuke.XY_Knob(name, f"Positive Point {index}"))
     _add_knob(
@@ -730,6 +914,7 @@ def create_segment_node() -> Any:
     negative_count.setValue(1)
     negative_count.setVisible(False)
     _add_knob(nuke, node, negative_count)
+    negative_count.clearFlag(nuke.STARTLINE)
     for index, name in enumerate(_point_knob_names("negative", MAX_PROMPT_POINTS), start=1):
         _add_knob(nuke, node, nuke.XY_Knob(name, f"Negative Point {index}"))
     _add_knob(
@@ -853,18 +1038,21 @@ def create_segment_node() -> Any:
             "Cutout = premultiplied foreground | Source = bypass",
         ),
     )
+    internal_id = nuke.String_Knob("kyven_uuid", "UUID")
+    internal_id.setValue(node_uuid)
+    internal_id.setVisible(False)
+    internal_id.clearFlag(nuke.STARTLINE)
+    node.addKnob(internal_id)
+    _ensure_cache_controls(node)
     _add_section(nuke, node, "status_section", "STATUS")
     status = nuke.String_Knob("kyven_status", "Status")
     status.setFlag(nuke.READ_ONLY)
     status.setValue("Ready")
     _add_knob(nuke, node, status)
-    internal_id = nuke.String_Knob("kyven_uuid", "UUID")
-    internal_id.setValue(uuid.uuid4().hex)
-    internal_id.setVisible(False)
-    _add_knob(nuke, node, internal_id)
     job_id = nuke.String_Knob("kyven_job_id", "Job ID")
     job_id.setVisible(False)
-    _add_knob(nuke, node, job_id)
+    job_id.clearFlag(nuke.STARTLINE)
+    node.addKnob(job_id)
     node["knobChanged"].setValue("kyven_nuke.node.prompt_knob_changed()")
 
     node.begin()

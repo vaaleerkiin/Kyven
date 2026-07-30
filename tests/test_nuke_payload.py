@@ -3,12 +3,14 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 NUKE_ROOT = Path(__file__).parents[1] / "hosts" / "nuke"
 sys.path.insert(0, str(NUKE_ROOT))
 
 from kyven_nuke.node import (
     OUTPUT_MODES,
+    _cache_root_path,
     _nuke_file_path,
     _path_for_frame,
     _point_knob_names,
@@ -19,6 +21,25 @@ from kyven_nuke.runtime import _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_node_cache_path_rejects_parent_traversal(self) -> None:
+        class Knob:
+            def value(self) -> str:
+                return "../outside"
+
+        class Node:
+            def __getitem__(self, name: str) -> Knob:
+                self.last_name = name
+                return Knob()
+
+        with (
+            mock.patch(
+                "kyven_nuke.node.config.cache_dir",
+                return_value=Path("D:/Kyven/.runtime/nuke_cache"),
+            ),
+            self.assertRaises(RuntimeError),
+        ):
+            _cache_root_path(Node())
+
     def test_output_modes_match_internal_switch_inputs(self) -> None:
         self.assertEqual(
             OUTPUT_MODES,

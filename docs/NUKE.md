@@ -58,4 +58,12 @@ on additional key frames is follow-up work.
 - `Source (Bypass)` returns the unchanged input.
 
 These modes are native Nuke operations and do not rerun SAM. For an existing Kyven Segment node,
-select it and choose `Kyven > Upgrade Selected Segment Output`; the cached matte is preserved.
+select it and choose `Kyven > Upgrade Selected Segment Node`; the cached matte is preserved.
+
+## Cache controls
+
+Each Segment node displays its own cache folder. `Create Read from Current Matte` creates a regular
+Nuke Read node pointing at the current single-frame or sequence matte. `Delete This Node Cache`
+asks for confirmation, disconnects the internal cached matte, and removes only that Segment node's
+cache folder. `Delete All Kyven Cache` clears every Segment cache under `.runtime/nuke_cache` but
+keeps downloaded models, the virtual environment, and server configuration.
