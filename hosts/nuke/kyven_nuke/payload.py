@@ -19,6 +19,9 @@ MODEL_LABELS = (
     "SAM 2.1 Large (12 GB+)",
 )
 
+REFINE_MODEL_IDS = ("vitmatte-small-composition-1k",)
+REFINE_MODEL_LABELS = ("ViTMatte Small (4 GB+, recommended for 8 GB)",)
+
 
 def point(x: float, nuke_y: float, image_height: int, label: str) -> dict[str, Any]:
     """Convert Nuke's bottom-left Y coordinate to image top-left coordinates."""
@@ -116,4 +119,44 @@ def segment_video_payload(
         "offload_state_to_cpu": True,
         "fill_holes": image_payload["fill_holes"],
         "max_hole_area": image_payload["max_hole_area"],
+    }
+
+
+def refine_payload(
+    *,
+    source: str,
+    mask: str,
+    output: str,
+    model_index: int,
+    profile: str,
+    image_height: int,
+    roi_enabled: bool,
+    roi: tuple[float, float, float, float],
+    generate_trimap: bool,
+    foreground_radius: int,
+    background_radius: int,
+    tile_size: int = 0,
+    tile_overlap: int = 64,
+) -> dict[str, Any]:
+    roi_payload = None
+    if roi_enabled:
+        x0, y0, x1, y1 = roi
+        roi_payload = {
+            "x0": float(x0),
+            "y0": float(image_height) - float(y1),
+            "x1": float(x1),
+            "y1": float(image_height) - float(y0),
+        }
+    return {
+        "source": source,
+        "mask": mask,
+        "output": output,
+        "model_id": REFINE_MODEL_IDS[model_index],
+        "profile": profile,
+        "roi": roi_payload,
+        "generate_trimap": bool(generate_trimap),
+        "foreground_radius": int(foreground_radius),
+        "background_radius": int(background_radius),
+        "tile_size": int(tile_size),
+        "tile_overlap": int(tile_overlap),
     }

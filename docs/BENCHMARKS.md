@@ -24,7 +24,7 @@ Server keeps the active model resident, which is why host-driven repeat jobs are
 
 ## Processing ROI validation
 
-The current API 4 ROI path was verified on the Nuke development fixture:
+The ROI path was verified on the Nuke development fixture:
 
 | Item | Result |
 | --- | ---: |

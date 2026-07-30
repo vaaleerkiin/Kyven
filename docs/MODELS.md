@@ -31,6 +31,14 @@ then moved atomically into the model directory. Every entry records its source a
 
 ## Refine catalog
 
-`ViTMatte-S` and `ViTMatte-B` will use this same catalog and selection mechanism when Kyven
-Refine is implemented. Segment and Refine selections remain independent so disabled stages do
-not consume VRAM.
+| Model ID | Display name | Parameters | Download | VRAM guidance |
+| --- | --- | ---: | ---: | ---: |
+| `vitmatte-small-composition-1k` | ViTMatte Small | 25.8 M | 103 MB | 4 GB |
+
+The checkpoint is pinned to an official Hugging Face revision and verified with SHA-256 before it
+is moved into `models`. Its model card is Apache-2.0; the original ViTMatte implementation is MIT.
+Refine unloads a resident SAM model before loading ViTMatte, which keeps the 4–8 GB workflow viable.
+
+```text
+kyven models download vitmatte-small-composition-1k --models-dir models
+```

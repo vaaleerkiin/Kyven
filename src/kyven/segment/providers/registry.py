@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from kyven.errors import ErrorCode, KyvenError
-from kyven.segment.providers.base import SegmentationProvider
 
-ProviderFactory = Callable[[], SegmentationProvider]
+ProviderFactory = Callable[[], Any]
 
 
 class ProviderRegistry:
@@ -15,20 +15,20 @@ class ProviderRegistry:
 
     def __init__(self) -> None:
         self._factories: dict[str, ProviderFactory] = {}
-        self._instances: dict[str, SegmentationProvider] = {}
+        self._instances: dict[str, Any] = {}
 
     def register(self, provider_id: str, factory: ProviderFactory) -> None:
         """Register a provider factory under a stable identifier."""
 
         self._factories[provider_id] = factory
 
-    def get(self, provider_id: str) -> SegmentationProvider:
+    def get(self, provider_id: str) -> Any:
         """Construct a provider only when it is first selected."""
 
         if provider_id not in self._factories:
             raise KyvenError(
                 code=ErrorCode.PROVIDER_UNAVAILABLE,
-                message=f"Segmentation provider is not available: {provider_id}",
+                message=f"Model provider is not available: {provider_id}",
                 recoverable=True,
                 suggested_action="List installed providers and select an available one.",
             )
@@ -36,7 +36,7 @@ class ProviderRegistry:
             self._instances[provider_id] = self._factories[provider_id]()
         return self._instances[provider_id]
 
-    def activate(self, provider_id: str) -> SegmentationProvider:
+    def activate(self, provider_id: str) -> Any:
         """Keep only the selected provider resident before returning it."""
 
         for loaded_id in tuple(self._instances):

@@ -10,6 +10,9 @@ from PIL import Image
 from kyven.cancellation import CancellationToken
 from kyven.client import KyvenClient, KyvenClientError
 from kyven.models.catalog import ModelCatalog
+from kyven.refine.models import RefinementCapabilities, RefinePrediction, RefineRequest
+from kyven.refine.providers.base import RefinementProvider
+from kyven.refine.service import RefineService
 from kyven.segment.models import (
     ExecutionProfile,
     ProviderCapabilities,
@@ -67,6 +70,30 @@ class ServerSyntheticProvider(SegmentationProvider):
         )
 
 
+class ServerRefineProvider(RefinementProvider):
+    @property
+    def capabilities(self) -> RefinementCapabilities:
+        return RefinementCapabilities(
+            provider_id="vitmatte-small-composition-1k",
+            display_name="Synthetic Refine",
+            provider_version="1",
+            model_checksum="fixture",
+            license_name="CC0-1.0",
+            license_url="https://creativecommons.org/publicdomain/zero/1.0/",
+            supports_cpu=True,
+            supports_tiling=True,
+            minimum_vram_mb=0,
+        )
+
+    def predict(self, request: RefineRequest, cancellation: CancellationToken) -> RefinePrediction:
+        with Image.open(request.source) as image:
+            height, width = image.height, image.width
+        return RefinePrediction(np.full((height, width), 0.5, dtype=np.float32))
+
+    def unload(self) -> None:
+        return
+
+
 class ServerTests(unittest.TestCase):
     def test_authenticated_http_job_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -76,10 +103,15 @@ class ServerTests(unittest.TestCase):
             Image.new("RGB", (4, 4), "white").save(source)
             registry = ProviderRegistry()
             registry.register("sam2.1-small", ServerSyntheticProvider)
+            registry.register("vitmatte-small-composition-1k", ServerRefineProvider)
             token = "x" * 32
             server = KyvenServer(
                 ServerConfig(token=token, models_dir=root, port=0, available_vram_mb=8192),
-                JobManager(SegmentService(registry), VideoSegmentService(registry)),
+                JobManager(
+                    SegmentService(registry),
+                    VideoSegmentService(registry),
+                    RefineService(registry),
+                ),
                 registry,
                 ModelCatalog.builtin(),
             )
@@ -87,8 +119,8 @@ class ServerTests(unittest.TestCase):
             try:
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
                 self.assertEqual(client.health()["status"], "ok")
-                self.assertEqual(client.health()["api_version"], 4)
-                self.assertEqual(len(client.models()), 4)
+                self.assertEqual(client.health()["api_version"], 5)
+                self.assertEqual(len(client.models()), 5)
                 job_id = client.submit_segment(
                     {
                         "source": str(source.resolve()),
@@ -130,6 +162,22 @@ class ServerTests(unittest.TestCase):
                     self.assertEqual(video_mask.size, (4, 4))
                     self.assertEqual(video_mask.getpixel((0, 0)), 0)
                     self.assertEqual(video_mask.getpixel((1, 1)), 255)
+                refine_output = root / "refined.png"
+                refine_job_id = client.submit_refine(
+                    {
+                        "source": str(source.resolve()),
+                        "mask": str(output.resolve()),
+                        "output": str(refine_output.resolve()),
+                        "model_id": "vitmatte-small-composition-1k",
+                        "generate_trimap": True,
+                        "foreground_radius": 1,
+                        "background_radius": 1,
+                        "tile_size": 0,
+                    }
+                )
+                refine_result = client.wait(refine_job_id, timeout_seconds=5)
+                self.assertEqual(refine_result["status"], "succeeded")
+                self.assertTrue(refine_output.is_file())
                 with self.assertRaises(KyvenClientError):
                     KyvenClient(f"http://127.0.0.1:{server.port}", "y" * 32).health()
             finally:

@@ -18,7 +18,7 @@ from kyven.segment.providers.registry import ProviderRegistry
 from kyven.server.jobs import JobManager
 
 MAX_REQUEST_BYTES = 1024 * 1024
-SERVER_API_VERSION = 4
+SERVER_API_VERSION = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +158,16 @@ def _handler_type(
                     model_id = str(payload.get("model_id", "sam2.1-small"))
                     catalog.get(model_id)
                     job_id = manager.submit_video(payload)
+                    self._send(HTTPStatus.ACCEPTED, {"job_id": job_id, "status": "queued"})
+                    return
+                if path == "/v1/jobs/refine":
+                    model_id = str(payload.get("model_id", "vitmatte-small-composition-1k"))
+                    if catalog.get(model_id).task != "refine":
+                        raise KyvenError(
+                            code=ErrorCode.INVALID_REQUEST,
+                            message="The selected model is not a refinement model.",
+                        )
+                    job_id = manager.submit_refine(payload)
                     self._send(HTTPStatus.ACCEPTED, {"job_id": job_id, "status": "queued"})
                     return
                 if path.startswith("/v1/jobs/") and path.endswith("/cancel"):

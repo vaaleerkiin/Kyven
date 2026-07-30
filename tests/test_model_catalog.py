@@ -24,6 +24,22 @@ class ModelCatalogTests(unittest.TestCase):
         self.assertFalse(snapshot["installed"])
         self.assertFalse(snapshot["compatible"])
 
+    def test_refine_catalog_is_commercial_and_low_memory_capable(self) -> None:
+        models = ModelCatalog.builtin().list("refine")
+        self.assertEqual([model.model_id for model in models], ["vitmatte-small-composition-1k"])
+        self.assertTrue(models[0].commercial_use)
+        self.assertTrue(models[0].supports_cpu)
+        self.assertEqual(models[0].recommended_vram_mb, 4096)
+
+    def test_vitmatte_provider_is_lazy_and_declares_license(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            registry = ModelCatalog.builtin().registry(Path(directory), "cpu")
+            provider = registry.get("vitmatte-small-composition-1k")
+            capabilities = provider.capabilities
+        self.assertEqual(capabilities.license_name, "Apache-2.0")
+        self.assertTrue(capabilities.supports_cpu)
+        self.assertTrue(capabilities.supports_tiling)
+
 
 if __name__ == "__main__":
     unittest.main()

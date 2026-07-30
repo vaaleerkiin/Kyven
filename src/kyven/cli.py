@@ -12,6 +12,8 @@ from pathlib import Path
 
 from kyven.errors import ErrorCode, KyvenError
 from kyven.models.catalog import ModelCatalog
+from kyven.refine.models import RefineRequest
+from kyven.refine.service import RefineService
 from kyven.segment.models import (
     BoxPrompt,
     ExecutionProfile,
@@ -40,8 +42,8 @@ def _box(value: str) -> BoxPrompt:
         raise argparse.ArgumentTypeError("Box must be X0,Y0,X1,Y1.") from exc
 
 
-def _model_ids() -> tuple[str, ...]:
-    return tuple(spec.model_id for spec in ModelCatalog.builtin().list("segment"))
+def _model_ids(task: str | None = None) -> tuple[str, ...]:
+    return tuple(spec.model_id for spec in ModelCatalog.builtin().list(task))
 
 
 def _add_runtime_options(parser: argparse.ArgumentParser) -> None:
@@ -58,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     segment = subparsers.add_parser("segment", help="Create a matte from point or box prompts")
     segment.add_argument("--input", required=True, type=Path)
     segment.add_argument("--output", required=True, type=Path)
-    segment.add_argument("--model", default="sam2.1-small", choices=_model_ids())
+    segment.add_argument("--model", default="sam2.1-small", choices=_model_ids("segment"))
     _add_runtime_options(segment)
     segment.add_argument(
         "--profile",
@@ -68,6 +70,28 @@ def build_parser() -> argparse.ArgumentParser:
     segment.add_argument("--point", action="append", default=[], type=_point)
     segment.add_argument("--box", type=_box)
     segment.add_argument("--single-mask", action="store_true")
+
+    refine = subparsers.add_parser("refine", help="Refine a coarse mask or artist trimap")
+    refine.add_argument("--input", required=True, type=Path)
+    refine.add_argument("--mask", required=True, type=Path)
+    refine.add_argument("--output", required=True, type=Path)
+    refine.add_argument(
+        "--model",
+        default="vitmatte-small-composition-1k",
+        choices=_model_ids("refine"),
+    )
+    _add_runtime_options(refine)
+    refine.add_argument(
+        "--profile",
+        default=ExecutionProfile.BALANCED.value,
+        choices=tuple(profile.value for profile in ExecutionProfile),
+    )
+    refine.add_argument("--manual-trimap", action="store_true")
+    refine.add_argument("--foreground-radius", default=10, type=int)
+    refine.add_argument("--background-radius", default=15, type=int)
+    refine.add_argument("--roi", type=_box)
+    refine.add_argument("--tile-size", default=0, type=int)
+    refine.add_argument("--tile-overlap", default=64, type=int)
 
     serve = subparsers.add_parser("serve", help="Run the authenticated local inference server")
     _add_runtime_options(serve)
@@ -148,6 +172,33 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0
+        if args.command == "refine":
+            registry = catalog.registry(args.models_dir, args.device)
+            request = RefineRequest(
+                source=args.input,
+                mask=args.mask,
+                output=args.output,
+                provider_id=args.model,
+                profile=ExecutionProfile(args.profile),
+                roi=args.roi,
+                generate_trimap=not args.manual_trimap,
+                foreground_radius=args.foreground_radius,
+                background_radius=args.background_radius,
+                tile_size=args.tile_size,
+                tile_overlap=args.tile_overlap,
+            )
+            result = RefineService(registry).run(request)
+            print(
+                json.dumps(
+                    {
+                        "output": str(result.output),
+                        "cache_key": result.cache_key,
+                        "metadata": result.metadata,
+                    },
+                    indent=2,
+                )
+            )
+            return 0
         if args.command == "serve":
             from kyven.segment.video import VideoSegmentService
             from kyven.server.app import KyvenServer, ServerConfig
@@ -164,7 +215,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             server = KyvenServer(
                 config,
-                JobManager(SegmentService(registry), VideoSegmentService(registry)),
+                JobManager(
+                    SegmentService(registry),
+                    VideoSegmentService(registry),
+                    RefineService(registry),
+                ),
                 registry,
                 catalog,
             )

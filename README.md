@@ -2,14 +2,17 @@
 
 Local, modular AI masking for node-based compositing.
 
-Kyven currently provides a working `Kyven Segment` node for Foundry Nuke. It runs SAM 2 in a
-separate authenticated local process, keeps PyTorch and CUDA outside Nuke, and writes reusable
-matte files to a per-node cache. Fusion and DaVinci Resolve adapters are planned around the same
-host-independent server.
+Kyven currently provides working `Kyven Segment` and `Kyven Refine` nodes for Foundry Nuke. SAM 2
+and ViTMatte run in a separate authenticated local process, keeping PyTorch and CUDA outside Nuke
+and writing reusable matte files to per-node caches. Fusion and DaVinci Resolve adapters are planned
+around the same host-independent server.
 
 ## Current features
 
 - SAM 2.1 Tiny, Small, Base+, and Large model selection;
+- ViTMatte Small refinement from any connected mask or artist trimap;
+- automatic trimap generation with foreground erosion and background dilation;
+- Live current-frame processing in Segment and Refine;
 - positive and negative Viewer points;
 - optional Processing ROI that crops inference and restores a full-frame matte;
 - dependency-free enclosed-hole filling with a configurable maximum area;
@@ -51,10 +54,11 @@ The script installs everything beside the repository and does not modify Nuke or
 - `models` contains verified checkpoints;
 - `.runtime` contains the pip cache, server files, and generated Nuke cache.
 
-SAM 2.1 Small is downloaded by default. Another model can be selected explicitly:
+SAM 2.1 Small and ViTMatte Small are selected by default. Other combinations can be selected:
 
 The console asks which model or models to install. Enter one or several numbers,
-for example `1,2`. Press Enter to accept SAM 2.1 Small, the recommended default for an 8 GB GPU.
+for example `1,2,5`. Press Enter to install SAM 2.1 Small and ViTMatte Small, the recommended
+complete setup for an 8 GB GPU.
 For unattended installation, models can also be selected explicitly:
 
 ```powershell
@@ -62,6 +66,7 @@ For unattended installation, models can also be selected explicitly:
 .\install.ps1 -Model sam2.1-tiny,sam2.1-small
 .\install.ps1 -Model sam2.1-base-plus
 .\install.ps1 -Model sam2.1-large
+.\install.ps1 -Model vitmatte-small-composition-1k
 .\install.ps1 -Model none
 ```
 
@@ -91,6 +96,10 @@ Existing nodes can be migrated with
 4. Run `Process Current Frame`, an independent range, or SAM 2 video tracking.
 5. Choose the required output mode or create a native Read from the cached matte.
 
+For refinement, connect the original image to Refine input 0 and a coarse mask (for example the
+Segment output) to input 1. Keep `Generate Trimap from Mask` enabled, then use Live, process one
+frame, or render a range. Disable the option only when input 1 is already a black/gray/white trimap.
+
 See [Nuke workflow](docs/NUKE.md) for every control and [Troubleshooting](docs/TROUBLESHOOTING.md)
 for server, cache, CUDA, and logging help.
 
@@ -113,6 +122,7 @@ dependency licenses are recorded in [Third-party notices](THIRD_PARTY_NOTICES.md
 ## Documentation
 
 - [Nuke workflow and UI](docs/NUKE.md)
+- [Refine and trimap workflow](docs/REFINE.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Segment engine and CLI](docs/SEGMENT.md)
 - [Server API](docs/SERVER.md)
@@ -121,5 +131,5 @@ dependency licenses are recorded in [Third-party notices](THIRD_PARTY_NOTICES.md
 
 ## Project status
 
-Active pre-alpha implementation. The Nuke Segment vertical slice works; Refine/ViTMatte, Fusion,
+Active pre-alpha implementation. Segment and Refine/ViTMatte vertical slices work in Nuke; Fusion
 and DaVinci Resolve integrations are not implemented yet.

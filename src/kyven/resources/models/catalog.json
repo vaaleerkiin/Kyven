@@ -71,6 +71,24 @@
       "license_url": "https://github.com/facebookresearch/sam2/blob/main/LICENSE",
       "commercial_use": true,
       "redistribution": true
+    },
+    {
+      "model_id": "vitmatte-small-composition-1k",
+      "task": "refine",
+      "display_name": "ViTMatte Small (Composition-1k)",
+      "provider": "vitmatte",
+      "config": "vitmatte-small-config.json",
+      "filename": "vitmatte-small-composition-1k.safetensors",
+      "source": "https://huggingface.co/hustvl/vitmatte-small-composition-1k/resolve/6a58ad7646403c1df626fbd746900aec7361ea1d/model.safetensors",
+      "sha256": "bda9289db1bb6762d978b42d1c62ae3f34daf7497171a347a1d09657efd788cb",
+      "size_bytes": 103294572,
+      "parameters_millions": 25.8,
+      "recommended_vram_mb": 4096,
+      "supports_cpu": true,
+      "license": "Apache-2.0",
+      "license_url": "https://huggingface.co/hustvl/vitmatte-small-composition-1k",
+      "commercial_use": true,
+      "redistribution": true
     }
   ]
 }

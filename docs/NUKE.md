@@ -34,7 +34,13 @@ After updating Kyven, select an existing Segment node and choose
 `Kyven > Upgrade Selected Segment Node`. This preserves its UUID, cached matte, prompts, and input.
 A newly created node always receives the latest control order and styling.
 
-## Controls
+## Live mode
+
+Both Segment and Refine have `Live Current Frame`. When enabled, moving to another timeline frame
+exports and submits that frame automatically. Only one GPU job runs at a time; rapid scrubbing does
+not create concurrent model copies. Disable Live before rendering a range.
+
+## Segment controls
 
 ### Model and performance
 
@@ -117,7 +123,8 @@ D:/Kyven/.runtime/nuke_cache/<node-uuid>/
 ```
 
 Typical files include exported source frames, `matte.%04d.png`, video JPEGs, and
-`tracked_matte.%04d.png`.
+`tracked_matte.%04d.png`. Refine nodes add `refine_source`, `refine_mask`, and `refined_matte`
+sequences under their own UUID folder.
 
 - `Create Matte Read` creates a normal Nuke Read pointing to the current cached matte or sequence.
 - `Delete Node Cache` disconnects and removes only the current node's cache after confirmation.
@@ -126,7 +133,7 @@ Typical files include exported source frames, `matte.%04d.png`, video JPEGs, and
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:8768` and requires API 4. A
+The adapter starts an external hidden Python process on `127.0.0.1:18768` and requires API 5. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 
@@ -137,7 +144,8 @@ Server output for the latest launch is written to `.runtime/server.log`.
 - one object per Segment node;
 - no multi-key-frame tracking corrections yet;
 - range resumption and per-frame progress metadata are not complete;
-- Refine/ViTMatte is not implemented;
+- Refine is frame-independent and has no temporal propagation yet;
 - the Nuke host adapter has been developed on Windows and still needs broader production testing.
 
 See [Troubleshooting](TROUBLESHOOTING.md) when the server does not start or a cached frame is missing.
+See [Refine](REFINE.md) for trimap generation, tiling, and the two-input refinement workflow.

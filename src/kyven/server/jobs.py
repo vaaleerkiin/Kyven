@@ -13,6 +13,8 @@ from typing import Any
 
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
+from kyven.refine.models import RefineRequest
+from kyven.refine.service import RefineService
 from kyven.segment.models import (
     BoxPrompt,
     ExecutionProfile,
@@ -40,7 +42,7 @@ class JobStatus(str, Enum):
 @dataclass(slots=True)
 class JobRecord:
     job_id: str
-    request: SegmentRequest | VideoSegmentRequest
+    request: SegmentRequest | VideoSegmentRequest | RefineRequest
     cancellation: CancellationToken = field(default_factory=CancellationToken)
     status: JobStatus = JobStatus.QUEUED
     created_at: float = field(default_factory=time.time)
@@ -68,9 +70,11 @@ class JobManager:
         self,
         service: SegmentService,
         video_service: VideoSegmentService | None = None,
+        refine_service: RefineService | None = None,
     ) -> None:
         self._service = service
         self._video_service = video_service
+        self._refine_service = refine_service
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kyven-gpu")
         self._jobs: dict[str, JobRecord] = {}
         self._lock = threading.RLock()
@@ -195,6 +199,58 @@ class JobManager:
         self._executor.submit(self._run_video, record)
         return record.job_id
 
+    @staticmethod
+    def refine_request_from_payload(payload: dict[str, Any]) -> RefineRequest:
+        source = Path(str(payload["source"]))
+        mask = Path(str(payload["mask"]))
+        output = Path(str(payload["output"]))
+        if not source.is_absolute() or not mask.is_absolute() or not output.is_absolute():
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="Refinement job paths must be absolute.",
+            )
+        roi = JobManager._box_from_payload(payload, "roi")
+        profile = ExecutionProfile(str(payload.get("profile", "balanced")))
+        default_tile = {
+            ExecutionProfile.LOW_MEMORY: 512,
+            ExecutionProfile.BALANCED: 1024,
+            ExecutionProfile.QUALITY: 0,
+        }[profile]
+        return RefineRequest(
+            source=source,
+            mask=mask,
+            output=output,
+            provider_id=str(payload.get("model_id", "vitmatte-small-composition-1k")),
+            profile=profile,
+            roi=roi,
+            generate_trimap=bool(payload.get("generate_trimap", True)),
+            foreground_radius=int(payload.get("foreground_radius", 10)),
+            background_radius=int(payload.get("background_radius", 15)),
+            tile_size=int(payload.get("tile_size", default_tile)),
+            tile_overlap=int(payload.get("tile_overlap", 64)),
+        )
+
+    def submit_refine(self, payload: dict[str, Any]) -> str:
+        if self._refine_service is None:
+            raise KyvenError(
+                code=ErrorCode.PROVIDER_UNAVAILABLE,
+                message="Refinement service is unavailable.",
+            )
+        try:
+            request = self.refine_request_from_payload(payload)
+            request.validate()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="The refinement job payload is invalid.",
+                technical_detail=str(exc),
+            ) from exc
+        record = JobRecord(job_id=uuid.uuid4().hex, request=request)
+        with self._lock:
+            self._jobs[record.job_id] = record
+        self._executor.submit(self._run_refine, record)
+        return record.job_id
+
     def _run(self, record: JobRecord) -> None:
         with self._lock:
             if record.cancellation.is_cancelled:
@@ -279,6 +335,48 @@ class JobManager:
                     technical_detail=str(exc),
                     recoverable=True,
                     suggested_action="Inspect the server log and retry with a shorter range.",
+                ).to_dict()
+        finally:
+            with self._lock:
+                record.finished_at = time.time()
+
+    def _run_refine(self, record: JobRecord) -> None:
+        with self._lock:
+            if record.cancellation.is_cancelled:
+                record.status = JobStatus.CANCELLED
+                record.finished_at = time.time()
+                return
+            record.status = JobStatus.RUNNING
+            record.started_at = time.time()
+        try:
+            if self._refine_service is None or not isinstance(record.request, RefineRequest):
+                raise KyvenError(
+                    code=ErrorCode.PROVIDER_UNAVAILABLE,
+                    message="Refinement service is unavailable.",
+                )
+            result = self._refine_service.run(record.request, record.cancellation)
+            with self._lock:
+                record.status = JobStatus.SUCCEEDED
+                record.result = {
+                    "output": str(result.output),
+                    "cache_key": result.cache_key,
+                    "metadata": result.metadata,
+                }
+        except KyvenError as exc:
+            with self._lock:
+                record.status = (
+                    JobStatus.CANCELLED if exc.code is ErrorCode.CANCELLED else JobStatus.FAILED
+                )
+                record.error = exc.to_dict()
+        except Exception as exc:  # noqa: BLE001
+            with self._lock:
+                record.status = JobStatus.FAILED
+                record.error = KyvenError(
+                    code=ErrorCode.SERVER_ERROR,
+                    message="The Kyven refinement worker failed unexpectedly.",
+                    technical_detail=str(exc),
+                    recoverable=True,
+                    suggested_action="Inspect the server log and retry with Low Memory.",
                 ).to_dict()
         finally:
             with self._lock:

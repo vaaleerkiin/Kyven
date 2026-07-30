@@ -17,11 +17,33 @@ from kyven_nuke.node import (
     _prompt_defaults,
     _section_markup,
 )
-from kyven_nuke.payload import segment_payload, segment_video_payload
+from kyven_nuke.payload import refine_payload, segment_payload, segment_video_payload
 from kyven_nuke.runtime import _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_refine_payload_translates_roi_and_trimap_controls(self) -> None:
+        payload = refine_payload(
+            source="D:/source.png",
+            mask="D:/mask.png",
+            output="D:/alpha.png",
+            model_index=0,
+            profile="low_memory",
+            image_height=1080,
+            roi_enabled=True,
+            roi=(10, 20, 300, 400),
+            generate_trimap=True,
+            foreground_radius=8,
+            background_radius=12,
+            tile_size=512,
+            tile_overlap=64,
+        )
+        self.assertEqual(payload["model_id"], "vitmatte-small-composition-1k")
+        self.assertEqual(payload["roi"]["y0"], 680.0)
+        self.assertEqual(payload["foreground_radius"], 8)
+        self.assertTrue(payload["generate_trimap"])
+        self.assertEqual(payload["tile_size"], 512)
+
     def test_section_markup_adds_compact_spacing_and_title(self) -> None:
         markup = _section_markup("OUTPUT")
 
@@ -101,6 +123,7 @@ class NukePayloadTests(unittest.TestCase):
         environment = _server_environment(
             {
                 "PATH": "C:/Program Files/Nuke16.0v4;keep",
+                "Path": "duplicate-that-must-not-survive",
                 "SystemRoot": "C:/Windows",
                 "PYTHONHOME": "Nuke",
                 "PYTHONPATH": "Nuke/python",
@@ -118,6 +141,7 @@ class NukePayloadTests(unittest.TestCase):
         self.assertNotIn("PYTHONPATH", environment)
         self.assertNotIn("QT_PLUGIN_PATH", environment)
         self.assertNotIn("TCL_LIBRARY", environment)
+        self.assertNotIn("Path", environment)
         self.assertEqual(environment["PYTHONNOUSERSITE"], "1")
 
     def test_nuke_file_paths_use_forward_slashes(self) -> None:

@@ -94,6 +94,20 @@ def prompt_knob_changed() -> None:
         "fill_holes",
     }:
         sync_prompt_visibility(nuke.thisNode())
+    node = nuke.thisNode()
+    if "kyven_live_frame" in node.knobs() and nuke.thisKnob().name() not in {
+        "kyven_status",
+        "kyven_job_id",
+        "kyven_live_frame",
+        "kyven_busy",
+    }:
+        node["kyven_live_frame"].setValue(-2147483647)
+
+
+def _set_busy(node_name: str, busy: bool) -> None:
+    node = _nuke().toNode(node_name)
+    if node is not None and "kyven_busy" in node.knobs():
+        node["kyven_busy"].setValue(busy)
 
 
 def add_point(kind: str) -> None:
@@ -227,6 +241,8 @@ def _submit_and_wait(node_name: str, payload: dict[str, Any]) -> None:
         nuke.executeInMainThread(_apply_result, args=(node_name, job))
     except Exception as exc:  # noqa: BLE001 - background boundary must report to the host UI
         nuke.executeInMainThread(_set_status, args=(node_name, f"Failed: {exc}"))
+    finally:
+        nuke.executeInMainThread(_set_busy, args=(node_name, False))
 
 
 def _submit_video_and_wait(node_name: str, payload: dict[str, Any]) -> None:
@@ -243,6 +259,8 @@ def _submit_video_and_wait(node_name: str, payload: dict[str, Any]) -> None:
         nuke.executeInMainThread(_apply_video_result, args=(node_name, job))
     except Exception as exc:  # noqa: BLE001 - background boundary must report to the host UI
         nuke.executeInMainThread(_set_status, args=(node_name, f"Propagation failed: {exc}"))
+    finally:
+        nuke.executeInMainThread(_set_busy, args=(node_name, False))
 
 
 def _range_cancelled(node_name: str) -> bool:
@@ -295,6 +313,7 @@ def _submit_range_and_wait(
     finally:
         with _range_cancel_lock:
             _range_cancellations.discard(node_name)
+        nuke.executeInMainThread(_set_busy, args=(node_name, False))
 
 
 def _set_job_id(node_name: str, job_id: str) -> None:
@@ -500,15 +519,20 @@ def reset_prompts_to_input() -> None:
         nuke.message("Connect the Kyven Segment Source input first.")
 
 
-def process_current_frame() -> None:
+def process_current_frame(node: Any | None = None, live: bool = False) -> None:
     nuke = _nuke()
-    node = nuke.thisNode()
+    node = node or nuke.thisNode()
     source = node.input(0)
     if source is None:
-        nuke.message("Kyven Segment requires a Source input.")
+        if not live:
+            nuke.message("Kyven Segment requires a Source input.")
         return
     if not _has_prompts(node):
-        nuke.message("Enable at least one positive or negative point.")
+        if not live:
+            nuke.message("Enable at least one positive or negative point.")
+        return
+
+    if "kyven_busy" in node.knobs() and bool(node["kyven_busy"].value()):
         return
 
     frame = int(nuke.frame())
@@ -528,6 +552,10 @@ def process_current_frame() -> None:
         node["kyven_status"].setValue("Source export failed: PNG was not created.")
         return
     node["kyven_status"].setValue("Starting Kyven server...")
+    if "kyven_busy" in node.knobs():
+        node["kyven_busy"].setValue(True)
+    if "kyven_live_frame" in node.knobs():
+        node["kyven_live_frame"].setValue(frame)
     threading.Thread(
         target=_submit_and_wait,
         args=(node.fullName(), payload),
@@ -545,6 +573,8 @@ def process_frame_range() -> None:
         return
     if not _has_prompts(node):
         nuke.message("Enable at least one positive or negative point.")
+        return
+    if "kyven_busy" in node.knobs() and bool(node["kyven_busy"].value()):
         return
     first = int(node["range_first"].value())
     last = int(node["range_last"].value())
@@ -577,6 +607,8 @@ def process_frame_range() -> None:
     with _range_cancel_lock:
         _range_cancellations.discard(node_name)
     node["kyven_status"].setValue(f"Starting range {first}-{last}...")
+    if "kyven_busy" in node.knobs():
+        node["kyven_busy"].setValue(True)
     threading.Thread(
         target=_submit_range_and_wait,
         args=(node_name, payloads, _nuke_file_path(matte_pattern), first, last),
@@ -602,6 +634,8 @@ def propagate_video(direction: str) -> None:
         return
     if not _has_prompts(node):
         nuke.message("Enable at least one point on the key frame.")
+        return
+    if "kyven_busy" in node.knobs() and bool(node["kyven_busy"].value()):
         return
     if direction not in {"forward", "backward", "both"}:
         nuke.message(f"Unsupported SAM 2 propagation direction: {direction}")
@@ -654,6 +688,8 @@ def propagate_video(direction: str) -> None:
         ),
     )
     node["kyven_status"].setValue("Starting SAM 2 video predictor...")
+    if "kyven_busy" in node.knobs():
+        node["kyven_busy"].setValue(True)
     threading.Thread(
         target=_submit_video_and_wait,
         args=(node.fullName(), payload),
@@ -690,7 +726,7 @@ def refresh_models() -> None:
 
     def refresh() -> None:
         try:
-            models = ensure_server().models()
+            models = [model for model in ensure_server().models() if model.get("task") == "segment"]
             labels = []
             for model in models:
                 suffix = "installed" if model["installed"] else "not installed"
@@ -800,7 +836,7 @@ def _restyle_node_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 4</font>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 5</font>'
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
@@ -939,6 +975,34 @@ def _ensure_postprocess_controls(node: Any) -> None:
     )
 
 
+def _ensure_live_controls(node: Any, kind: str = "segment") -> None:
+    """Add Live state while keeping old nodes upgradeable."""
+    nuke = _nuke()
+    if "live_mode" not in node.knobs():
+        live = nuke.Boolean_Knob("live_mode", "Live Current Frame")
+        live.setValue(False)
+        _add_knob(nuke, node, live)
+    for name, value in (
+        ("kyven_kind", kind),
+        ("kyven_live_frame", "-2147483647"),
+        ("kyven_busy", "0"),
+    ):
+        if name in node.knobs():
+            continue
+        if name == "kyven_busy":
+            knob = nuke.Boolean_Knob(name, name)
+            knob.setValue(False)
+        elif name == "kyven_live_frame":
+            knob = nuke.Int_Knob(name, name)
+            knob.setValue(int(value))
+        else:
+            knob = nuke.String_Knob(name, name)
+            knob.setValue(value)
+        knob.setVisible(False)
+        knob.clearFlag(nuke.STARTLINE)
+        node.addKnob(knob)
+
+
 def _upgrade_roi_controls(node: Any) -> None:
     """Update legacy prompt-box labels to the Processing ROI terminology."""
     if "box_section" in node.knobs():
@@ -963,6 +1027,7 @@ def upgrade_selected_segment_node() -> None:
         _ensure_output_controls(node)
         _ensure_cache_controls(node)
         _ensure_postprocess_controls(node)
+        _ensure_live_controls(node)
         _upgrade_roi_controls(node)
         _restyle_node_ui(node)
         sync_prompt_visibility(node)
@@ -988,7 +1053,7 @@ def create_segment_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 4</font>',
+            '<font color="#91a3b0">SAM 2 | Local inference | API 5</font>',
         ),
     )
 
@@ -1099,6 +1164,16 @@ def create_segment_node() -> Any:
     _ensure_postprocess_controls(node)
 
     _add_section(nuke, node, "processing_section", "INDEPENDENT FRAME PROCESSING")
+    _ensure_live_controls(node)
+    _add_knob(
+        nuke,
+        node,
+        nuke.Text_Knob(
+            "live_help",
+            "",
+            "When enabled, changing the timeline processes the current frame asynchronously.",
+        ),
+    )
     _add_knob(
         nuke,
         node,

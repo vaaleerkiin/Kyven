@@ -22,6 +22,7 @@ it must not be committed or logged.
 | `GET` | `/v1/models` | Model choices, installation state, and hardware guidance |
 | `POST` | `/v1/jobs/segment` | Queue a segmentation job |
 | `POST` | `/v1/jobs/segment-video` | Queue SAM 2 temporal mask propagation |
+| `POST` | `/v1/jobs/refine` | Queue ViTMatte alpha refinement |
 | `GET` | `/v1/jobs/{id}` | Read status or result |
 | `POST` | `/v1/jobs/{id}/cancel` | Request cooperative cancellation |
 | `POST` | `/v1/providers/unload-all` | Safely unload models after active work |
@@ -47,7 +48,9 @@ Video jobs use the same prompt and ROI fields plus `frames_dir`, `output_pattern
 key frame, direction, and CPU-offload options. ROI output is always reconstructed to the original
 frame dimensions before the job succeeds.
 
-API version 4 accepts an optional `roi` rectangle separately from the model's `box` prompt and
-adds dependency-free enclosed-hole post-processing. The
+Refine jobs contain absolute `source`, `mask`, and `output` paths, optional `roi`, trimap generation
+settings, and tiling controls. Outside an enabled Refine ROI, the coarse mask is preserved.
+
+API version 5 adds refinement while retaining the optional Segment ROI and enclosed-hole cleanup. The
 server crops inference inputs and restores returned masks to the original dimensions. The Nuke
-adapter uses versioned port `8768` to avoid connecting to stale API processes during development.
+adapter uses versioned port `18768` to avoid connecting to stale API processes during development.
