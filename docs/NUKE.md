@@ -1,81 +1,119 @@
 # Kyven Segment for Nuke
 
-The initial adapter is under `hosts/nuke`. It creates a `KyvenSegment` Group node with:
+The Nuke adapter is a Group node that exports frames to the local Kyven Server and reads cached
+PNG mattes back into the graph. Nuke remains responsive while server inference runs.
 
-- Source input with selectable Matte, Source + Alpha, Cutout, and Source (Bypass) outputs;
-- selectable SAM 2.1 Tiny, Small, Base+, or Large model;
-- Low Memory, Balanced, and Quality execution profiles;
-- dynamically addable/removable positive and negative point controls;
-- independent show/use toggles that hide disabled Viewer handles;
-- an optional input-sized Processing ROI and input-centered initial points;
-- source-inherited output format and canvas, including before the first matte is generated;
-- Process Current Frame, Process Frame Range, and Cancel actions;
-- in-process source export followed by asynchronous inference;
-- asynchronous server submission and result polling;
-- model installation and VRAM warnings from the server catalog.
+## Install
 
-The adapter imports no PyTorch or SAM code. It starts Kyven Server as a hidden external process
-when required.
-
-## Development installation
-
-Add the following to the user's existing `.nuke/init.py`, using the actual repository path:
+Add the repository host folder to the user's existing `.nuke/init.py`:
 
 ```python
 import nuke
+
 nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 ```
 
-Restart Nuke and choose `Kyven > Segment` from the Nodes menu. Set `KYVEN_ROOT` if the checkout
-is not at `D:/Kyven`.
+Set `KYVEN_ROOT` before starting Nuke if the repository is not located at `D:/Kyven`. Restart Nuke
+and choose `Kyven > Segment` from the Nodes menu.
 
-## Frame ranges
+After updating Kyven, select an existing Segment node and choose
+`Kyven > Upgrade Selected Segment Node`. This preserves its UUID, cached matte, prompts, and input.
+A newly created node always receives the latest control order and styling.
 
-`Process Frame Range` exports the selected range and generates a lossless PNG matte sequence.
-The same static points and Processing ROI are applied to every frame. The
-resulting sequence is connected inside the Group as `matte.%04d.png`.
+## Controls
 
-## Processing ROI
+### Model and performance
 
-`Enable Processing ROI` treats the Viewer rectangle as a crop, not as a SAM box prompt. Kyven
-crops the source before inference, translates point coordinates into the crop, and expands the
-returned mask back onto a full-resolution black canvas. For video tracking, every temporary JPEG
-is cropped consistently and every final PNG is restored to the original frame dimensions.
+- `Model` selects a SAM 2.1 checkpoint.
+- `Memory Profile` records Low Memory, Balanced, or Quality intent.
+- `Refresh Models` updates installation and VRAM advice from the server.
 
-A positive point must be inside the ROI. Negative points outside it are ignored because those
-pixels never reach the model. SAM 2 internally resizes inputs to its fixed encoder resolution, so
-ROI mainly isolates the search area and gives the selected region more effective detail; it does
-not guarantee a proportional reduction in GPU time or VRAM.
+### Points
 
-## SAM 2 video tracking
+Positive points identify the object to keep. Negative points remove unwanted areas. Each point type
+has an independent enable toggle, so its Viewer handles and payload can be hidden without deleting
+the saved coordinates. Up to 32 controls are available per type.
 
-The `SAM 2 VIDEO TRACKING` section uses temporal memory instead of segmenting every frame
-independently:
+### Processing ROI
 
-1. Move to the frame where the object is easiest to identify.
-2. Place points, optionally limit the Processing ROI, and click `Set Key Frame to Current`.
-3. Set `Range First` and `Range Last`.
-4. Choose `Propagate Forward`, `Propagate Backward`, or `Propagate Both Directions`.
+The ROI is an inference crop, not a SAM box prompt:
 
-Nuke exports a temporary high-quality JPEG sequence for the video predictor. Final masks remain
-lossless PNG files. Frames and inference state are offloaded to system RAM so SAM 2.1 Small is
-practical on an 8 GB GPU. This version starts a fresh tracking session for each run; correction
-on additional key frames is follow-up work.
+1. Nuke exports the full source frame.
+2. Kyven crops it to the enabled ROI.
+3. Point coordinates are translated into crop space.
+4. SAM receives only the cropped pixels.
+5. Kyven places the returned mask on a full-size black canvas.
+
+The final matte always has the source dimensions. A positive point must be inside the ROI;
+negative points outside it are ignored. `Reset Points + ROI to Input` restores the ROI to the input
+format and returns active points near its center.
+
+SAM 2 resizes inputs to a fixed encoder resolution. ROI improves focus and effective detail but
+does not guarantee proportional GPU-time or VRAM savings.
+
+### Processing modes
+
+`Process Current Frame` creates one matte for the playhead frame.
+
+`Process Range (Independent)` applies the same points and ROI independently to every frame between
+`Range First` and `Range Last`. Use this when temporal consistency is not required or tracking is
+not appropriate.
+
+`Cancel` requests cooperative cancellation of the active job or range.
+
+### SAM 2 video tracking
+
+1. Move to a frame where the object is easy to identify.
+2. Place points and optionally limit the Processing ROI.
+3. Click `Set Current as Key`.
+4. Set `Range First` and `Range Last`.
+5. Choose `Forward`, `Backward`, or `Both Directions`.
+
+Nuke exports high-quality temporary JPEG frames. Kyven creates one fresh SAM 2 tracking state,
+offloads frames and state to system RAM, propagates from the key frame, and writes lossless full-size
+PNG mattes. Corrections from multiple key frames are not implemented yet.
 
 ## Output modes
 
-- `Matte` puts the mask in RGB and alpha;
-- `Source + Alpha` preserves the original RGB and replaces alpha with the mask;
-- `Cutout` premultiplies the source by the generated alpha;
-- `Source (Bypass)` returns the unchanged input.
+| Mode | Result |
+| --- | --- |
+| `Matte` | Mask in RGB and alpha |
+| `Source + Alpha` | Original RGB with the mask replacing alpha |
+| `Cutout` | Source premultiplied by the generated alpha |
+| `Source (Bypass)` | Unchanged input |
 
-These modes are native Nuke operations and do not rerun SAM. For an existing Kyven Segment node,
-select it and choose `Kyven > Upgrade Selected Segment Node`; the cached matte is preserved.
+Changing output mode uses native Nuke nodes and never reruns SAM.
 
-## Cache controls
+## Cache
 
-Each Segment node displays its own cache folder. `Create Read from Current Matte` creates a regular
-Nuke Read node pointing at the current single-frame or sequence matte. `Delete This Node Cache`
-asks for confirmation, disconnects the internal cached matte, and removes only that Segment node's
-cache folder. `Delete All Kyven Cache` clears every Segment cache under `.runtime/nuke_cache` but
-keeps downloaded models, the virtual environment, and server configuration.
+Each Segment node owns a UUID folder under:
+
+```text
+D:/Kyven/.runtime/nuke_cache/<node-uuid>/
+```
+
+Typical files include exported source frames, `matte.%04d.png`, video JPEGs, and
+`tracked_matte.%04d.png`.
+
+- `Create Matte Read` creates a normal Nuke Read pointing to the current cached matte or sequence.
+- `Delete Node Cache` disconnects and removes only the current node's cache after confirmation.
+- `Delete All Cache` removes `.runtime/nuke_cache` after confirmation. Models and server settings
+  are preserved.
+
+## Server behavior
+
+The adapter starts an external hidden Python process on `127.0.0.1:8767` and requires API 3. A
+random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
+revisions are asked to unload their models so they do not keep unnecessary VRAM.
+
+Server output for the latest launch is written to `.runtime/server.log`.
+
+## Current limitations
+
+- one object per Segment node;
+- no multi-key-frame tracking corrections yet;
+- range resumption and per-frame progress metadata are not complete;
+- Refine/ViTMatte is not implemented;
+- the Nuke host adapter has been developed on Windows and still needs broader production testing.
+
+See [Troubleshooting](TROUBLESHOOTING.md) when the server does not start or a cached frame is missing.

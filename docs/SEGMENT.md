@@ -1,7 +1,8 @@
 # Kyven Segment
 
-`Kyven Segment` creates a binary base matte from positive points, negative points, and an
-optional bounding box. It is the first host-independent Kyven vertical slice.
+`Kyven Segment` creates a binary base matte from positive points, negative points, and an optional
+model prompt box. Host adapters may also supply a separate Processing ROI that crops inference and
+is never sent to the model as a prompt.
 
 ## Current pipeline
 
@@ -54,12 +55,17 @@ kyven segment \
 
 Box prompts use `--box X0,Y0,X1,Y1`. Device selection is `auto`, `cuda`, or `cpu`.
 
+The local server API additionally accepts `roi: {x0, y0, x1, y1}`. `SegmentService` translates
+prompts into ROI coordinates, runs the provider on a temporary crop, and expands the mask back to
+the source dimensions. ROI participates in deterministic cache identity.
+
 On success the CLI prints structured JSON with the output path, selected-mask score,
 deterministic cache key, device, and provider metadata. On failure it prints a structured Kyven
 error suitable for display by a host adapter.
 
-## Next integration slice
+## Implemented host workflow
 
-The asynchronous server and initial Nuke adapter now exist. The next Segment work is production
-host testing, multi-point viewer interaction, frame-range processing, resumable cache metadata,
-and explicit out-of-memory retry profiles.
+The Nuke adapter supports multiple Viewer points, Processing ROI, independent ranges, SAM 2 video
+tracking, four output modes, native Read creation, and cache cleanup. Remaining Segment work
+includes multi-key-frame corrections, resumable per-frame metadata, explicit out-of-memory retry
+profiles, broader host testing, and Fusion/Resolve adapters.

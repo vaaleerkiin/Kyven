@@ -716,7 +716,61 @@ def _add_knob(nuke: Any, node: Any, knob: Any, *, start_line: bool = True) -> An
 
 
 def _add_section(nuke: Any, node: Any, name: str, title: str) -> None:
-    _add_knob(nuke, node, nuke.Text_Knob(name, "", f"<b>{title}</b>"))
+    _add_knob(nuke, node, nuke.Text_Knob(name, "", _section_markup(title)))
+
+
+def _section_markup(title: str) -> str:
+    return f'<br><font color="#9fc7e8"><b>{title}</b></font>'
+
+
+def _restyle_node_ui(node: Any) -> None:
+    """Apply current labels and section styling to new or upgraded nodes."""
+    sections = {
+        "model_section": "MODEL AND PERFORMANCE",
+        "positive_section": "POSITIVE POINTS / OBJECT TO KEEP",
+        "negative_section": "NEGATIVE POINTS / AREAS TO REMOVE",
+        "box_section": "PROCESSING ROI / MODEL CROP",
+        "processing_section": "INDEPENDENT FRAME PROCESSING",
+        "tracking_section": "SAM 2 VIDEO TRACKING",
+        "output_section": "OUTPUT",
+        "cache_section": "CACHE",
+        "status_section": "STATUS",
+    }
+    for name, title in sections.items():
+        if name in node.knobs():
+            node[name].setValue(_section_markup(title))
+    labels = {
+        "refresh_models": "Refresh Models",
+        "add_positive_point": "+ Positive Point",
+        "remove_positive_point": "- Last Positive",
+        "add_negative_point": "+ Negative Point",
+        "remove_negative_point": "- Last Negative",
+        "reset_prompts": "Reset Points + ROI to Input",
+        "process_range": "Process Range (Independent)",
+        "cancel": "Cancel",
+        "set_key_frame": "Set Current as Key",
+        "propagate_forward": "Forward",
+        "propagate_backward": "Backward",
+        "propagate_both": "Both Directions",
+        "create_matte_read": "Create Matte Read",
+        "delete_node_cache": "Delete Node Cache",
+        "delete_all_cache": "Delete All Cache",
+    }
+    for name, label in labels.items():
+        if name in node.knobs():
+            node[name].setLabel(label)
+    if "kyven_title" in node.knobs():
+        node["kyven_title"].setValue(
+            '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 3</font>'
+        )
+    if "output_help" in node.knobs():
+        node["output_help"].setValue(
+            "<b>Matte</b>: mask in RGB + alpha &nbsp; | &nbsp; "
+            "<b>Source + Alpha</b>: original RGB, mask in alpha<br>"
+            "<b>Cutout</b>: premultiplied foreground &nbsp; | &nbsp; "
+            "<b>Source</b>: bypass"
+        )
 
 
 def _ensure_output_controls(node: Any) -> None:
@@ -732,8 +786,10 @@ def _ensure_output_controls(node: Any) -> None:
         help_text = nuke.Text_Knob(
             "output_help",
             "",
-            "Matte = mask | Source + Alpha = original RGB with mask in alpha | "
-            "Cutout = premultiplied foreground | Source = bypass",
+            "<b>Matte</b>: mask in RGB + alpha &nbsp; | &nbsp; "
+            "<b>Source + Alpha</b>: original RGB, mask in alpha<br>"
+            "<b>Cutout</b>: premultiplied foreground &nbsp; | &nbsp; "
+            "<b>Source</b>: bypass",
         )
         _add_knob(nuke, node, help_text)
 
@@ -823,7 +879,7 @@ def _ensure_cache_controls(node: Any) -> None:
 def _upgrade_roi_controls(node: Any) -> None:
     """Update legacy prompt-box labels to the Processing ROI terminology."""
     if "box_section" in node.knobs():
-        node["box_section"].setValue("<b>PROCESSING ROI (model crop)</b>")
+        node["box_section"].setValue(_section_markup("PROCESSING ROI / MODEL CROP"))
     if "box_enabled" in node.knobs():
         node["box_enabled"].setLabel("Enable Processing ROI")
     if "prompt_box" in node.knobs():
@@ -844,6 +900,7 @@ def upgrade_selected_segment_node() -> None:
         _ensure_output_controls(node)
         _ensure_cache_controls(node)
         _upgrade_roi_controls(node)
+        _restyle_node_ui(node)
         sync_prompt_visibility(node)
     except Exception as exc:  # noqa: BLE001 - host boundary must report useful context
         nuke.message(f"Could not upgrade the selected node:\n{exc}")
@@ -866,8 +923,8 @@ def create_segment_node() -> Any:
         nuke.Text_Knob(
             "kyven_title",
             "",
-            "<font size=5><b>KYVEN SEGMENT</b></font><br>"
-            "<font color=#9aa7b2>Local AI masking | SAM 2</font>",
+            '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 3</font>',
         ),
     )
 
@@ -889,9 +946,10 @@ def create_segment_node() -> Any:
         node,
         nuke.PyScript_Knob(
             "refresh_models",
-            "Refresh Installed Models",
+            "Refresh Models",
             "kyven_nuke.node.refresh_models()",
         ),
+        start_line=False,
     )
 
     _add_section(nuke, node, "positive_section", "POSITIVE POINTS (object to keep)")
@@ -909,7 +967,7 @@ def create_segment_node() -> Any:
         node,
         nuke.PyScript_Knob(
             "add_positive_point",
-            "Add Positive Point",
+            "+ Positive Point",
             "kyven_nuke.node.add_point('positive')",
         ),
     )
@@ -918,7 +976,7 @@ def create_segment_node() -> Any:
         node,
         nuke.PyScript_Knob(
             "remove_positive_point",
-            "Remove Last Positive",
+            "- Last Positive",
             "kyven_nuke.node.remove_point('positive')",
         ),
         start_line=False,
@@ -938,7 +996,7 @@ def create_segment_node() -> Any:
         node,
         nuke.PyScript_Knob(
             "add_negative_point",
-            "Add Negative Point",
+            "+ Negative Point",
             "kyven_nuke.node.add_point('negative')",
         ),
     )
@@ -947,13 +1005,13 @@ def create_segment_node() -> Any:
         node,
         nuke.PyScript_Knob(
             "remove_negative_point",
-            "Remove Last Negative",
+            "- Last Negative",
             "kyven_nuke.node.remove_point('negative')",
         ),
         start_line=False,
     )
 
-    _add_section(nuke, node, "box_section", "PROCESSING ROI (model crop)")
+    _add_section(nuke, node, "box_section", "PROCESSING ROI / MODEL CROP")
     _add_knob(nuke, node, nuke.Boolean_Knob("box_enabled", "Enable Processing ROI"))
     _add_knob(nuke, node, nuke.BBox_Knob("prompt_box", "Processing ROI"))
     _add_knob(
@@ -961,8 +1019,17 @@ def create_segment_node() -> Any:
         node,
         nuke.PyScript_Knob(
             "reset_prompts",
-            "Reset Points and ROI to Input Size",
+            "Reset Points + ROI to Input",
             "kyven_nuke.node.reset_prompts_to_input()",
+        ),
+    )
+    _add_knob(
+        nuke,
+        node,
+        nuke.Text_Knob(
+            "roi_help",
+            "",
+            "Crops frames before SAM; points are translated and the matte returns at full size.",
         ),
     )
 
@@ -976,25 +1043,26 @@ def create_segment_node() -> Any:
             "kyven_nuke.node.process_current_frame()",
         ),
     )
+    _add_knob(
+        nuke,
+        node,
+        nuke.PyScript_Knob("cancel", "Cancel", "kyven_nuke.node.cancel_current_job()"),
+        start_line=False,
+    )
     first = nuke.Int_Knob("range_first", "Range First")
     first.setValue(int(nuke.root().firstFrame()))
     _add_knob(nuke, node, first)
     last = nuke.Int_Knob("range_last", "Range Last")
     last.setValue(int(nuke.root().lastFrame()))
-    _add_knob(nuke, node, last)
+    _add_knob(nuke, node, last, start_line=False)
     _add_knob(
         nuke,
         node,
         nuke.PyScript_Knob(
             "process_range",
-            "Process Range as Matte Sequence",
+            "Process Range (Independent)",
             "kyven_nuke.node.process_frame_range()",
         ),
-    )
-    _add_knob(
-        nuke,
-        node,
-        nuke.PyScript_Knob("cancel", "Cancel Processing", "kyven_nuke.node.cancel_current_job()"),
     )
 
     _add_section(nuke, node, "tracking_section", "SAM 2 VIDEO TRACKING")
@@ -1006,16 +1074,17 @@ def create_segment_node() -> Any:
         node,
         nuke.PyScript_Knob(
             "set_key_frame",
-            "Set Key Frame to Current",
+            "Set Current as Key",
             "kyven_nuke.node.set_key_frame_to_current()",
         ),
+        start_line=False,
     )
     _add_knob(
         nuke,
         node,
         nuke.PyScript_Knob(
             "propagate_forward",
-            "Propagate Forward",
+            "Forward",
             "kyven_nuke.node.propagate_video('forward')",
         ),
     )
@@ -1024,7 +1093,7 @@ def create_segment_node() -> Any:
         node,
         nuke.PyScript_Knob(
             "propagate_backward",
-            "Propagate Backward",
+            "Backward",
             "kyven_nuke.node.propagate_video('backward')",
         ),
         start_line=False,
@@ -1034,9 +1103,10 @@ def create_segment_node() -> Any:
         node,
         nuke.PyScript_Knob(
             "propagate_both",
-            "Propagate Both Directions",
+            "Both Directions",
             "kyven_nuke.node.propagate_video('both')",
         ),
+        start_line=False,
     )
     _add_section(nuke, node, "output_section", "OUTPUT")
     _add_knob(
@@ -1050,8 +1120,10 @@ def create_segment_node() -> Any:
         nuke.Text_Knob(
             "output_help",
             "",
-            "Matte = mask | Source + Alpha = original RGB with mask in alpha | "
-            "Cutout = premultiplied foreground | Source = bypass",
+            "<b>Matte</b>: mask in RGB + alpha &nbsp; | &nbsp; "
+            "<b>Source + Alpha</b>: original RGB, mask in alpha<br>"
+            "<b>Cutout</b>: premultiplied foreground &nbsp; | &nbsp; "
+            "<b>Source</b>: bypass",
         ),
     )
     internal_id = nuke.String_Knob("kyven_uuid", "UUID")
@@ -1095,6 +1167,7 @@ def create_segment_node() -> Any:
     finally:
         node.end()
     _ensure_output_controls(node)
+    _restyle_node_ui(node)
     _reset_prompts(node)
     sync_prompt_visibility(node)
     return node

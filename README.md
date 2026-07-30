@@ -1,90 +1,105 @@
 # Kyven
 
-**Local, modular AI masking for professional compositing.**
+Local, modular AI masking for node-based compositing.
 
-Kyven is an open-source masking and matte-refinement framework designed for node-based compositing applications. Its first host integration targets Foundry Nuke, with a host-independent backend designed to support Blackmagic Fusion and DaVinci Resolve later without rewriting the inference system.
+Kyven currently provides a working `Kyven Segment` node for Foundry Nuke. It runs SAM 2 in a
+separate authenticated local process, keeps PyTorch and CUDA outside Nuke, and writes reusable
+matte files to a per-node cache. Fusion and DaVinci Resolve adapters are planned around the same
+host-independent server.
 
-Kyven is not intended to be a monolithic “one-click roto” black box. Every stage can be used independently, inspected, cached, corrected with native compositing nodes, and continued later.
+## Current features
+
+- SAM 2.1 Tiny, Small, Base+, and Large model selection;
+- positive and negative Viewer points;
+- optional Processing ROI that crops inference and restores a full-frame matte;
+- current-frame and independent frame-range segmentation;
+- SAM 2 video propagation forward, backward, or in both directions;
+- Matte, Source + Alpha, Cutout, and Source (Bypass) outputs;
+- per-node cache paths, native Read creation, and cache cleanup;
+- asynchronous jobs, cancellation, and automatic local-server startup;
+- API version checks, bearer-token authentication, and loopback-only networking.
+
+## Architecture
 
 ```text
-Source
-  ↓
-Kyven Segment
-  ↓
-Native host corrections
-  ↓
-Kyven Refine
-  ↓
-Final matte
+Nuke Group node
+      |
+      | authenticated HTTP on 127.0.0.1
+      v
+Kyven Server -> job queue -> provider registry -> SAM 2
+      |
+      v
+Atomic grayscale PNG matte cache
 ```
 
-## Core principles
+The Nuke process never imports PyTorch or SAM. Only one selected segmentation model is kept
+resident, and older local server revisions are asked to unload before a new revision starts.
 
-1. **Native compositing workflow**  
-   AI stages must fit into the node graph rather than replace it.
+## Development setup on Windows
 
-2. **Low hardware barrier**  
-   A supported baseline configuration is **4 GB VRAM and 16 GB system RAM**. Kyven may run more slowly on this tier, but core workflows must remain usable.
+Python 3.10 or newer is required. The tested NVIDIA runtime uses CUDA 12.8 wheels:
 
-3. **Scales upward**  
-   The same project must scale from a laptop to a high-end workstation or studio processing service.
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements\runtime-cu128.txt
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
 
-4. **Local-first**  
-   Footage and masks remain on the artist’s machine unless the user explicitly configures a remote backend.
+Install a model from the trusted catalog:
 
-5. **Host-independent backend**  
-   Models, caching, scheduling and inference must not depend on Nuke, Fusion or Resolve.
+```powershell
+.\.venv\Scripts\kyven.exe models download sam2.1-small --models-dir models
+```
 
-6. **Replaceable models**  
-   Segmentation and refinement models are adapters, not permanent architectural dependencies.
+Add the repository host folder to the existing Nuke `init.py`:
 
-7. **No idle VRAM waste**  
-   Disabled modules must not load their models. Models must be unloadable without restarting the host application.
+```python
+import nuke
 
-## Planned modules
+nuke.pluginAddPath("D:/Kyven/hosts/nuke")
+```
 
-- `Kyven Segment` — prompt-based object segmentation
-- `Kyven Refine` — refinement of any externally supplied mask
-- `Kyven Propagate` — temporal mask propagation
-- `Kyven Cache` — cache inspection and management
-- `Kyven Manager` — batch processing, model residency and job control
+Restart Nuke and choose `Kyven > Segment`. Existing nodes can be migrated with
+`Kyven > Upgrade Selected Segment Node`.
 
-## Initial target
+## Typical Nuke workflow
 
-The first production milestone is a Nuke workflow with:
+1. Connect a Source to `KyvenSegment`.
+2. Place a positive point on the object and optional negative points on unwanted areas.
+3. Optionally enable and draw a Processing ROI around the useful area.
+4. Run `Process Current Frame`, an independent range, or SAM 2 video tracking.
+5. Choose the required output mode or create a native Read from the cached matte.
 
-- one object per node
-- source image plus optional mask input
-- segmentation-only mode
-- refinement-only mode
-- full pipeline mode
-- point and box prompts
-- disk cache
-- low-memory inference
-- cancelable background jobs
-- no UI blocking during inference
+See [Nuke workflow](docs/NUKE.md) for every control and [Troubleshooting](docs/TROUBLESHOOTING.md)
+for server, cache, CUDA, and logging help.
 
-## Status
+## Hardware guidance
 
-Pre-alpha architecture and planning.
+The project target begins at 4 GB VRAM, with SAM 2.1 Tiny intended for the lowest tier. SAM 2.1
+Small is the current default for an 8 GB GPU. Model selection remains manual: Kyven reports VRAM
+guidance but does not prevent an artist from choosing a larger installed model.
 
-## Name
+Processing ROI isolates the search area and gives it more effective encoder detail. SAM 2 still
+resizes inputs to a fixed internal resolution, so ROI does not guarantee a proportional reduction
+in GPU time or VRAM.
 
-**Kyven** is the provisional project and ecosystem name. A formal trademark clearance is outside the scope of the repository and should be completed before commercial branding or registration.
+## Privacy, security, and licensing
 
-## Development status
+Inference is local by default. The server binds only to `127.0.0.1` and requires a random token.
+Kyven does not commit or redistribute model weights. Project code is Apache-2.0; provider and
+dependency licenses are recorded in [Third-party notices](THIRD_PARTY_NOTICES.md).
 
-The current vertical slice is `Kyven Segment`: a host-independent promptable segmentation
-service, authenticated asynchronous local server, selectable SAM 2.1 model catalog, CLI, and
-an initial thin Nuke adapter. Nuke, Fusion, and Resolve adapters call the same service instead
-of loading inference models inside their UI processes.
+## Documentation
 
-See [`docs/SEGMENT.md`](docs/SEGMENT.md), [`docs/MODELS.md`](docs/MODELS.md),
-[`docs/SERVER.md`](docs/SERVER.md), [`docs/NUKE.md`](docs/NUKE.md), and
-[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+- [Nuke workflow and UI](docs/NUKE.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Segment engine and CLI](docs/SEGMENT.md)
+- [Server API](docs/SERVER.md)
+- [Model catalog](docs/MODELS.md)
+- [Development benchmarks](docs/BENCHMARKS.md)
 
-## License
+## Project status
 
-Kyven is intended to be distributed under Apache License 2.0. Model files are not committed
-to this repository. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for provider and
-runtime licensing metadata.
+Active pre-alpha implementation. The Nuke Segment vertical slice works; Refine/ViTMatte, Fusion,
+and DaVinci Resolve integrations are not implemented yet.

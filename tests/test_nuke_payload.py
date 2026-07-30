@@ -15,12 +15,20 @@ from kyven_nuke.node import (
     _path_for_frame,
     _point_knob_names,
     _prompt_defaults,
+    _section_markup,
 )
 from kyven_nuke.payload import segment_payload, segment_video_payload
 from kyven_nuke.runtime import _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_section_markup_adds_compact_spacing_and_title(self) -> None:
+        markup = _section_markup("OUTPUT")
+
+        self.assertTrue(markup.startswith("<br>"))
+        self.assertIn("#9fc7e8", markup)
+        self.assertIn("<b>OUTPUT</b>", markup)
+
     def test_node_cache_path_rejects_parent_traversal(self) -> None:
         class Knob:
             def value(self) -> str:
