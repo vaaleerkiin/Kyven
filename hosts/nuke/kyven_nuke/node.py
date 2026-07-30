@@ -160,7 +160,12 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
         return
     output = _nuke_file_path(Path(job["result"]["output"]))
     _set_matte_read(node, output)
-    node["kyven_status"].setValue(f"Ready - score {float(job['result']['score']):.3f}")
+    metadata = job["result"].get("metadata") or {}
+    roi = metadata.get("processing_roi")
+    suffix = f" | ROI {roi['width']}x{roi['height']}" if roi else ""
+    node["kyven_status"].setValue(
+        f"Ready - score {float(job['result']['score']):.3f}{suffix}"
+    )
 
 
 def _apply_range_result(
@@ -192,8 +197,10 @@ def _apply_video_result(node_name: str, job: dict[str, Any]) -> None:
     first = int(result["first_frame"])
     last = int(result["last_frame"])
     _set_matte_read(node, output_pattern, first, last)
+    roi = (result.get("metadata") or {}).get("processing_roi")
+    suffix = f" | ROI {roi['width']}x{roi['height']}" if roi else ""
     node["kyven_status"].setValue(
-        f"SAM 2 tracking ready: {first}-{last} ({result['direction']})"
+        f"SAM 2 tracking ready: {first}-{last} ({result['direction']}){suffix}"
     )
 
 
@@ -435,11 +442,7 @@ def _path_for_frame(pattern: Path, frame: int) -> Path:
 
 
 def _has_prompts(node: Any) -> bool:
-    return bool(
-        node["positive_enabled"].value()
-        or node["negative_enabled"].value()
-        or node["box_enabled"].value()
-    )
+    return bool(node["positive_enabled"].value() or node["negative_enabled"].value())
 
 
 def _payload_for_paths(node: Any, source: Any, source_path: Path, matte_path: Path) -> dict[str, Any]:
@@ -488,7 +491,7 @@ def process_current_frame() -> None:
         nuke.message("Kyven Segment requires a Source input.")
         return
     if not _has_prompts(node):
-        nuke.message("Enable at least one positive point, negative point, or box prompt.")
+        nuke.message("Enable at least one positive or negative point.")
         return
 
     frame = int(nuke.frame())
@@ -524,7 +527,7 @@ def process_frame_range() -> None:
         nuke.message("Kyven Segment requires a Source input.")
         return
     if not _has_prompts(node):
-        nuke.message("Enable at least one positive point, negative point, or box prompt.")
+        nuke.message("Enable at least one positive or negative point.")
         return
     first = int(node["range_first"].value())
     last = int(node["range_last"].value())
@@ -581,7 +584,7 @@ def propagate_video(direction: str) -> None:
         nuke.message("Kyven Segment requires a Source input.")
         return
     if not _has_prompts(node):
-        nuke.message("Enable at least one point or box prompt on the key frame.")
+        nuke.message("Enable at least one point on the key frame.")
         return
     if direction not in {"forward", "backward", "both"}:
         nuke.message(f"Unsupported SAM 2 propagation direction: {direction}")
@@ -817,6 +820,18 @@ def _ensure_cache_controls(node: Any) -> None:
     )
 
 
+def _upgrade_roi_controls(node: Any) -> None:
+    """Update legacy prompt-box labels to the Processing ROI terminology."""
+    if "box_section" in node.knobs():
+        node["box_section"].setValue("<b>PROCESSING ROI (model crop)</b>")
+    if "box_enabled" in node.knobs():
+        node["box_enabled"].setLabel("Enable Processing ROI")
+    if "prompt_box" in node.knobs():
+        node["prompt_box"].setLabel("Processing ROI")
+    if "reset_prompts" in node.knobs():
+        node["reset_prompts"].setLabel("Reset Points and ROI to Input Size")
+
+
 def upgrade_selected_segment_node() -> None:
     """Add current UI and output features to an already-created Kyven Segment node."""
     nuke = _nuke()
@@ -828,6 +843,7 @@ def upgrade_selected_segment_node() -> None:
     try:
         _ensure_output_controls(node)
         _ensure_cache_controls(node)
+        _upgrade_roi_controls(node)
         sync_prompt_visibility(node)
     except Exception as exc:  # noqa: BLE001 - host boundary must report useful context
         nuke.message(f"Could not upgrade the selected node:\n{exc}")
@@ -937,15 +953,15 @@ def create_segment_node() -> Any:
         start_line=False,
     )
 
-    _add_section(nuke, node, "box_section", "PROMPT BOX (search area)")
-    _add_knob(nuke, node, nuke.Boolean_Knob("box_enabled", "Enable Prompt Box"))
-    _add_knob(nuke, node, nuke.BBox_Knob("prompt_box", "Prompt Box"))
+    _add_section(nuke, node, "box_section", "PROCESSING ROI (model crop)")
+    _add_knob(nuke, node, nuke.Boolean_Knob("box_enabled", "Enable Processing ROI"))
+    _add_knob(nuke, node, nuke.BBox_Knob("prompt_box", "Processing ROI"))
     _add_knob(
         nuke,
         node,
         nuke.PyScript_Knob(
             "reset_prompts",
-            "Reset Points and Box to Input Size",
+            "Reset Points and ROI to Input Size",
             "kyven_nuke.node.reset_prompts_to_input()",
         ),
     )

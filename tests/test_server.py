@@ -73,7 +73,7 @@ class ServerTests(unittest.TestCase):
             root = Path(directory)
             source = root / "source.png"
             output = root / "matte.png"
-            Image.new("RGB", (2, 2), "white").save(source)
+            Image.new("RGB", (4, 4), "white").save(source)
             registry = ProviderRegistry()
             registry.register("sam2.1-small", ServerSyntheticProvider)
             token = "x" * 32
@@ -87,22 +87,28 @@ class ServerTests(unittest.TestCase):
             try:
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
                 self.assertEqual(client.health()["status"], "ok")
+                self.assertEqual(client.health()["api_version"], 3)
                 self.assertEqual(len(client.models()), 4)
                 job_id = client.submit_segment(
                     {
                         "source": str(source.resolve()),
                         "output": str(output.resolve()),
                         "model_id": "sam2.1-small",
-                        "points": [{"x": 1, "y": 1, "label": "positive"}],
+                        "points": [{"x": 2, "y": 2, "label": "positive"}],
+                        "roi": {"x0": 1, "y0": 1, "x1": 3, "y1": 3},
                     }
                 )
                 result = client.wait(job_id, timeout_seconds=5)
                 self.assertEqual(result["status"], "succeeded")
                 self.assertTrue(output.is_file())
+                with Image.open(output) as image_mask:
+                    self.assertEqual(image_mask.size, (4, 4))
+                    self.assertEqual(image_mask.getpixel((0, 0)), 0)
+                    self.assertEqual(image_mask.getpixel((1, 1)), 255)
                 frames = root / "frames"
                 frames.mkdir()
-                Image.new("RGB", (2, 2), "white").save(frames / "00001.jpg")
-                Image.new("RGB", (2, 2), "white").save(frames / "00002.jpg")
+                Image.new("RGB", (4, 4), "white").save(frames / "00001.jpg")
+                Image.new("RGB", (4, 4), "white").save(frames / "00002.jpg")
                 video_job_id = client.submit_video(
                     {
                         "frames_dir": str(frames.resolve()),
@@ -112,13 +118,18 @@ class ServerTests(unittest.TestCase):
                         "key_frame": 1,
                         "direction": "forward",
                         "model_id": "sam2.1-small",
-                        "points": [{"x": 1, "y": 1, "label": "positive"}],
+                        "points": [{"x": 2, "y": 2, "label": "positive"}],
+                        "roi": {"x0": 1, "y0": 1, "x1": 3, "y1": 3},
                     }
                 )
                 video_result = client.wait(video_job_id, timeout_seconds=5)
                 self.assertEqual(video_result["status"], "succeeded")
                 self.assertEqual(video_result["result"]["output_count"], 2)
                 self.assertTrue((root / "video_matte.0002.png").is_file())
+                with Image.open(root / "video_matte.0002.png") as video_mask:
+                    self.assertEqual(video_mask.size, (4, 4))
+                    self.assertEqual(video_mask.getpixel((0, 0)), 0)
+                    self.assertEqual(video_mask.getpixel((1, 1)), 255)
                 with self.assertRaises(KyvenClientError):
                     KyvenClient(f"http://127.0.0.1:{server.port}", "y" * 32).health()
             finally:

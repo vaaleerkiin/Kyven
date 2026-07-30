@@ -18,6 +18,26 @@ class SegmentModelTests(unittest.TestCase):
             second = SegmentRequest(source, root / "two.png", points=(PointPrompt(1, 2),))
             self.assertEqual(first.cache_key("1", "abc"), second.cache_key("1", "abc"))
 
+    def test_processing_roi_changes_cache_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.bin"
+            source.write_bytes(b"synthetic fixture")
+            first = SegmentRequest(
+                source,
+                root / "one.png",
+                points=(PointPrompt(2, 2),),
+                roi=BoxPrompt(0, 0, 10, 10),
+            )
+            second = SegmentRequest(
+                source,
+                root / "two.png",
+                points=(PointPrompt(2, 2),),
+                roi=BoxPrompt(0, 0, 20, 20),
+            )
+
+            self.assertNotEqual(first.cache_key("1", "abc"), second.cache_key("1", "abc"))
+
     def test_invalid_box_is_structured_error(self) -> None:
         with self.assertRaises(KyvenError) as caught:
             BoxPrompt(10, 10, 5, 20)
@@ -35,4 +55,3 @@ class SegmentModelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

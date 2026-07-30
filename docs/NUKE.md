@@ -7,7 +7,7 @@ The initial adapter is under `hosts/nuke`. It creates a `KyvenSegment` Group nod
 - Low Memory, Balanced, and Quality execution profiles;
 - dynamically addable/removable positive and negative point controls;
 - independent show/use toggles that hide disabled Viewer handles;
-- an input-sized prompt box and input-centered initial points;
+- an optional input-sized Processing ROI and input-centered initial points;
 - source-inherited output format and canvas, including before the first matte is generated;
 - Process Current Frame, Process Frame Range, and Cancel actions;
 - in-process source export followed by asynchronous inference;
@@ -32,8 +32,20 @@ is not at `D:/Kyven`.
 ## Frame ranges
 
 `Process Frame Range` exports the selected range and generates a lossless PNG matte sequence.
-The same static points and box are applied to every frame in this initial implementation. The
+The same static points and Processing ROI are applied to every frame. The
 resulting sequence is connected inside the Group as `matte.%04d.png`.
+
+## Processing ROI
+
+`Enable Processing ROI` treats the Viewer rectangle as a crop, not as a SAM box prompt. Kyven
+crops the source before inference, translates point coordinates into the crop, and expands the
+returned mask back onto a full-resolution black canvas. For video tracking, every temporary JPEG
+is cropped consistently and every final PNG is restored to the original frame dimensions.
+
+A positive point must be inside the ROI. Negative points outside it are ignored because those
+pixels never reach the model. SAM 2 internally resizes inputs to its fixed encoder resolution, so
+ROI mainly isolates the search area and gives the selected region more effective detail; it does
+not guarantee a proportional reduction in GPU time or VRAM.
 
 ## SAM 2 video tracking
 
@@ -41,7 +53,7 @@ The `SAM 2 VIDEO TRACKING` section uses temporal memory instead of segmenting ev
 independently:
 
 1. Move to the frame where the object is easiest to identify.
-2. Place points or a box and click `Set Key Frame to Current`.
+2. Place points, optionally limit the Processing ROI, and click `Set Key Frame to Current`.
 3. Set `Range First` and `Range Last`.
 4. Choose `Propagate Forward`, `Propagate Backward`, or `Propagate Both Directions`.
 

@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import tempfile
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+from PIL import Image
+
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
 from kyven.segment.models import BoxPrompt, ExecutionProfile, PointPrompt
+from kyven.segment.output import write_mask_png_atomic
 from kyven.segment.providers.registry import ProviderRegistry
+from kyven.segment.roi import expand_mask, resolve_region, translate_box, translate_points
 
 
 class VideoDirection(str, Enum):
@@ -29,6 +35,7 @@ class VideoSegmentRequest:
     direction: VideoDirection
     points: tuple[PointPrompt, ...] = ()
     box: BoxPrompt | None = None
+    roi: BoxPrompt | None = None
     provider_id: str = "sam2.1-small"
     profile: ExecutionProfile = ExecutionProfile.BALANCED
     offload_video_to_cpu: bool = True
@@ -101,4 +108,76 @@ class VideoSegmentService:
                 code=ErrorCode.PROVIDER_UNAVAILABLE,
                 message=f"Provider does not support video propagation: {request.provider_id}",
             )
-        return propagate(request, token)
+        if request.roi is None:
+            return propagate(request, token)
+        return self._run_with_roi(propagate, request, token)
+
+    @staticmethod
+    def _run_with_roi(propagate, request, token: CancellationToken) -> VideoSegmentResult:
+        frames = sorted(
+            path
+            for path in request.frames_dir.iterdir()
+            if path.suffix.lower() in {".jpg", ".jpeg"}
+        )
+        if not frames:
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="The video frame directory contains no JPEG frames.",
+            )
+        with Image.open(frames[0]) as first_image:
+            region = resolve_region(request.roi, first_image.width, first_image.height)
+        points = translate_points(request.points, region)
+        box = translate_box(request.box, region)
+        if region.is_full_frame:
+            result = propagate(replace(request, points=points, box=box, roi=None), token)
+            metadata = dict(result.metadata)
+            metadata["processing_roi"] = region.metadata()
+            return replace(result, metadata=metadata)
+
+        with tempfile.TemporaryDirectory(prefix="kyven-video-roi-") as directory:
+            temporary_root = Path(directory)
+            cropped_frames = temporary_root / "frames"
+            cropped_frames.mkdir()
+            for frame in frames:
+                token.raise_if_cancelled()
+                with Image.open(frame) as image:
+                    if image.size != (region.source_width, region.source_height):
+                        raise KyvenError(
+                            code=ErrorCode.INVALID_REQUEST,
+                            message="All tracking frames must have the same dimensions.",
+                        )
+                    image.convert("RGB").crop(
+                        (region.x0, region.y0, region.x1, region.y1)
+                    ).save(cropped_frames / frame.name, format="JPEG", quality=95)
+
+            prepared = replace(
+                request,
+                frames_dir=cropped_frames,
+                output_pattern=temporary_root / "matte.%04d.png",
+                points=points,
+                box=box,
+                roi=None,
+            )
+            cropped_result = propagate(prepared, token)
+            outputs = []
+            for index in range(request.last_frame - request.first_frame + 1):
+                cropped_output = prepared.output_for_index(index)
+                if not cropped_output.is_file():
+                    continue
+                token.raise_if_cancelled()
+                with Image.open(cropped_output) as image:
+                    mask = np.asarray(image.convert("L"))
+                output = request.output_for_index(index)
+                write_mask_png_atomic(output, expand_mask(mask, region))
+                outputs.append(output)
+
+        metadata = dict(cropped_result.metadata)
+        metadata["processing_roi"] = region.metadata()
+        return VideoSegmentResult(
+            outputs=tuple(outputs),
+            first_frame=cropped_result.first_frame,
+            last_frame=cropped_result.last_frame,
+            key_frame=cropped_result.key_frame,
+            direction=cropped_result.direction,
+            metadata=metadata,
+        )

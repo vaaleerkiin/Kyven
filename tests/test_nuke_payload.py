@@ -67,6 +67,8 @@ class NukePayloadTests(unittest.TestCase):
         self.assertEqual(payload["direction"], "both")
         self.assertTrue(payload["offload_video_to_cpu"])
         self.assertEqual(payload["points"][0]["y"], 880.0)
+        self.assertIsNone(payload["box"])
+        self.assertIsNone(payload["roi"])
 
     def test_prompt_defaults_use_input_dimensions(self) -> None:
         center, box = _prompt_defaults(2048.0, 858.0)
@@ -132,7 +134,11 @@ class NukePayloadTests(unittest.TestCase):
             [item["label"] for item in payload["points"]],
             ["positive", "positive", "negative"],
         )
-        self.assertEqual(payload["box"], {"x0": 10.0, "y0": 680.0, "x1": 300.0, "y1": 1060.0})
+        self.assertIsNone(payload["box"])
+        self.assertEqual(
+            payload["roi"],
+            {"x0": 10.0, "y0": 680.0, "x1": 300.0, "y1": 1060.0},
+        )
 
 
 if __name__ == "__main__":

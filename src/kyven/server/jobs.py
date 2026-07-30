@@ -76,6 +76,18 @@ class JobManager:
         self._lock = threading.RLock()
 
     @staticmethod
+    def _box_from_payload(payload: dict[str, Any], field: str) -> BoxPrompt | None:
+        value = payload.get(field)
+        if value is None:
+            return None
+        return BoxPrompt(
+            float(value["x0"]),
+            float(value["y0"]),
+            float(value["x1"]),
+            float(value["y1"]),
+        )
+
+    @staticmethod
     def request_from_payload(payload: dict[str, Any]) -> SegmentRequest:
         source = Path(str(payload["source"]))
         output = Path(str(payload["output"]))
@@ -93,20 +105,14 @@ class JobManager:
             )
             for item in payload.get("points", [])
         )
-        box_payload = payload.get("box")
-        box = None
-        if box_payload is not None:
-            box = BoxPrompt(
-                float(box_payload["x0"]),
-                float(box_payload["y0"]),
-                float(box_payload["x1"]),
-                float(box_payload["y1"]),
-            )
+        box = JobManager._box_from_payload(payload, "box")
+        roi = JobManager._box_from_payload(payload, "roi")
         return SegmentRequest(
             source=source,
             output=output,
             points=points,
             box=box,
+            roi=roi,
             provider_id=str(payload.get("model_id", "sam2.1-small")),
             profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
             multimask_output=bool(payload.get("multimask_output", True)),
@@ -121,7 +127,7 @@ class JobManager:
                 code=ErrorCode.INVALID_REQUEST,
                 message="The segment job payload is invalid.",
                 technical_detail=str(exc),
-                suggested_action="Check source, output, points, box, model, and profile fields.",
+                suggested_action="Check source, output, points, box, ROI, model, and profile fields.",
             ) from exc
         record = JobRecord(job_id=uuid.uuid4().hex, request=request)
         with self._lock:
@@ -146,15 +152,8 @@ class JobManager:
             )
             for item in payload.get("points", [])
         )
-        box_payload = payload.get("box")
-        box = None
-        if box_payload is not None:
-            box = BoxPrompt(
-                float(box_payload["x0"]),
-                float(box_payload["y0"]),
-                float(box_payload["x1"]),
-                float(box_payload["y1"]),
-            )
+        box = JobManager._box_from_payload(payload, "box")
+        roi = JobManager._box_from_payload(payload, "roi")
         return VideoSegmentRequest(
             frames_dir=frames_dir,
             output_pattern=output_pattern,
@@ -164,6 +163,7 @@ class JobManager:
             direction=VideoDirection(str(payload.get("direction", "both"))),
             points=points,
             box=box,
+            roi=roi,
             provider_id=str(payload.get("model_id", "sam2.1-small")),
             profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
             offload_video_to_cpu=bool(payload.get("offload_video_to_cpu", True)),

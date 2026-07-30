@@ -44,10 +44,10 @@ def segment_payload(
 ) -> dict[str, Any]:
     points = [point(*xy, image_height, "positive") for xy in positive_points]
     points.extend(point(*xy, image_height, "negative") for xy in negative_points)
-    box_payload = None
+    roi_payload = None
     if box_enabled:
         x0, y0, x1, y1 = box
-        box_payload = {
+        roi_payload = {
             "x0": float(x0),
             "y0": float(image_height) - float(y1),
             "x1": float(x1),
@@ -59,7 +59,8 @@ def segment_payload(
         "model_id": MODEL_IDS[model_index],
         "profile": profile,
         "points": points,
-        "box": box_payload,
+        "box": None,
+        "roi": roi_payload,
         "multimask_output": True,
     }
 
@@ -97,7 +98,8 @@ def segment_video_payload(
         "model_id": image_payload["model_id"],
         "profile": profile,
         "points": image_payload["points"],
-        "box": image_payload["box"],
+        "box": None,
+        "roi": image_payload["roi"],
         "first_frame": int(first_frame),
         "last_frame": int(last_frame),
         "key_frame": int(key_frame),

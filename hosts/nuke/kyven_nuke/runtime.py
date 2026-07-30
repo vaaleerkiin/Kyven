@@ -11,8 +11,9 @@ from pathlib import Path
 from kyven_nuke import config
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 
-PORT = 8766
-REQUIRED_API_VERSION = 2
+PORT = 8767
+REQUIRED_API_VERSION = 3
+LEGACY_PORTS = (8765, 8766)
 
 
 def _check_health(current: NukeKyvenClient) -> None:
@@ -61,6 +62,22 @@ def client() -> NukeKyvenClient:
     return NukeKyvenClient.from_token_file(config.token_file(), port=PORT)
 
 
+def _unload_legacy_servers() -> None:
+    """Release VRAM held by authenticated Kyven servers from older API revisions."""
+    for port in LEGACY_PORTS:
+        try:
+            legacy = NukeKyvenClient.from_token_file(
+                config.token_file(),
+                port=port,
+                timeout_seconds=2.0,
+            )
+            health = legacy.health()
+            if health.get("service") == "kyven":
+                legacy.unload_all()
+        except (OSError, NukeKyvenClientError):
+            continue
+
+
 def ensure_server(timeout_seconds: float = 30.0) -> NukeKyvenClient:
     try:
         existing = client()
@@ -69,6 +86,7 @@ def ensure_server(timeout_seconds: float = 30.0) -> NukeKyvenClient:
     except (OSError, NukeKyvenClientError):
         pass
 
+    _unload_legacy_servers()
     executable = config.python_executable()
     if not executable.is_file():
         raise RuntimeError(f"Kyven Python executable was not found: {executable}")

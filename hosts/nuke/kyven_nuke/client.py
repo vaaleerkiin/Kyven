@@ -69,6 +69,9 @@ class NukeKyvenClient:
     def cancel(self, job_id):
         return self._request("POST", f"/v1/jobs/{job_id}/cancel", {})
 
+    def unload_all(self):
+        return self._request("POST", "/v1/providers/unload-all", {})
+
     def wait(self, job_id, poll_seconds=0.2, timeout_seconds=600.0):
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:

@@ -29,5 +29,6 @@ it must not be committed or logged.
 GPU jobs execute in a single-worker queue. HTTP requests and host UIs remain responsive. Model
 unloading is queued behind active inference so it cannot race a running kernel.
 
-The development Nuke adapter currently uses versioned port `8766` to avoid connecting to a stale
-API v1 process during testing.
+API version 3 accepts an optional `roi` rectangle separately from the model's `box` prompt. The
+server crops inference inputs and restores returned masks to the original dimensions. The Nuke
+adapter uses versioned port `8767` to avoid connecting to stale API processes during development.
