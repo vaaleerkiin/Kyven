@@ -13,11 +13,33 @@ from kyven_nuke.node import (
     _point_knob_names,
     _prompt_defaults,
 )
-from kyven_nuke.payload import segment_payload
+from kyven_nuke.payload import segment_payload, segment_video_payload
 from kyven_nuke.runtime import _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_video_payload_uses_key_frame_and_cpu_offload(self) -> None:
+        payload = segment_video_payload(
+            frames_dir="D:/cache/frames",
+            output_pattern="D:/cache/matte.%04d.png",
+            model_index=1,
+            profile="low_memory",
+            image_height=1080,
+            positive_points=[(100, 200)],
+            negative_points=[],
+            box_enabled=False,
+            box=(0, 0, 1920, 1080),
+            first_frame=1,
+            last_frame=100,
+            key_frame=50,
+            direction="both",
+        )
+
+        self.assertEqual(payload["key_frame"], 50)
+        self.assertEqual(payload["direction"], "both")
+        self.assertTrue(payload["offload_video_to_cpu"])
+        self.assertEqual(payload["points"][0]["y"], 880.0)
+
     def test_prompt_defaults_use_input_dimensions(self) -> None:
         center, box = _prompt_defaults(2048.0, 858.0)
 

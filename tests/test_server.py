@@ -16,9 +16,11 @@ from kyven.segment.models import (
     SegmentPrediction,
     SegmentRequest,
 )
+from kyven.segment.output import write_mask_png_atomic
 from kyven.segment.providers.base import SegmentationProvider
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.segment.service import SegmentService
+from kyven.segment.video import VideoSegmentResult, VideoSegmentService
 from kyven.server.app import KyvenServer, ServerConfig
 from kyven.server.jobs import JobManager
 
@@ -48,6 +50,22 @@ class ServerSyntheticProvider(SegmentationProvider):
     def unload(self) -> None:
         return
 
+    def propagate_video(self, request, cancellation):
+        outputs = []
+        for index in range(request.last_frame - request.first_frame + 1):
+            cancellation.raise_if_cancelled()
+            output = request.output_for_index(index)
+            write_mask_png_atomic(output, np.ones((2, 2), dtype=np.bool_))
+            outputs.append(output)
+        return VideoSegmentResult(
+            outputs=tuple(outputs),
+            first_frame=request.first_frame,
+            last_frame=request.last_frame,
+            key_frame=request.key_frame,
+            direction=request.direction,
+            metadata={"provider": "synthetic"},
+        )
+
 
 class ServerTests(unittest.TestCase):
     def test_authenticated_http_job_round_trip(self) -> None:
@@ -61,7 +79,7 @@ class ServerTests(unittest.TestCase):
             token = "x" * 32
             server = KyvenServer(
                 ServerConfig(token=token, models_dir=root, port=0, available_vram_mb=8192),
-                JobManager(SegmentService(registry)),
+                JobManager(SegmentService(registry), VideoSegmentService(registry)),
                 registry,
                 ModelCatalog.builtin(),
             )
@@ -81,6 +99,26 @@ class ServerTests(unittest.TestCase):
                 result = client.wait(job_id, timeout_seconds=5)
                 self.assertEqual(result["status"], "succeeded")
                 self.assertTrue(output.is_file())
+                frames = root / "frames"
+                frames.mkdir()
+                Image.new("RGB", (2, 2), "white").save(frames / "00001.jpg")
+                Image.new("RGB", (2, 2), "white").save(frames / "00002.jpg")
+                video_job_id = client.submit_video(
+                    {
+                        "frames_dir": str(frames.resolve()),
+                        "output_pattern": str((root / "video_matte.%04d.png").resolve()),
+                        "first_frame": 1,
+                        "last_frame": 2,
+                        "key_frame": 1,
+                        "direction": "forward",
+                        "model_id": "sam2.1-small",
+                        "points": [{"x": 1, "y": 1, "label": "positive"}],
+                    }
+                )
+                video_result = client.wait(video_job_id, timeout_seconds=5)
+                self.assertEqual(video_result["status"], "succeeded")
+                self.assertEqual(video_result["result"]["output_count"], 2)
+                self.assertTrue((root / "video_matte.0002.png").is_file())
                 with self.assertRaises(KyvenClientError):
                     KyvenClient(f"http://127.0.0.1:{server.port}", "y" * 32).health()
             finally:

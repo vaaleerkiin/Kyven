@@ -21,9 +21,13 @@ it must not be committed or logged.
 | `GET` | `/v1/health` | Authenticated readiness check |
 | `GET` | `/v1/models` | Model choices, installation state, and hardware guidance |
 | `POST` | `/v1/jobs/segment` | Queue a segmentation job |
+| `POST` | `/v1/jobs/segment-video` | Queue SAM 2 temporal mask propagation |
 | `GET` | `/v1/jobs/{id}` | Read status or result |
 | `POST` | `/v1/jobs/{id}/cancel` | Request cooperative cancellation |
 | `POST` | `/v1/providers/unload-all` | Safely unload models after active work |
 
 GPU jobs execute in a single-worker queue. HTTP requests and host UIs remain responsive. Model
 unloading is queued behind active inference so it cannot race a running kernel.
+
+The development Nuke adapter currently uses versioned port `8766` to avoid connecting to a stale
+API v1 process during testing.

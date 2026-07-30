@@ -62,3 +62,46 @@ def segment_payload(
         "box": box_payload,
         "multimask_output": True,
     }
+
+
+def segment_video_payload(
+    *,
+    frames_dir: str,
+    output_pattern: str,
+    model_index: int,
+    profile: str,
+    image_height: int,
+    positive_points: Sequence[tuple[float, float]],
+    negative_points: Sequence[tuple[float, float]],
+    box_enabled: bool,
+    box: tuple[float, float, float, float],
+    first_frame: int,
+    last_frame: int,
+    key_frame: int,
+    direction: str,
+) -> dict[str, Any]:
+    image_payload = segment_payload(
+        source="unused",
+        output="unused",
+        model_index=model_index,
+        profile=profile,
+        image_height=image_height,
+        positive_points=positive_points,
+        negative_points=negative_points,
+        box_enabled=box_enabled,
+        box=box,
+    )
+    return {
+        "frames_dir": frames_dir,
+        "output_pattern": output_pattern,
+        "model_id": image_payload["model_id"],
+        "profile": profile,
+        "points": image_payload["points"],
+        "box": image_payload["box"],
+        "first_frame": int(first_frame),
+        "last_frame": int(last_frame),
+        "key_frame": int(key_frame),
+        "direction": direction,
+        "offload_video_to_cpu": True,
+        "offload_state_to_cpu": True,
+    }

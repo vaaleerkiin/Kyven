@@ -149,6 +149,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         if args.command == "serve":
+            from kyven.segment.video import VideoSegmentService
             from kyven.server.app import KyvenServer, ServerConfig
             from kyven.server.jobs import JobManager
 
@@ -163,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             server = KyvenServer(
                 config,
-                JobManager(SegmentService(registry)),
+                JobManager(SegmentService(registry), VideoSegmentService(registry)),
                 registry,
                 catalog,
             )

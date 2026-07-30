@@ -11,7 +11,17 @@ from pathlib import Path
 from kyven_nuke import config
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 
-PORT = 8765
+PORT = 8766
+REQUIRED_API_VERSION = 2
+
+
+def _check_health(current: NukeKyvenClient) -> None:
+    health = current.health()
+    if int(health.get("api_version", 0)) != REQUIRED_API_VERSION:
+        raise NukeKyvenClientError(
+            f"Kyven server API {health.get('api_version')} is incompatible; "
+            f"expected {REQUIRED_API_VERSION}."
+        )
 
 
 def _server_environment(
@@ -54,7 +64,7 @@ def client() -> NukeKyvenClient:
 def ensure_server(timeout_seconds: float = 30.0) -> NukeKyvenClient:
     try:
         existing = client()
-        existing.health()
+        _check_health(existing)
         return existing
     except (OSError, NukeKyvenClientError):
         pass
@@ -93,7 +103,7 @@ def ensure_server(timeout_seconds: float = 30.0) -> NukeKyvenClient:
             raise _startup_failure(log_path, return_code)
         try:
             current = client()
-            current.health()
+            _check_health(current)
             return current
         except (OSError, NukeKyvenClientError):
             time.sleep(0.2)

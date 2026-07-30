@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from kyven_nuke import config
-from kyven_nuke.payload import MODEL_LABELS, segment_payload
+from kyven_nuke.payload import MODEL_LABELS, segment_payload, segment_video_payload
 from kyven_nuke.runtime import ensure_server
 
 MAX_PROMPT_POINTS = 32
@@ -168,6 +168,24 @@ def _apply_range_result(
     )
 
 
+def _apply_video_result(node_name: str, job: dict[str, Any]) -> None:
+    node = _nuke().toNode(node_name)
+    if node is None:
+        return
+    if job["status"] != "succeeded":
+        error = job.get("error") or {}
+        node["kyven_status"].setValue(f"Propagation failed: {error.get('message', job['status'])}")
+        return
+    result = job["result"]
+    output_pattern = _nuke_file_path(Path(result["output_pattern"]))
+    first = int(result["first_frame"])
+    last = int(result["last_frame"])
+    _set_matte_read(node, output_pattern, first, last)
+    node["kyven_status"].setValue(
+        f"SAM 2 tracking ready: {first}-{last} ({result['direction']})"
+    )
+
+
 def _submit_and_wait(node_name: str, payload: dict[str, Any]) -> None:
     nuke = _nuke()
     try:
@@ -178,6 +196,22 @@ def _submit_and_wait(node_name: str, payload: dict[str, Any]) -> None:
         nuke.executeInMainThread(_apply_result, args=(node_name, job))
     except Exception as exc:  # noqa: BLE001 - background boundary must report to the host UI
         nuke.executeInMainThread(_set_status, args=(node_name, f"Failed: {exc}"))
+
+
+def _submit_video_and_wait(node_name: str, payload: dict[str, Any]) -> None:
+    nuke = _nuke()
+    try:
+        client = ensure_server()
+        job_id = client.submit_video(payload)
+        nuke.executeInMainThread(_set_job_id, args=(node_name, job_id))
+        nuke.executeInMainThread(
+            _set_status,
+            args=(node_name, "SAM 2 is propagating the key-frame mask..."),
+        )
+        job = client.wait(job_id, timeout_seconds=3600.0)
+        nuke.executeInMainThread(_apply_video_result, args=(node_name, job))
+    except Exception as exc:  # noqa: BLE001 - background boundary must report to the host UI
+        nuke.executeInMainThread(_set_status, args=(node_name, f"Propagation failed: {exc}"))
 
 
 def _range_cancelled(node_name: str) -> bool:
@@ -253,6 +287,17 @@ def _cache_paths(node: Any, frame: int) -> tuple[Path, Path]:
 def _cache_patterns(node: Any) -> tuple[Path, Path]:
     root = _cache_root(node)
     return root / "source.%04d.png", root / "matte.%04d.png"
+
+
+def _video_cache_paths(node: Any, first: int, last: int) -> tuple[Path, Path, Path]:
+    root = _cache_root(node)
+    frames_dir = root / f"sam2_video_{first}_{last}"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    for stale in frames_dir.glob("*.jpg"):
+        stale.unlink(missing_ok=True)
+    source_pattern = frames_dir / "%05d.jpg"
+    output_pattern = root / "tracked_matte.%04d.png"
+    return frames_dir, source_pattern, output_pattern
 
 
 def _path_for_frame(pattern: Path, frame: int) -> Path:
@@ -386,6 +431,79 @@ def process_frame_range() -> None:
         target=_submit_range_and_wait,
         args=(node_name, payloads, _nuke_file_path(matte_pattern), first, last),
         name="kyven-nuke-range",
+        daemon=True,
+    ).start()
+
+
+def set_key_frame_to_current() -> None:
+    nuke = _nuke()
+    node = nuke.thisNode()
+    frame = int(nuke.frame())
+    node["key_frame"].setValue(frame)
+    node["kyven_status"].setValue(f"Key frame set to {frame}.")
+
+
+def propagate_video(direction: str) -> None:
+    nuke = _nuke()
+    node = nuke.thisNode()
+    source = node.input(0)
+    if source is None:
+        nuke.message("Kyven Segment requires a Source input.")
+        return
+    if not _has_prompts(node):
+        nuke.message("Enable at least one point or box prompt on the key frame.")
+        return
+    if direction not in {"forward", "backward", "both"}:
+        nuke.message(f"Unsupported SAM 2 propagation direction: {direction}")
+        return
+    first = int(node["range_first"].value())
+    last = int(node["range_last"].value())
+    key_frame = int(node["key_frame"].value())
+    if last < first:
+        nuke.message("Kyven frame range requires Last to be greater than or equal to First.")
+        return
+    if not first <= key_frame <= last:
+        nuke.message("Key Frame must be inside Range First/Last.")
+        return
+
+    frames_dir, source_pattern, output_pattern = _video_cache_paths(node, first, last)
+    writer = _inside(node, "KyvenVideoWrite")
+    writer["file"].setValue(_nuke_file_path(source_pattern))
+    total = last - first + 1
+    node["kyven_status"].setValue(f"Exporting {total} tracking frames...")
+    try:
+        nuke.execute(writer, first, last)
+    except Exception as exc:  # noqa: BLE001 - host boundary must report useful context
+        node["kyven_status"].setValue(f"Tracking export failed: {exc}")
+        nuke.message(f"Kyven tracking export failed:\n{exc}")
+        return
+    exported = list(frames_dir.glob("*.jpg"))
+    if len(exported) != total:
+        node["kyven_status"].setValue(
+            f"Tracking export failed: expected {total} JPEGs, found {len(exported)}."
+        )
+        return
+
+    payload = segment_video_payload(
+        frames_dir=str(frames_dir.resolve()),
+        output_pattern=str(output_pattern.resolve()),
+        model_index=int(node["model"].getValue()),
+        profile=str(node["profile"].value()),
+        image_height=int(source.height()),
+        positive_points=_collect_points(node, "positive"),
+        negative_points=_collect_points(node, "negative"),
+        box_enabled=bool(node["box_enabled"].value()),
+        box=tuple(node["prompt_box"].value()),
+        first_frame=first,
+        last_frame=last,
+        key_frame=key_frame,
+        direction=direction,
+    )
+    node["kyven_status"].setValue("Starting SAM 2 video predictor...")
+    threading.Thread(
+        target=_submit_video_and_wait,
+        args=(node.fullName(), payload),
+        name="kyven-sam2-video",
         daemon=True,
     ).start()
 
@@ -569,7 +687,7 @@ def create_segment_node() -> Any:
         ),
     )
 
-    _add_section(nuke, node, "processing_section", "PROCESSING")
+    _add_section(nuke, node, "processing_section", "INDEPENDENT FRAME PROCESSING")
     _add_knob(
         nuke,
         node,
@@ -598,6 +716,48 @@ def create_segment_node() -> Any:
         nuke,
         node,
         nuke.PyScript_Knob("cancel", "Cancel Processing", "kyven_nuke.node.cancel_current_job()"),
+    )
+
+    _add_section(nuke, node, "tracking_section", "SAM 2 VIDEO TRACKING")
+    key_frame = nuke.Int_Knob("key_frame", "Key Frame")
+    key_frame.setValue(int(nuke.frame()))
+    _add_knob(nuke, node, key_frame)
+    _add_knob(
+        nuke,
+        node,
+        nuke.PyScript_Knob(
+            "set_key_frame",
+            "Set Key Frame to Current",
+            "kyven_nuke.node.set_key_frame_to_current()",
+        ),
+    )
+    _add_knob(
+        nuke,
+        node,
+        nuke.PyScript_Knob(
+            "propagate_forward",
+            "Propagate Forward",
+            "kyven_nuke.node.propagate_video('forward')",
+        ),
+    )
+    _add_knob(
+        nuke,
+        node,
+        nuke.PyScript_Knob(
+            "propagate_backward",
+            "Propagate Backward",
+            "kyven_nuke.node.propagate_video('backward')",
+        ),
+        start_line=False,
+    )
+    _add_knob(
+        nuke,
+        node,
+        nuke.PyScript_Knob(
+            "propagate_both",
+            "Propagate Both Directions",
+            "kyven_nuke.node.propagate_video('both')",
+        ),
     )
     _add_section(nuke, node, "status_section", "STATUS")
     status = nuke.String_Knob("kyven_status", "Status")
@@ -629,6 +789,12 @@ def create_segment_node() -> Any:
         writer.setInput(0, source)
         writer["file_type"].setValue("png")
         writer["channels"].setValue("rgb")
+        video_writer = nuke.nodes.Write(name="KyvenVideoWrite")
+        video_writer.setInput(0, source)
+        video_writer["file_type"].setValue("jpeg")
+        video_writer["channels"].setValue("rgb")
+        if "_jpeg_quality" in video_writer.knobs():
+            video_writer["_jpeg_quality"].setValue(1.0)
     finally:
         node.end()
     _reset_prompts(node)

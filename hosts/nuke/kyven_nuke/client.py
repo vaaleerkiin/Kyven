@@ -60,6 +60,9 @@ class NukeKyvenClient:
     def submit_segment(self, payload):
         return str(self._request("POST", "/v1/jobs/segment", payload)["job_id"])
 
+    def submit_video(self, payload):
+        return str(self._request("POST", "/v1/jobs/segment-video", payload)["job_id"])
+
     def job(self, job_id):
         return self._request("GET", f"/v1/jobs/{job_id}")
 
