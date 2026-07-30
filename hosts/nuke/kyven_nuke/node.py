@@ -64,10 +64,11 @@ def sync_prompt_visibility(node: Any | None = None) -> None:
     nuke = _nuke()
     node = node or nuke.thisNode()
     for kind in ("positive", "negative"):
-        visible = bool(node[f"{kind}_enabled"].value())
-        for name in _point_knob_names(kind, _point_count(node, kind)):
+        enabled = bool(node[f"{kind}_enabled"].value())
+        count = _point_count(node, kind)
+        for index, name in enumerate(_point_knob_names(kind, MAX_PROMPT_POINTS), start=1):
             if name in node.knobs():
-                node[name].setVisible(visible)
+                node[name].setVisible(enabled and index <= count)
     node["prompt_box"].setVisible(bool(node["box_enabled"].value()))
 
 
@@ -85,11 +86,9 @@ def add_point(kind: str) -> None:
         node["kyven_status"].setValue(f"Maximum {MAX_PROMPT_POINTS} {kind} points reached.")
         return
     new_count = count + 1
-    label = f"{kind.title()} Point {new_count}"
-    knob = nuke.XY_Knob(_point_knob_name(kind, new_count), label)
+    knob = node[_point_knob_name(kind, new_count)]
     previous = node[_point_knob_name(kind, count)].value()
     knob.setValue([float(previous[0]) + 20.0, float(previous[1]) + 20.0])
-    node.addKnob(knob)
     node[f"{kind}_point_count"].setValue(new_count)
     sync_prompt_visibility(node)
     node["kyven_status"].setValue(f"Added {kind} point {new_count}.")
@@ -102,8 +101,8 @@ def remove_point(kind: str) -> None:
     if count <= 1:
         node["kyven_status"].setValue(f"Keep at least one {kind} point control.")
         return
-    node.removeKnob(node[_point_knob_name(kind, count)])
     node[f"{kind}_point_count"].setValue(count - 1)
+    sync_prompt_visibility(node)
     node["kyven_status"].setValue(f"Removed {kind} point {count}.")
 
 
@@ -456,6 +455,19 @@ def start_server() -> None:
     threading.Thread(target=start, name="kyven-server-start", daemon=True).start()
 
 
+def _add_knob(nuke: Any, node: Any, knob: Any, *, start_line: bool = True) -> Any:
+    if start_line:
+        knob.setFlag(nuke.STARTLINE)
+    else:
+        knob.clearFlag(nuke.STARTLINE)
+    node.addKnob(knob)
+    return knob
+
+
+def _add_section(nuke: Any, node: Any, name: str, title: str) -> None:
+    _add_knob(nuke, node, nuke.Text_Knob(name, "", f"<b>{title}</b>"))
+
+
 def create_segment_node() -> Any:
     nuke = _nuke()
     selected = nuke.selectedNode() if nuke.selectedNodes() else None
@@ -463,95 +475,151 @@ def create_segment_node() -> Any:
     node.setInput(0, selected)
     node["label"].setValue("[value kyven_status]")
     node.addKnob(nuke.Tab_Knob("kyven", "Kyven Segment"))
-    node.addKnob(nuke.Enumeration_Knob("model", "Model", list(MODEL_LABELS)))
+
+    _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
+    _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(MODEL_LABELS)))
     node["model"].setValue(1)
-    node.addKnob(nuke.Enumeration_Knob("profile", "Execution Profile", ["low_memory", "balanced", "quality"]))
+    _add_knob(
+        nuke,
+        node,
+        nuke.Enumeration_Knob(
+            "profile",
+            "Memory Profile",
+            ["low_memory", "balanced", "quality"],
+        ),
+    )
     node["profile"].setValue(1)
-    node.addKnob(nuke.PyScript_Knob("refresh_models", "Refresh Models", "kyven_nuke.node.refresh_models()"))
-    node.addKnob(nuke.Boolean_Knob("positive_enabled", "Show / Use Positive Points"))
+    _add_knob(
+        nuke,
+        node,
+        nuke.PyScript_Knob(
+            "refresh_models",
+            "Refresh Installed Models",
+            "kyven_nuke.node.refresh_models()",
+        ),
+    )
+
+    _add_section(nuke, node, "positive_section", "POSITIVE POINTS (object to keep)")
+    _add_knob(nuke, node, nuke.Boolean_Knob("positive_enabled", "Enable Positive Points"))
     node["positive_enabled"].setValue(True)
     positive_count = nuke.Int_Knob("positive_point_count", "Positive Point Count")
     positive_count.setValue(1)
     positive_count.setVisible(False)
-    node.addKnob(positive_count)
-    node.addKnob(nuke.XY_Knob("positive_point", "Positive Point 1"))
-    node.addKnob(
+    _add_knob(nuke, node, positive_count)
+    for index, name in enumerate(_point_knob_names("positive", MAX_PROMPT_POINTS), start=1):
+        _add_knob(nuke, node, nuke.XY_Knob(name, f"Positive Point {index}"))
+    _add_knob(
+        nuke,
+        node,
         nuke.PyScript_Knob(
             "add_positive_point",
             "Add Positive Point",
             "kyven_nuke.node.add_point('positive')",
-        )
+        ),
     )
-    node.addKnob(
+    _add_knob(
+        nuke,
+        node,
         nuke.PyScript_Knob(
             "remove_positive_point",
             "Remove Last Positive",
             "kyven_nuke.node.remove_point('positive')",
-        )
+        ),
+        start_line=False,
     )
-    node.addKnob(nuke.Boolean_Knob("negative_enabled", "Show / Use Negative Points"))
+
+    _add_section(nuke, node, "negative_section", "NEGATIVE POINTS (areas to remove)")
+    _add_knob(nuke, node, nuke.Boolean_Knob("negative_enabled", "Enable Negative Points"))
     negative_count = nuke.Int_Knob("negative_point_count", "Negative Point Count")
     negative_count.setValue(1)
     negative_count.setVisible(False)
-    node.addKnob(negative_count)
-    node.addKnob(nuke.XY_Knob("negative_point", "Negative Point 1"))
-    node.addKnob(
+    _add_knob(nuke, node, negative_count)
+    for index, name in enumerate(_point_knob_names("negative", MAX_PROMPT_POINTS), start=1):
+        _add_knob(nuke, node, nuke.XY_Knob(name, f"Negative Point {index}"))
+    _add_knob(
+        nuke,
+        node,
         nuke.PyScript_Knob(
             "add_negative_point",
             "Add Negative Point",
             "kyven_nuke.node.add_point('negative')",
-        )
+        ),
     )
-    node.addKnob(
+    _add_knob(
+        nuke,
+        node,
         nuke.PyScript_Knob(
             "remove_negative_point",
             "Remove Last Negative",
             "kyven_nuke.node.remove_point('negative')",
-        )
+        ),
+        start_line=False,
     )
-    node.addKnob(nuke.Boolean_Knob("box_enabled", "Show / Use Box"))
-    node.addKnob(nuke.BBox_Knob("prompt_box", "Prompt Box"))
-    node.addKnob(
+
+    _add_section(nuke, node, "box_section", "PROMPT BOX (search area)")
+    _add_knob(nuke, node, nuke.Boolean_Knob("box_enabled", "Enable Prompt Box"))
+    _add_knob(nuke, node, nuke.BBox_Knob("prompt_box", "Prompt Box"))
+    _add_knob(
+        nuke,
+        node,
         nuke.PyScript_Knob(
             "reset_prompts",
-            "Reset Prompts to Input",
+            "Reset Points and Box to Input Size",
             "kyven_nuke.node.reset_prompts_to_input()",
-        )
+        ),
     )
-    node.addKnob(nuke.PyScript_Knob("process_frame", "Process Current Frame", "kyven_nuke.node.process_current_frame()"))
+
+    _add_section(nuke, node, "processing_section", "PROCESSING")
+    _add_knob(
+        nuke,
+        node,
+        nuke.PyScript_Knob(
+            "process_frame",
+            "Process Current Frame",
+            "kyven_nuke.node.process_current_frame()",
+        ),
+    )
     first = nuke.Int_Knob("range_first", "Range First")
     first.setValue(int(nuke.root().firstFrame()))
-    node.addKnob(first)
+    _add_knob(nuke, node, first)
     last = nuke.Int_Knob("range_last", "Range Last")
     last.setValue(int(nuke.root().lastFrame()))
-    node.addKnob(last)
-    node.addKnob(
+    _add_knob(nuke, node, last)
+    _add_knob(
+        nuke,
+        node,
         nuke.PyScript_Knob(
             "process_range",
-            "Process Frame Range",
+            "Process Range as Matte Sequence",
             "kyven_nuke.node.process_frame_range()",
-        )
+        ),
     )
-    node.addKnob(nuke.PyScript_Knob("cancel", "Cancel", "kyven_nuke.node.cancel_current_job()"))
+    _add_knob(
+        nuke,
+        node,
+        nuke.PyScript_Knob("cancel", "Cancel Processing", "kyven_nuke.node.cancel_current_job()"),
+    )
+    _add_section(nuke, node, "status_section", "STATUS")
     status = nuke.String_Knob("kyven_status", "Status")
     status.setFlag(nuke.READ_ONLY)
     status.setValue("Ready")
-    node.addKnob(status)
+    _add_knob(nuke, node, status)
     internal_id = nuke.String_Knob("kyven_uuid", "UUID")
     internal_id.setValue(uuid.uuid4().hex)
     internal_id.setVisible(False)
-    node.addKnob(internal_id)
+    _add_knob(nuke, node, internal_id)
     job_id = nuke.String_Knob("kyven_job_id", "Job ID")
     job_id.setVisible(False)
-    node.addKnob(job_id)
+    _add_knob(nuke, node, job_id)
     node["knobChanged"].setValue("kyven_nuke.node.prompt_knob_changed()")
 
     node.begin()
     try:
         source = nuke.nodes.Input(name="Source")
         source["number"].setValue(0)
-        black = nuke.nodes.Constant(name="KyvenEmptyMatte")
-        black["color"].setValue([0.0, 0.0, 0.0, 0.0])
+        black = nuke.nodes.Multiply(name="KyvenEmptyMatte", value=0.0)
+        black.setInput(0, source)
+        black["channels"].setValue("rgba")
         switch = nuke.nodes.Switch(name="KyvenMatteSwitch")
         switch.setInput(0, black)
         switch["which"].setValue(0)

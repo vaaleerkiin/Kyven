@@ -8,6 +8,7 @@ The initial adapter is under `hosts/nuke`. It creates a `KyvenSegment` Group nod
 - dynamically addable/removable positive and negative point controls;
 - independent show/use toggles that hide disabled Viewer handles;
 - an input-sized prompt box and input-centered initial points;
+- source-inherited output format and canvas, including before the first matte is generated;
 - Process Current Frame, Process Frame Range, and Cancel actions;
 - in-process source export followed by asynchronous inference;
 - asynchronous server submission and result polling;
