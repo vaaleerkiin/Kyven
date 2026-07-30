@@ -8,6 +8,7 @@ NUKE_ROOT = Path(__file__).parents[1] / "hosts" / "nuke"
 sys.path.insert(0, str(NUKE_ROOT))
 
 from kyven_nuke.node import (
+    OUTPUT_MODES,
     _nuke_file_path,
     _path_for_frame,
     _point_knob_names,
@@ -18,6 +19,12 @@ from kyven_nuke.runtime import _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_output_modes_match_internal_switch_inputs(self) -> None:
+        self.assertEqual(
+            OUTPUT_MODES,
+            ("Matte", "Source + Alpha", "Cutout", "Source (Bypass)"),
+        )
+
     def test_video_payload_uses_key_frame_and_cpu_offload(self) -> None:
         payload = segment_video_payload(
             frames_dir="D:/cache/frames",

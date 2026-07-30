@@ -12,6 +12,7 @@ from kyven_nuke.payload import MODEL_LABELS, segment_payload, segment_video_payl
 from kyven_nuke.runtime import ensure_server
 
 MAX_PROMPT_POINTS = 32
+OUTPUT_MODES = ("Matte", "Source + Alpha", "Cutout", "Source (Bypass)")
 _range_cancellations: set[str] = set()
 _range_cancel_lock = threading.RLock()
 
@@ -586,6 +587,83 @@ def _add_section(nuke: Any, node: Any, name: str, title: str) -> None:
     _add_knob(nuke, node, nuke.Text_Knob(name, "", f"<b>{title}</b>"))
 
 
+def _ensure_output_controls(node: Any) -> None:
+    """Add the output selector and native Nuke compositing branch to a Segment Group."""
+    nuke = _nuke()
+    if "output_mode" not in node.knobs():
+        _add_section(nuke, node, "output_section", "OUTPUT")
+        _add_knob(
+            nuke,
+            node,
+            nuke.Enumeration_Knob("output_mode", "Output", list(OUTPUT_MODES)),
+        )
+        help_text = nuke.Text_Knob(
+            "output_help",
+            "",
+            "Matte = mask | Source + Alpha = original RGB with mask in alpha | "
+            "Cutout = premultiplied foreground | Source = bypass",
+        )
+        _add_knob(nuke, node, help_text)
+
+    node.begin()
+    try:
+        source = nuke.toNode("Source")
+        matte = nuke.toNode("KyvenMatteSwitch")
+        output = nuke.toNode("Output")
+        if source is None or matte is None or output is None:
+            raise RuntimeError("Selected node is not a compatible Kyven Segment Group.")
+
+        matte_rgba = nuke.toNode("KyvenMatteRGBA")
+        if matte_rgba is None:
+            matte_rgba = nuke.nodes.Copy(name="KyvenMatteRGBA")
+        matte_rgba.setInput(0, matte)
+        matte_rgba.setInput(1, matte)
+        matte_rgba["from0"].setValue("rgba.red")
+        matte_rgba["to0"].setValue("rgba.alpha")
+
+        source_alpha = nuke.toNode("KyvenSourceAlpha")
+        if source_alpha is None:
+            source_alpha = nuke.nodes.Copy(name="KyvenSourceAlpha")
+        source_alpha.setInput(0, source)
+        source_alpha.setInput(1, matte)
+        source_alpha["from0"].setValue("rgba.red")
+        source_alpha["to0"].setValue("rgba.alpha")
+
+        cutout = nuke.toNode("KyvenCutout")
+        if cutout is None:
+            cutout = nuke.nodes.Premult(name="KyvenCutout")
+        cutout.setInput(0, source_alpha)
+
+        output_switch = nuke.toNode("KyvenOutputSwitch")
+        if output_switch is None:
+            output_switch = nuke.nodes.Switch(name="KyvenOutputSwitch")
+        output_switch.setInput(0, matte_rgba)
+        output_switch.setInput(1, source_alpha)
+        output_switch.setInput(2, cutout)
+        output_switch.setInput(3, source)
+        output_switch["which"].setExpression("parent.output_mode")
+        output.setInput(0, output_switch)
+    finally:
+        node.end()
+
+
+def upgrade_selected_segment_output() -> None:
+    """Add output modes to an already-created Kyven Segment node."""
+    nuke = _nuke()
+    try:
+        node = nuke.selectedNode()
+    except Exception:  # noqa: BLE001 - Nuke raises when nothing is selected
+        nuke.message("Select an existing Kyven Segment node first.")
+        return
+    try:
+        _ensure_output_controls(node)
+    except Exception as exc:  # noqa: BLE001 - host boundary must report useful context
+        nuke.message(f"Could not upgrade the selected node:\n{exc}")
+        return
+    if "kyven_status" in node.knobs():
+        node["kyven_status"].setValue("Output modes installed. Existing matte was preserved.")
+
+
 def create_segment_node() -> Any:
     nuke = _nuke()
     selected = nuke.selectedNode() if nuke.selectedNodes() else None
@@ -759,6 +837,22 @@ def create_segment_node() -> Any:
             "kyven_nuke.node.propagate_video('both')",
         ),
     )
+    _add_section(nuke, node, "output_section", "OUTPUT")
+    _add_knob(
+        nuke,
+        node,
+        nuke.Enumeration_Knob("output_mode", "Output", list(OUTPUT_MODES)),
+    )
+    _add_knob(
+        nuke,
+        node,
+        nuke.Text_Knob(
+            "output_help",
+            "",
+            "Matte = mask | Source + Alpha = original RGB with mask in alpha | "
+            "Cutout = premultiplied foreground | Source = bypass",
+        ),
+    )
     _add_section(nuke, node, "status_section", "STATUS")
     status = nuke.String_Knob("kyven_status", "Status")
     status.setFlag(nuke.READ_ONLY)
@@ -783,8 +877,7 @@ def create_segment_node() -> Any:
         switch = nuke.nodes.Switch(name="KyvenMatteSwitch")
         switch.setInput(0, black)
         switch["which"].setValue(0)
-        output = nuke.nodes.Output(name="Output")
-        output.setInput(0, switch)
+        nuke.nodes.Output(name="Output")
         writer = nuke.nodes.Write(name="KyvenSourceWrite")
         writer.setInput(0, source)
         writer["file_type"].setValue("png")
@@ -797,6 +890,7 @@ def create_segment_node() -> Any:
             video_writer["_jpeg_quality"].setValue(1.0)
     finally:
         node.end()
+    _ensure_output_controls(node)
     _reset_prompts(node)
     sync_prompt_visibility(node)
     return node

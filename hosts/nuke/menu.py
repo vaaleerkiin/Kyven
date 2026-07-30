@@ -18,4 +18,5 @@ import kyven_nuke
 
 menu = nuke.menu("Nodes").addMenu("Kyven")
 menu.addCommand("Segment", kyven_nuke.create_segment_node, icon="")
+menu.addCommand("Upgrade Selected Segment Output", kyven_nuke.upgrade_selected_segment_output)
 menu.addCommand("Start Server", kyven_nuke.start_server, icon="")

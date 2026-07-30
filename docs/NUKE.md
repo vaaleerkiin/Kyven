@@ -2,7 +2,7 @@
 
 The initial adapter is under `hosts/nuke`. It creates a `KyvenSegment` Group node with:
 
-- Source input and matte-only output;
+- Source input with selectable Matte, Source + Alpha, Cutout, and Source (Bypass) outputs;
 - selectable SAM 2.1 Tiny, Small, Base+, or Large model;
 - Low Memory, Balanced, and Quality execution profiles;
 - dynamically addable/removable positive and negative point controls;
@@ -50,5 +50,12 @@ lossless PNG files. Frames and inference state are offloaded to system RAM so SA
 practical on an 8 GB GPU. This version starts a fresh tracking session for each run; correction
 on additional key frames is follow-up work.
 
-The current node outputs the generated matte for ordinary native graph composition. Source-with-
-alpha output is follow-up work.
+## Output modes
+
+- `Matte` puts the mask in RGB and alpha;
+- `Source + Alpha` preserves the original RGB and replaces alpha with the mask;
+- `Cutout` premultiplies the source by the generated alpha;
+- `Source (Bypass)` returns the unchanged input.
+
+These modes are native Nuke operations and do not rerun SAM. For an existing Kyven Segment node,
+select it and choose `Kyven > Upgrade Selected Segment Output`; the cached matte is preserved.
