@@ -69,16 +69,19 @@ def ensure_server(timeout_seconds: float = 30.0) -> NukeKyvenClient:
     except (OSError, NukeKyvenClientError):
         pass
 
-    executable = config.executable()
+    executable = config.python_executable()
     if not executable.is_file():
-        raise RuntimeError(f"Kyven executable was not found: {executable}")
+        raise RuntimeError(f"Kyven Python executable was not found: {executable}")
     config.runtime_dir().mkdir(parents=True, exist_ok=True)
     log_path = config.runtime_dir() / "server.log"
     creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    with log_path.open("a", encoding="utf-8") as log:
+    with log_path.open("w", encoding="utf-8") as log:
         process = subprocess.Popen(
             [
                 str(executable),
+                "-I",
+                "-m",
+                "kyven.server.bootstrap",
                 "serve",
                 "--models-dir",
                 str(config.models_dir()),
