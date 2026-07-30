@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kyven"
+version = "0.1.0.dev0"
+description = "Local, modular AI masking for node-based compositing"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Kyven contributors" }]
+dependencies = [
+  "numpy>=1.26,<3",
+  "Pillow>=10,<13",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<10",
+  "ruff>=0.9,<1",
+]
+sam2 = [
+  "torch>=2.5.1",
+  "torchvision>=0.20.1",
+]
+
+[project.scripts]
+kyven = "kyven.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
