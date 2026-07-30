@@ -36,6 +36,14 @@ class ProviderRegistry:
             self._instances[provider_id] = self._factories[provider_id]()
         return self._instances[provider_id]
 
+    def activate(self, provider_id: str) -> SegmentationProvider:
+        """Keep only the selected provider resident before returning it."""
+
+        for loaded_id in tuple(self._instances):
+            if loaded_id != provider_id:
+                self.unload(loaded_id)
+        return self.get(provider_id)
+
     def unload(self, provider_id: str) -> None:
         """Unload and forget one constructed provider."""
 
@@ -53,12 +61,17 @@ class ProviderRegistry:
     def registered_ids(self) -> tuple[str, ...]:
         return tuple(sorted(self._factories))
 
+    @property
+    def loaded_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self._instances))
+
 
 def default_registry(
     *,
     checkpoint: str,
     model_config: str,
     device: str = "auto",
+    expected_checksum: str | None = None,
 ) -> ProviderRegistry:
     """Create the built-in registry without importing or loading SAM 2."""
 
@@ -71,7 +84,7 @@ def default_registry(
             checkpoint=checkpoint,
             model_config=model_config,
             device=device,
+            expected_checksum=expected_checksum,
         ),
     )
     return registry
-

@@ -4,15 +4,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import secrets
 import sys
+import tempfile
 from pathlib import Path
 
-from kyven.errors import KyvenError
-from kyven.segment.models import BoxPrompt, ExecutionProfile, PointLabel, PointPrompt, SegmentRequest
-from kyven.segment.providers.registry import default_registry
+from kyven.errors import ErrorCode, KyvenError
+from kyven.models.catalog import ModelCatalog
+from kyven.segment.models import (
+    BoxPrompt,
+    ExecutionProfile,
+    PointLabel,
+    PointPrompt,
+    SegmentRequest,
+)
 from kyven.segment.service import SegmentService
-
-DEFAULT_SAM2_CONFIG = "configs/sam2.1/sam2.1_hiera_s.yaml"
 
 
 def _point(value: str) -> PointPrompt:
@@ -33,17 +40,26 @@ def _box(value: str) -> BoxPrompt:
         raise argparse.ArgumentTypeError("Box must be X0,Y0,X1,Y1.") from exc
 
 
+def _model_ids() -> tuple[str, ...]:
+    return tuple(spec.model_id for spec in ModelCatalog.builtin().list("segment"))
+
+
+def _add_runtime_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--models-dir", default=Path("models"), type=Path)
+    parser.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the public CLI parser."""
 
     parser = argparse.ArgumentParser(prog="kyven", description="Local AI masking engine")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
     segment = subparsers.add_parser("segment", help="Create a matte from point or box prompts")
     segment.add_argument("--input", required=True, type=Path)
     segment.add_argument("--output", required=True, type=Path)
-    segment.add_argument("--checkpoint", required=True)
-    segment.add_argument("--model-config", default=DEFAULT_SAM2_CONFIG)
-    segment.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
+    segment.add_argument("--model", default="sam2.1-small", choices=_model_ids())
+    _add_runtime_options(segment)
     segment.add_argument(
         "--profile",
         default=ExecutionProfile.BALANCED.value,
@@ -52,25 +68,70 @@ def build_parser() -> argparse.ArgumentParser:
     segment.add_argument("--point", action="append", default=[], type=_point)
     segment.add_argument("--box", type=_box)
     segment.add_argument("--single-mask", action="store_true")
+
+    serve = subparsers.add_parser("serve", help="Run the authenticated local inference server")
+    _add_runtime_options(serve)
+    serve.add_argument("--port", default=8765, type=int)
+    serve.add_argument("--token-file", required=True, type=Path)
+
+    models = subparsers.add_parser("models", help="Inspect or download trusted models")
+    model_commands = models.add_subparsers(dest="model_command", required=True)
+    list_models = model_commands.add_parser("list", help="List catalog models")
+    list_models.add_argument("--models-dir", default=Path("models"), type=Path)
+    download = model_commands.add_parser("download", help="Download and verify one model")
+    download.add_argument("model_id", choices=_model_ids())
+    download.add_argument("--models-dir", default=Path("models"), type=Path)
     return parser
+
+
+def _load_or_create_token(path: Path) -> str:
+    if path.is_file():
+        token = path.read_text(encoding="utf-8").strip()
+        if len(token) < 32:
+            raise KyvenError(
+                code=ErrorCode.AUTHENTICATION_FAILED,
+                message="Existing Kyven token file contains an invalid token.",
+                suggested_action="Delete the token file and restart the server.",
+            )
+        return token
+    path.parent.mkdir(parents=True, exist_ok=True)
+    token = secrets.token_urlsafe(32)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(token)
+        os.replace(temporary_name, path)
+    except Exception:
+        Path(temporary_name).unlink(missing_ok=True)
+        raise
+    return token
+
+
+def _available_vram_mb() -> int | None:
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return int(torch.cuda.get_device_properties(0).total_memory / (1024**2))
+    except ImportError:
+        pass
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the CLI and return a process exit code."""
 
     args = build_parser().parse_args(argv)
+    catalog = ModelCatalog.builtin()
     try:
         if args.command == "segment":
-            registry = default_registry(
-                checkpoint=args.checkpoint,
-                model_config=args.model_config,
-                device=args.device,
-            )
+            registry = catalog.registry(args.models_dir, args.device)
             request = SegmentRequest(
                 source=args.input,
                 output=args.output,
                 points=tuple(args.point),
                 box=args.box,
+                provider_id=args.model,
                 profile=ExecutionProfile(args.profile),
                 multimask_output=not args.single_mask,
             )
@@ -87,6 +148,50 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0
+        if args.command == "serve":
+            from kyven.server.app import KyvenServer, ServerConfig
+            from kyven.server.jobs import JobManager
+
+            models_dir = args.models_dir.resolve()
+            token = _load_or_create_token(args.token_file.resolve())
+            registry = catalog.registry(models_dir, args.device)
+            config = ServerConfig(
+                token=token,
+                models_dir=models_dir,
+                port=args.port,
+                available_vram_mb=_available_vram_mb(),
+            )
+            server = KyvenServer(
+                config,
+                JobManager(SegmentService(registry)),
+                registry,
+                catalog,
+            )
+            print(json.dumps({"status": "ready", "host": "127.0.0.1", "port": server.port}))
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                server.close()
+            return 0
+        if args.command == "models" and args.model_command == "list":
+            print(
+                json.dumps(
+                    {
+                        "models": [
+                            spec.snapshot(args.models_dir, _available_vram_mb())
+                            for spec in catalog.list()
+                        ]
+                    },
+                    indent=2,
+                )
+            )
+            return 0
+        if args.command == "models" and args.model_command == "download":
+            path = catalog.download(args.model_id, args.models_dir)
+            print(json.dumps({"model_id": args.model_id, "path": str(path)}, indent=2))
+            return 0
     except KyvenError as exc:
         print(json.dumps(exc.to_dict(), indent=2), file=sys.stderr)
         return 2
@@ -95,4 +200,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

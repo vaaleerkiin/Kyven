@@ -31,7 +31,7 @@ class SegmentService:
         request.validate()
         token = cancellation or CancellationToken()
         token.raise_if_cancelled()
-        provider = self._registry.get(request.provider_id)
+        provider = self._registry.activate(request.provider_id)
         capabilities = provider.capabilities
         prediction = provider.predict(request, token)
         token.raise_if_cancelled()
@@ -84,4 +84,3 @@ class SegmentService:
                 recoverable=True,
                 suggested_action="Check the output path and available disk space.",
             ) from exc
-

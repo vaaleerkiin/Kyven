@@ -1,0 +1,190 @@
+"""Single-GPU asynchronous job scheduling."""
+
+from __future__ import annotations
+
+import threading
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from enum import Enum
+from pathlib import Path
+from typing import Any
+
+from kyven.cancellation import CancellationToken
+from kyven.errors import ErrorCode, KyvenError
+from kyven.segment.models import (
+    BoxPrompt,
+    ExecutionProfile,
+    PointLabel,
+    PointPrompt,
+    SegmentRequest,
+)
+from kyven.segment.providers.registry import ProviderRegistry
+from kyven.segment.service import SegmentService
+
+
+class JobStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+@dataclass(slots=True)
+class JobRecord:
+    job_id: str
+    request: SegmentRequest
+    cancellation: CancellationToken = field(default_factory=CancellationToken)
+    status: JobStatus = JobStatus.QUEUED
+    created_at: float = field(default_factory=time.time)
+    started_at: float | None = None
+    finished_at: float | None = None
+    result: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "job_id": self.job_id,
+            "status": self.status.value,
+            "created_at": self.created_at,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "result": self.result,
+            "error": self.error,
+        }
+
+
+class JobManager:
+    """Serialize GPU work while keeping HTTP and host UIs responsive."""
+
+    def __init__(self, service: SegmentService) -> None:
+        self._service = service
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kyven-gpu")
+        self._jobs: dict[str, JobRecord] = {}
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def request_from_payload(payload: dict[str, Any]) -> SegmentRequest:
+        source = Path(str(payload["source"]))
+        output = Path(str(payload["output"]))
+        if not source.is_absolute() or not output.is_absolute():
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="Server job paths must be absolute.",
+                suggested_action="Resolve source and output paths in the host adapter.",
+            )
+        points = tuple(
+            PointPrompt(
+                x=float(item["x"]),
+                y=float(item["y"]),
+                label=PointLabel(str(item.get("label", "positive"))),
+            )
+            for item in payload.get("points", [])
+        )
+        box_payload = payload.get("box")
+        box = None
+        if box_payload is not None:
+            box = BoxPrompt(
+                float(box_payload["x0"]),
+                float(box_payload["y0"]),
+                float(box_payload["x1"]),
+                float(box_payload["y1"]),
+            )
+        return SegmentRequest(
+            source=source,
+            output=output,
+            points=points,
+            box=box,
+            provider_id=str(payload.get("model_id", "sam2.1-small")),
+            profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
+            multimask_output=bool(payload.get("multimask_output", True)),
+        )
+
+    def submit_segment(self, payload: dict[str, Any]) -> str:
+        try:
+            request = self.request_from_payload(payload)
+            request.validate()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="The segment job payload is invalid.",
+                technical_detail=str(exc),
+                suggested_action="Check source, output, points, box, model, and profile fields.",
+            ) from exc
+        record = JobRecord(job_id=uuid.uuid4().hex, request=request)
+        with self._lock:
+            self._jobs[record.job_id] = record
+        self._executor.submit(self._run, record)
+        return record.job_id
+
+    def _run(self, record: JobRecord) -> None:
+        with self._lock:
+            if record.cancellation.is_cancelled:
+                record.status = JobStatus.CANCELLED
+                record.finished_at = time.time()
+                return
+            record.status = JobStatus.RUNNING
+            record.started_at = time.time()
+        try:
+            result = self._service.run(record.request, record.cancellation)
+            with self._lock:
+                record.status = JobStatus.SUCCEEDED
+                record.result = {
+                    "output": str(result.output),
+                    "score": result.score,
+                    "cache_key": result.cache_key,
+                    "metadata": result.metadata,
+                }
+        except KyvenError as exc:
+            with self._lock:
+                record.status = (
+                    JobStatus.CANCELLED if exc.code is ErrorCode.CANCELLED else JobStatus.FAILED
+                )
+                record.error = exc.to_dict()
+        except Exception as exc:  # noqa: BLE001 - worker boundary converts failures to job state
+            with self._lock:
+                record.status = JobStatus.FAILED
+                record.error = KyvenError(
+                    code=ErrorCode.SERVER_ERROR,
+                    message="The Kyven worker failed unexpectedly.",
+                    technical_detail=str(exc),
+                    recoverable=True,
+                    suggested_action="Inspect the server log and retry the job.",
+                ).to_dict()
+        finally:
+            with self._lock:
+                record.finished_at = time.time()
+
+    def get(self, job_id: str) -> dict[str, Any]:
+        with self._lock:
+            record = self._jobs.get(job_id)
+            if record is None:
+                raise KyvenError(
+                    code=ErrorCode.JOB_NOT_FOUND,
+                    message=f"Kyven job was not found: {job_id}",
+                )
+            return record.snapshot()
+
+    def cancel(self, job_id: str) -> dict[str, Any]:
+        with self._lock:
+            record = self._jobs.get(job_id)
+            if record is None:
+                raise KyvenError(
+                    code=ErrorCode.JOB_NOT_FOUND,
+                    message=f"Kyven job was not found: {job_id}",
+                )
+            record.cancellation.cancel()
+            if record.status is JobStatus.QUEUED:
+                record.status = JobStatus.CANCELLED
+                record.finished_at = time.time()
+            return record.snapshot()
+
+    def shutdown(self) -> None:
+        self._executor.shutdown(wait=False, cancel_futures=True)
+
+    def unload_all(self, registry: ProviderRegistry) -> None:
+        """Queue unloading behind active inference to avoid model races."""
+
+        self._executor.submit(registry.unload_all).result(timeout=120)
