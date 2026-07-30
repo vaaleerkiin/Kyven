@@ -725,6 +725,7 @@ def _section_markup(title: str) -> str:
 
 def _restyle_node_ui(node: Any) -> None:
     """Apply current labels and section styling to new or upgraded nodes."""
+    nuke = _nuke()
     sections = {
         "model_section": "MODEL AND PERFORMANCE",
         "positive_section": "POSITIVE POINTS / OBJECT TO KEEP",
@@ -759,6 +760,21 @@ def _restyle_node_ui(node: Any) -> None:
     for name, label in labels.items():
         if name in node.knobs():
             node[name].setLabel(label)
+    same_line = {
+        "refresh_models",
+        "remove_positive_point",
+        "remove_negative_point",
+        "range_last",
+        "cancel",
+        "set_key_frame",
+        "propagate_backward",
+        "propagate_both",
+        "delete_node_cache",
+        "delete_all_cache",
+    }
+    for name in same_line:
+        if name in node.knobs():
+            node[name].clearFlag(nuke.STARTLINE)
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
