@@ -58,6 +58,17 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertEqual(capabilities.license_name, "Apache-2.0")
         self.assertTrue(capabilities.supports_cpu)
 
+    def test_activate_unloads_a_different_resident_provider(self) -> None:
+        first = FakeProvider()
+        second = FakeProvider()
+        registry = ProviderRegistry()
+        registry.register("first", lambda: first)
+        registry.register("second", lambda: second)
+        registry.activate("first")
+        registry.activate("second")
+        self.assertTrue(first.unloaded)
+        self.assertEqual(registry.loaded_ids, ("second",))
+
 
 if __name__ == "__main__":
     unittest.main()

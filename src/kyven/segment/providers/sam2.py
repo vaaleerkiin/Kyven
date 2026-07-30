@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -24,10 +25,21 @@ from kyven.segment.providers.base import SegmentationProvider
 class Sam2Provider(SegmentationProvider):
     """SAM 2.1 adapter with no import or VRAM use until prediction begins."""
 
-    def __init__(self, checkpoint: str, model_config: str, device: str = "auto") -> None:
+    def __init__(
+        self,
+        checkpoint: str,
+        model_config: str,
+        device: str = "auto",
+        expected_checksum: str | None = None,
+        provider_id: str = "sam2",
+        display_name: str = "SAM 2.1",
+    ) -> None:
         self._checkpoint = Path(checkpoint)
         self._model_config = model_config
         self._requested_device = device
+        self._expected_checksum = expected_checksum
+        self._provider_id = provider_id
+        self._display_name = display_name
         self._resolved_device = "unresolved"
         self._predictor: Any | None = None
         self._checkpoint_checksum: str | None = None
@@ -36,8 +48,8 @@ class Sam2Provider(SegmentationProvider):
     def capabilities(self) -> ProviderCapabilities:
         checksum = self._checkpoint_checksum or self._calculate_checksum_if_present()
         return ProviderCapabilities(
-            provider_id="sam2",
-            display_name="SAM 2.1",
+            provider_id=self._provider_id,
+            display_name=self._display_name,
             provider_version="1",
             model_family="sam2",
             model_variant=self._model_config,
@@ -56,6 +68,8 @@ class Sam2Provider(SegmentationProvider):
         )
 
     def _calculate_checksum_if_present(self) -> str:
+        if self._checkpoint_checksum is not None:
+            return self._checkpoint_checksum
         if not self._checkpoint.is_file():
             return "missing"
         digest = hashlib.sha256()
@@ -74,6 +88,16 @@ class Sam2Provider(SegmentationProvider):
                 message=f"SAM 2 checkpoint was not found: {self._checkpoint}",
                 recoverable=True,
                 suggested_action="Download a licensed SAM 2.1 checkpoint and pass its path.",
+            )
+        actual_checksum = self._calculate_checksum_if_present()
+        if self._expected_checksum and actual_checksum.lower() != self._expected_checksum.lower():
+            raise KyvenError(
+                code=ErrorCode.MODEL_NOT_FOUND,
+                message="The SAM 2 checkpoint checksum does not match the trusted manifest.",
+                technical_detail=(
+                    f"Expected {self._expected_checksum.lower()}, received {actual_checksum.lower()}."
+                ),
+                suggested_action="Delete the checkpoint and download it again from the official source.",
             )
         try:
             import torch
@@ -120,7 +144,7 @@ class Sam2Provider(SegmentationProvider):
         cancellation.raise_if_cancelled()
         predictor = self._load()
 
-        image = np.asarray(Image.open(request.source).convert("RGB"))
+        image = np.array(Image.open(request.source).convert("RGB"), copy=True)
         point_coords = None
         point_labels = None
         if request.points:
@@ -135,14 +159,22 @@ class Sam2Provider(SegmentationProvider):
             )
 
         try:
-            predictor.set_image(image)
-            cancellation.raise_if_cancelled()
-            masks, scores, _ = predictor.predict(
-                point_coords=point_coords,
-                point_labels=point_labels,
-                box=box,
-                multimask_output=request.multimask_output,
+            import torch
+
+            autocast = (
+                torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+                if self._resolved_device == "cuda"
+                else nullcontext()
             )
+            with torch.inference_mode(), autocast:
+                predictor.set_image(image)
+                cancellation.raise_if_cancelled()
+                masks, scores, _ = predictor.predict(
+                    point_coords=point_coords,
+                    point_labels=point_labels,
+                    box=box,
+                    multimask_output=request.multimask_output,
+                )
         except KyvenError:
             raise
         except Exception as exc:
@@ -159,7 +191,7 @@ class Sam2Provider(SegmentationProvider):
             mask=np.asarray(masks[best], dtype=np.bool_),
             score=float(scores[best]),
             metadata={
-                "provider": "sam2",
+                "provider": self._provider_id,
                 "model_config": self._model_config,
                 "device": self._resolved_device,
                 "profile": request.profile.value,
@@ -177,4 +209,3 @@ class Sam2Provider(SegmentationProvider):
                 torch.cuda.empty_cache()
         except ImportError:
             return
-

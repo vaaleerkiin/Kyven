@@ -17,6 +17,9 @@ class ErrorCode(str, Enum):
     CANCELLED = "cancelled"
     INFERENCE_FAILED = "inference_failed"
     OUTPUT_FAILED = "output_failed"
+    AUTHENTICATION_FAILED = "authentication_failed"
+    JOB_NOT_FOUND = "job_not_found"
+    SERVER_ERROR = "server_error"
 
 
 @dataclass(slots=True)
@@ -42,4 +45,3 @@ class KyvenError(Exception):
             "recoverable": self.recoverable,
             "suggested_action": self.suggested_action,
         }
-

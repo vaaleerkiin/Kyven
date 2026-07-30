@@ -33,9 +33,9 @@ python -m pip install -e ".[dev]"
 python -m unittest discover -s tests -v
 ```
 
-SAM 2 is an optional provider runtime. Install PyTorch for the required CUDA or CPU platform,
-then install the official SAM 2 package according to its upstream instructions. Kyven does not
-download or redistribute the checkpoint yet.
+SAM 2 is an optional provider runtime. On a compatible Windows NVIDIA system, the tested CUDA
+12.8 runtime can be installed with `requirements/runtime-cu128.txt`. Kyven downloads model
+weights separately from its trusted catalog and verifies both size and SHA-256.
 
 ## CLI
 
@@ -45,7 +45,8 @@ Example with one positive point, one negative point, and the SAM 2.1 Small check
 kyven segment \
   --input frame.png \
   --output matte.png \
-  --checkpoint models/sam2.1_hiera_small.pt \
+  --model sam2.1-small \
+  --models-dir models \
   --point 640,360,positive \
   --point 100,100,negative \
   --profile balanced
@@ -59,6 +60,6 @@ error suitable for display by a host adapter.
 
 ## Next integration slice
 
-The next step is an asynchronous job API around `SegmentService`, followed by a thin Nuke node
-that collects prompts, submits a job, remains responsive, and reads the cached matte result.
-
+The asynchronous server and initial Nuke adapter now exist. The next Segment work is production
+host testing, multi-point viewer interaction, frame-range processing, resumable cache metadata,
+and explicit out-of-memory retry profiles.

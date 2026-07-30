@@ -74,12 +74,14 @@ Pre-alpha architecture and planning.
 
 ## Development status
 
-The first implemented vertical slice is `Kyven Segment`: a host-independent promptable
-segmentation service with a lazy SAM 2.1 provider and a command-line adapter. Nuke, Fusion,
-and Resolve adapters will call the same service instead of loading inference models inside
-their UI processes.
+The current vertical slice is `Kyven Segment`: a host-independent promptable segmentation
+service, authenticated asynchronous local server, selectable SAM 2.1 model catalog, CLI, and
+an initial thin Nuke adapter. Nuke, Fusion, and Resolve adapters call the same service instead
+of loading inference models inside their UI processes.
 
-See [`docs/SEGMENT.md`](docs/SEGMENT.md) for the current CLI contract and development setup.
+See [`docs/SEGMENT.md`](docs/SEGMENT.md), [`docs/MODELS.md`](docs/MODELS.md),
+[`docs/SERVER.md`](docs/SERVER.md), [`docs/NUKE.md`](docs/NUKE.md), and
+[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
 ## License
 
