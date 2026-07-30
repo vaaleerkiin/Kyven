@@ -3,7 +3,21 @@
 The Nuke adapter is a Group node that exports frames to the local Kyven Server and reads cached
 PNG mattes back into the graph. Nuke remains responsive while server inference runs.
 
-## Install
+## Portable install
+
+Clone or extract Kyven into its final writable directory and double-click `install.cmd`. To launch
+the same installer from PowerShell, run from the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+All runtime files stay inside that repository. The installer does not require administrator access,
+does not alter `PATH`, and does not edit Nuke settings. It prints the exact plugin path when done.
+Its console menu allows one or several SAM 2 models to be selected according to available VRAM.
+Choose the final repository location before installing; after moving it, rerun `install.ps1`.
+
+## Connect Nuke manually
 
 Add the repository host folder to the user's existing `.nuke/init.py`:
 

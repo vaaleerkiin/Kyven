@@ -2,5 +2,4 @@
 
 torch==2.10.0+cu128
 torchvision==0.25.0+cu128
-git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4
--e .
+SAM-2 @ https://github.com/facebookresearch/sam2/archive/2b90b9f5ceec907a1c18123530e92e794ad901a4.zip

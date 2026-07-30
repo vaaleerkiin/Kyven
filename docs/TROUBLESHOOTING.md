@@ -1,5 +1,23 @@
 # Troubleshooting
 
+## Portable installer fails
+
+Double-click `install.cmd`, or run the installer from the repository root in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Python 3.10-3.13 must already be installed; Python 3.12 is preferred. If it is not detected, pass
+its full path with `-PythonExe`. The installer does not need Git, administrator access, or an EXE
+installer. Internet access is required for the first dependency and model download.
+
+Choose the final repository location before installation. A Windows virtual environment contains
+absolute paths, so after moving the Kyven folder, rerun `install.ps1` to rebuild or repair `.venv`.
+It is safe to rerun after pulling an update; verified model files are reused.
+If necessary, it stops only a `kyven.exe` launched from this repository's own `.venv` before
+updating the package. Restart Nuke after installation so it starts the newly installed server.
+
 ## Server does not become ready
 
 1. Close Nuke completely and start it again.

@@ -36,24 +36,42 @@ Atomic grayscale PNG matte cache
 The Nuke process never imports PyTorch or SAM. Only one selected segmentation model is kept
 resident, and older local server revisions are asked to unload before a new revision starts.
 
-## Development setup on Windows
+## Portable installation on Windows
 
-Python 3.10 or newer is required. The tested NVIDIA runtime uses CUDA 12.8 wheels:
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements\runtime-cu128.txt
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-```
-
-Install a model from the trusted catalog:
+Clone or extract the repository into its final folder, then double-click `install.cmd`. A console
+window opens and asks which model or models to install. The equivalent PowerShell command is:
 
 ```powershell
-.\.venv\Scripts\kyven.exe models download sam2.1-small --models-dir models
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-Add the repository host folder to the existing Nuke `init.py`:
+The script installs everything beside the repository and does not modify Nuke or system settings:
+
+- `.venv` contains Python packages, PyTorch, and SAM 2;
+- `models` contains verified checkpoints;
+- `.runtime` contains the pip cache, server files, and generated Nuke cache.
+
+SAM 2.1 Small is downloaded by default. Another model can be selected explicitly:
+
+The console asks which model or models to install. Enter one or several numbers,
+for example `1,2`. Press Enter to accept SAM 2.1 Small, the recommended default for an 8 GB GPU.
+For unattended installation, models can also be selected explicitly:
+
+```powershell
+.\install.ps1 -Model sam2.1-tiny
+.\install.ps1 -Model sam2.1-tiny,sam2.1-small
+.\install.ps1 -Model sam2.1-base-plus
+.\install.ps1 -Model sam2.1-large
+.\install.ps1 -Model none
+```
+
+The installer is safe to run again after `git pull`. It reuses `.venv` and existing verified model
+files. It does not require administrator access and does not add anything to the system `PATH`.
+Choose the repository's final location before installation. If it is moved later, run
+`install.ps1` again in the new location so the private Python environment is rebuilt correctly.
+During an update, the script stops a running Kyven server launched from that same repository.
+
+After installation, manually add the path printed by the script to the existing Nuke `init.py`:
 
 ```python
 import nuke
@@ -61,7 +79,8 @@ import nuke
 nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 ```
 
-Restart Nuke and choose `Kyven > Segment`. Existing nodes can be migrated with
+The script intentionally never edits `init.py`. Restart Nuke and choose `Kyven > Segment`.
+Existing nodes can be migrated with
 `Kyven > Upgrade Selected Segment Node`.
 
 ## Typical Nuke workflow
