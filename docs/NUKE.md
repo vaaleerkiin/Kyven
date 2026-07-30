@@ -138,7 +138,7 @@ sequences under their own UUID folder.
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18769` and requires API 6. A
+The adapter starts an external hidden Python process on `127.0.0.1:18770` and requires API 7. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 
@@ -154,3 +154,5 @@ Server output for the latest launch is written to `.runtime/server.log`.
 
 See [Troubleshooting](TROUBLESHOOTING.md) when the server does not start or a cached frame is missing.
 See [Refine](REFINE.md) for trimap generation, tiling, and the two-input refinement workflow.
+Both newly created Segment and Refine nodes default to Source RGB plus the generated alpha. Refine
+also exposes its exact cached trimap as matte, Source + Trimap Alpha, or a trimap-premultiplied cutout.

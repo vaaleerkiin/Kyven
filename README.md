@@ -12,6 +12,7 @@ around the same host-independent server.
 - SAM 2.1 Tiny, Small, Base+, and Large model selection;
 - ViTMatte Small refinement from any connected mask or artist trimap;
 - automatic trimap generation with foreground erosion and background dilation;
+- exact cached trimap outputs: matte, Source + Trimap Alpha, and trimap cutout;
 - Live current-frame processing in Segment and Refine;
 - positive and negative Viewer points;
 - optional Processing ROI that crops inference and restores a full-frame matte;
@@ -19,6 +20,7 @@ around the same host-independent server.
 - current-frame and independent frame-range segmentation;
 - SAM 2 video propagation forward, backward, or in both directions, with animated ROI and progress;
 - Matte, Source + Alpha, Cutout, and Source (Bypass) outputs;
+- Source + Alpha as the default output for new Segment and Refine nodes;
 - per-node cache paths, native Read creation, and cache cleanup;
 - asynchronous jobs, cancellation, and automatic local-server startup;
 - API version checks, bearer-token authentication, and loopback-only networking.

@@ -18,6 +18,7 @@ from kyven_nuke.node import (
     _section_markup,
 )
 from kyven_nuke.payload import refine_payload, segment_payload, segment_video_payload
+from kyven_nuke.refine_node import REFINE_OUTPUT_MODES
 from kyven_nuke.runtime import _server_environment
 
 
@@ -27,6 +28,7 @@ class NukePayloadTests(unittest.TestCase):
             source="D:/source.png",
             mask="D:/mask.png",
             output="D:/alpha.png",
+            trimap_output="D:/trimap.png",
             model_index=0,
             profile="low_memory",
             image_height=1080,
@@ -43,6 +45,7 @@ class NukePayloadTests(unittest.TestCase):
         self.assertEqual(payload["foreground_radius"], 8)
         self.assertTrue(payload["generate_trimap"])
         self.assertEqual(payload["tile_size"], 512)
+        self.assertEqual(payload["trimap_output"], "D:/trimap.png")
 
     def test_section_markup_adds_compact_spacing_and_title(self) -> None:
         markup = _section_markup("OUTPUT")
@@ -74,6 +77,18 @@ class NukePayloadTests(unittest.TestCase):
         self.assertEqual(
             OUTPUT_MODES,
             ("Matte", "Source + Alpha", "Cutout", "Source (Bypass)"),
+        )
+        self.assertEqual(
+            REFINE_OUTPUT_MODES,
+            (
+                "Refined Matte",
+                "Source + Refined Alpha",
+                "Refined Cutout",
+                "Trimap",
+                "Source + Trimap Alpha",
+                "Trimap Cutout",
+                "Source (Bypass)",
+            ),
         )
 
     def test_video_payload_uses_key_frame_and_cpu_offload(self) -> None:

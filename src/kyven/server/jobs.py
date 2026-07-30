@@ -220,7 +220,14 @@ class JobManager:
         source = Path(str(payload["source"]))
         mask = Path(str(payload["mask"]))
         output = Path(str(payload["output"]))
-        if not source.is_absolute() or not mask.is_absolute() or not output.is_absolute():
+        trimap_output_value = payload.get("trimap_output")
+        trimap_output = Path(str(trimap_output_value)) if trimap_output_value else None
+        if (
+            not source.is_absolute()
+            or not mask.is_absolute()
+            or not output.is_absolute()
+            or (trimap_output is not None and not trimap_output.is_absolute())
+        ):
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
                 message="Refinement job paths must be absolute.",
@@ -236,6 +243,7 @@ class JobManager:
             source=source,
             mask=mask,
             output=output,
+            trimap_output=trimap_output,
             provider_id=str(payload.get("model_id", "vitmatte-small-composition-1k")),
             profile=profile,
             roi=roi,
@@ -375,6 +383,9 @@ class JobManager:
                 record.status = JobStatus.SUCCEEDED
                 record.result = {
                     "output": str(result.output),
+                    "trimap_output": (
+                        str(result.trimap_output) if result.trimap_output is not None else None
+                    ),
                     "cache_key": result.cache_key,
                     "metadata": result.metadata,
                 }

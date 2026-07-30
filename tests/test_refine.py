@@ -85,6 +85,7 @@ class RefineServiceTests(unittest.TestCase):
             source = root / "source.png"
             mask = root / "mask.png"
             output = root / "refined.png"
+            trimap_output = root / "trimap.png"
             Image.new("RGB", (8, 8), "white").save(source)
             mask_pixels = np.zeros((8, 8), dtype=np.uint8)
             mask_pixels[1:7, 1:7] = 255
@@ -96,6 +97,7 @@ class RefineServiceTests(unittest.TestCase):
                     source=source,
                     mask=mask,
                     output=output,
+                    trimap_output=trimap_output,
                     provider_id="synthetic-refine",
                     roi=BoxPrompt(0, 0, 4, 4),
                     foreground_radius=1,
@@ -106,6 +108,11 @@ class RefineServiceTests(unittest.TestCase):
                 self.assertEqual(matte.size, (8, 8))
                 self.assertEqual(matte.getpixel((6, 6)), 255)
                 self.assertIn(matte.getpixel((1, 1)), {127, 128})
+            with Image.open(trimap_output) as trimap:
+                self.assertEqual(trimap.size, (8, 8))
+                self.assertEqual(trimap.getpixel((6, 6)), 0)
+                self.assertEqual(trimap.getpixel((1, 1)), 128)
+            self.assertEqual(result.trimap_output, trimap_output)
             self.assertEqual(result.metadata["processing_roi"]["width"], 4)
             self.assertEqual(len(result.cache_key), 64)
 

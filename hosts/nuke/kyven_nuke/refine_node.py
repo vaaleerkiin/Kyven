@@ -8,13 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from kyven_nuke.node import (
-    OUTPUT_MODES,
     _add_knob,
     _add_section,
     _cache_root,
     _ensure_cache_controls,
     _ensure_live_controls,
-    _ensure_output_controls,
     _inside,
     _nuke,
     _nuke_file_path,
@@ -28,23 +26,39 @@ from kyven_nuke.runtime import ensure_server
 
 _range_cancellations: set[str] = set()
 _range_cancel_lock = threading.RLock()
+REFINE_OUTPUT_MODES = (
+    "Refined Matte",
+    "Source + Refined Alpha",
+    "Refined Cutout",
+    "Trimap",
+    "Source + Trimap Alpha",
+    "Trimap Cutout",
+    "Source (Bypass)",
+)
+REFINE_OUTPUT_HELP = (
+    "<b>Source + Refined Alpha</b> is the default compositing output.<br>"
+    "<b>Trimap</b> shows black / gray / white model guidance; "
+    "<b>Source + Trimap Alpha</b> keeps Source RGB and places that trimap in alpha."
+)
 
 
-def _cache_paths(node: Any, frame: int) -> tuple[Path, Path, Path]:
+def _cache_paths(node: Any, frame: int) -> tuple[Path, Path, Path, Path]:
     root = _cache_root(node)
     return (
         root / f"refine_source.{frame:04d}.png",
         root / f"refine_mask.{frame:04d}.png",
         root / f"refined_matte.{frame:04d}.png",
+        root / f"trimap.{frame:04d}.png",
     )
 
 
-def _cache_patterns(node: Any) -> tuple[Path, Path, Path]:
+def _cache_patterns(node: Any) -> tuple[Path, Path, Path, Path]:
     root = _cache_root(node)
     return (
         root / "refine_source.%04d.png",
         root / "refine_mask.%04d.png",
         root / "refined_matte.%04d.png",
+        root / "trimap.%04d.png",
     )
 
 
@@ -61,11 +75,13 @@ def _payload(
     source_path: Path,
     mask_path: Path,
     output_path: Path,
+    trimap_output_path: Path,
 ) -> dict[str, Any]:
     return refine_payload(
         source=str(source_path.resolve()),
         mask=str(mask_path.resolve()),
         output=str(output_path.resolve()),
+        trimap_output=str(trimap_output_path.resolve()),
         model_index=int(node["model"].getValue()),
         profile=str(node["profile"].value()),
         image_height=int(source.height()),
@@ -89,6 +105,9 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
         return
     result = job["result"]
     _set_matte_read(node, _nuke_file_path(Path(result["output"])))
+    trimap_output = result.get("trimap_output")
+    if trimap_output:
+        _set_trimap_read(node, _nuke_file_path(Path(trimap_output)))
     metadata = result.get("metadata") or {}
     trimap = metadata.get("trimap") or {}
     mode = "auto trimap" if trimap.get("generated") else "input trimap"
@@ -97,6 +116,37 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
     node["kyven_status"].setValue(
         f"Refined - {mode} | {int(metadata.get('tiles', 1))} tile(s){roi_text}"
     )
+
+
+def _set_trimap_read(
+    node: Any,
+    output: str,
+    first: int | None = None,
+    last: int | None = None,
+) -> None:
+    nuke = _nuke()
+    node.begin()
+    try:
+        trimap = nuke.toNode("KyvenTrimapRead")
+        if trimap is None:
+            trimap = nuke.nodes.Read(name="KyvenTrimapRead", file=output)
+            nuke.toNode("KyvenTrimapSwitch").setInput(1, trimap)
+        else:
+            trimap["file"].setValue(output)
+        if first is not None and last is not None:
+            for knob_name, value in (
+                ("first", first),
+                ("last", last),
+                ("origfirst", first),
+                ("origlast", last),
+            ):
+                if knob_name in trimap.knobs():
+                    trimap[knob_name].setValue(value)
+        if "reload" in trimap.knobs():
+            trimap["reload"].execute()
+        nuke.toNode("KyvenTrimapSwitch")["which"].setValue(1)
+    finally:
+        node.end()
 
 
 def _submit_and_wait(node_name: str, payload: dict[str, Any]) -> None:
@@ -147,11 +197,18 @@ def process_current_frame(node: Any | None = None, live: bool = False) -> None:
     if bool(node["kyven_busy"].value()):
         return
     frame = int(nuke.frame())
-    source_path, mask_path, output_path = _cache_paths(node, frame)
+    source_path, mask_path, output_path, trimap_output_path = _cache_paths(node, frame)
     node["kyven_status"].setValue("Exporting source and mask...")
     if not _export(node, frame, source_path, mask_path):
         return
-    payload = _payload(node, source, source_path, mask_path, output_path)
+    payload = _payload(
+        node,
+        source,
+        source_path,
+        mask_path,
+        output_path,
+        trimap_output_path,
+    )
     node["kyven_busy"].setValue(True)
     node["kyven_live_frame"].setValue(frame)
     threading.Thread(
@@ -162,10 +219,17 @@ def process_current_frame(node: Any | None = None, live: bool = False) -> None:
     ).start()
 
 
-def _apply_range(node_name: str, output: str, first: int, last: int) -> None:
+def _apply_range(
+    node_name: str,
+    output: str,
+    trimap_output: str,
+    first: int,
+    last: int,
+) -> None:
     node = _nuke().toNode(node_name)
     if node is not None:
         _set_matte_read(node, output, first, last)
+        _set_trimap_read(node, trimap_output, first, last)
         node["kyven_status"].setValue(f"Refined range ready: {first}-{last}")
 
 
@@ -173,6 +237,7 @@ def _range_worker(
     node_name: str,
     payloads: list[tuple[int, dict[str, Any]]],
     output_pattern: str,
+    trimap_output_pattern: str,
     first: int,
     last: int,
 ) -> None:
@@ -199,7 +264,7 @@ def _range_worker(
                 raise RuntimeError(error.get("message", job["status"]))
         nuke.executeInMainThread(
             _apply_range,
-            args=(node_name, output_pattern, first, last),
+            args=(node_name, output_pattern, trimap_output_pattern, first, last),
         )
     except Exception as exc:  # noqa: BLE001
         nuke.executeInMainThread(_set_status, args=(node_name, f"Refine range failed: {exc}"))
@@ -221,7 +286,7 @@ def process_frame_range() -> None:
     if last < first:
         nuke.message("Range Last must be greater than or equal to Range First.")
         return
-    source_pattern, mask_pattern, output_pattern = _cache_patterns(node)
+    source_pattern, mask_pattern, output_pattern, trimap_output_pattern = _cache_patterns(node)
     source_writer = _inside(node, "KyvenRefineSourceWrite")
     mask_writer = _inside(node, "KyvenRefineMaskWrite")
     source_writer["file"].setValue(_nuke_file_path(source_pattern))
@@ -241,14 +306,34 @@ def process_frame_range() -> None:
             node["kyven_status"].setValue(f"Missing exported refine input at frame {frame}.")
             return
         output_path = _path_for_frame(output_pattern, frame)
-        payloads.append((frame, _payload(node, source, source_path, mask_path, output_path)))
+        trimap_output_path = _path_for_frame(trimap_output_pattern, frame)
+        payloads.append(
+            (
+                frame,
+                _payload(
+                    node,
+                    source,
+                    source_path,
+                    mask_path,
+                    output_path,
+                    trimap_output_path,
+                ),
+            )
+        )
     node_name = node.fullName()
     with _range_cancel_lock:
         _range_cancellations.discard(node_name)
     node["kyven_busy"].setValue(True)
     threading.Thread(
         target=_range_worker,
-        args=(node_name, payloads, _nuke_file_path(output_pattern), first, last),
+        args=(
+            node_name,
+            payloads,
+            _nuke_file_path(output_pattern),
+            _nuke_file_path(trimap_output_pattern),
+            first,
+            last,
+        ),
         name="kyven-refine-range",
         daemon=True,
     ).start()
@@ -328,6 +413,139 @@ def _apply_model_labels(node_name: str, labels: list[str]) -> None:
         node["kyven_status"].setValue("Refinement model list refreshed.")
 
 
+def _ensure_refine_output_controls(node: Any) -> None:
+    """Build Refine and exact-trimap output branches for new or existing Groups."""
+
+    nuke = _nuke()
+    if "kyven_title" in node.knobs():
+        node["kyven_title"].setValue(
+            '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 7</font>'
+        )
+    created_selector = "output_mode" not in node.knobs()
+    previous_label = str(node["output_mode"].value()) if not created_selector else None
+    if created_selector:
+        _add_section(nuke, node, "output_section", "OUTPUT")
+        _add_knob(
+            nuke,
+            node,
+            nuke.Enumeration_Knob("output_mode", "Output", list(REFINE_OUTPUT_MODES)),
+        )
+    else:
+        node["output_mode"].setValues(list(REFINE_OUTPUT_MODES))
+    if created_selector:
+        node["output_mode"].setValue(1)
+    elif previous_label in REFINE_OUTPUT_MODES:
+        node["output_mode"].setValue(REFINE_OUTPUT_MODES.index(previous_label))
+    elif previous_label == "Matte":
+        node["output_mode"].setValue(0)
+    elif previous_label == "Source + Alpha":
+        node["output_mode"].setValue(1)
+    elif previous_label == "Cutout":
+        node["output_mode"].setValue(2)
+    elif previous_label == "Source (Bypass)":
+        node["output_mode"].setValue(6)
+
+    if "output_help" not in node.knobs():
+        _add_knob(nuke, node, nuke.Text_Knob("output_help", "", REFINE_OUTPUT_HELP))
+    else:
+        node["output_help"].setValue(REFINE_OUTPUT_HELP)
+
+    node.begin()
+    try:
+        source = nuke.toNode("Source")
+        refined = nuke.toNode("KyvenMatteSwitch")
+        mask_channel = nuke.toNode("KyvenMaskChannelSwitch")
+        output = nuke.toNode("Output")
+        if source is None or refined is None or mask_channel is None or output is None:
+            raise RuntimeError("Selected node is not a compatible Kyven Refine Group.")
+
+        trimap = nuke.toNode("KyvenTrimapSwitch")
+        if trimap is None:
+            trimap = nuke.nodes.Switch(name="KyvenTrimapSwitch")
+            trimap.setInput(0, mask_channel)
+            trimap["which"].setValue(0)
+
+        refined_rgba = nuke.toNode("KyvenMatteRGBA")
+        if refined_rgba is None:
+            refined_rgba = nuke.nodes.Copy(name="KyvenMatteRGBA")
+        refined_rgba.setInput(0, refined)
+        refined_rgba.setInput(1, refined)
+        refined_rgba["from0"].setValue("rgba.red")
+        refined_rgba["to0"].setValue("rgba.alpha")
+
+        source_refined = nuke.toNode("KyvenSourceAlpha")
+        if source_refined is None:
+            source_refined = nuke.nodes.Copy(name="KyvenSourceAlpha")
+        source_refined.setInput(0, source)
+        source_refined.setInput(1, refined)
+        source_refined["from0"].setValue("rgba.red")
+        source_refined["to0"].setValue("rgba.alpha")
+
+        refined_cutout = nuke.toNode("KyvenCutout")
+        if refined_cutout is None:
+            refined_cutout = nuke.nodes.Premult(name="KyvenCutout")
+        refined_cutout.setInput(0, source_refined)
+
+        trimap_rgba = nuke.toNode("KyvenTrimapRGBA")
+        if trimap_rgba is None:
+            trimap_rgba = nuke.nodes.Copy(name="KyvenTrimapRGBA")
+        trimap_rgba.setInput(0, trimap)
+        trimap_rgba.setInput(1, trimap)
+        trimap_rgba["from0"].setValue("rgba.red")
+        trimap_rgba["to0"].setValue("rgba.alpha")
+
+        source_trimap = nuke.toNode("KyvenSourceTrimapAlpha")
+        if source_trimap is None:
+            source_trimap = nuke.nodes.Copy(name="KyvenSourceTrimapAlpha")
+        source_trimap.setInput(0, source)
+        source_trimap.setInput(1, trimap)
+        source_trimap["from0"].setValue("rgba.red")
+        source_trimap["to0"].setValue("rgba.alpha")
+
+        trimap_cutout = nuke.toNode("KyvenTrimapCutout")
+        if trimap_cutout is None:
+            trimap_cutout = nuke.nodes.Premult(name="KyvenTrimapCutout")
+        trimap_cutout.setInput(0, source_trimap)
+
+        output_switch = nuke.toNode("KyvenOutputSwitch")
+        if output_switch is None:
+            output_switch = nuke.nodes.Switch(name="KyvenOutputSwitch")
+        for index, branch in enumerate(
+            (
+                refined_rgba,
+                source_refined,
+                refined_cutout,
+                trimap_rgba,
+                source_trimap,
+                trimap_cutout,
+                source,
+            )
+        ):
+            output_switch.setInput(index, branch)
+        output_switch["which"].setExpression("parent.output_mode")
+        output.setInput(0, output_switch)
+    finally:
+        node.end()
+
+
+def upgrade_selected_refine_node() -> None:
+    """Add trimap outputs to an existing Kyven Refine node without changing its matte."""
+
+    nuke = _nuke()
+    try:
+        node = nuke.selectedNode()
+    except Exception:  # noqa: BLE001
+        nuke.message("Select an existing Kyven Refine node first.")
+        return
+    try:
+        _ensure_refine_output_controls(node)
+    except Exception as exc:  # noqa: BLE001
+        nuke.message(f"Could not upgrade the selected Refine node:\n{exc}")
+        return
+    node["kyven_status"].setValue("Refine outputs upgraded. Process a frame to cache the trimap.")
+
+
 def create_refine_node() -> Any:
     nuke = _nuke()
     selected = nuke.selectedNode() if nuke.selectedNodes() else None
@@ -342,7 +560,7 @@ def create_refine_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 6</font>',
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 7</font>',
         ),
     )
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
@@ -448,8 +666,14 @@ def create_refine_node() -> Any:
     )
 
     _add_section(nuke, node, "output_section", "OUTPUT")
-    _add_knob(nuke, node, nuke.Enumeration_Knob("output_mode", "Output", list(OUTPUT_MODES)))
+    _add_knob(
+        nuke,
+        node,
+        nuke.Enumeration_Knob("output_mode", "Output", list(REFINE_OUTPUT_MODES)),
+    )
     node["output_mode"].setValue(1)
+    _add_knob(nuke, node, nuke.Text_Knob("output_help", "", REFINE_OUTPUT_HELP))
+
     internal_id = nuke.String_Knob("kyven_uuid", "UUID")
     internal_id.setValue(uuid.uuid4().hex)
     internal_id.setVisible(False)
@@ -502,7 +726,7 @@ def create_refine_node() -> Any:
         mask_writer["channels"].setValue("rgb")
     finally:
         node.end()
-    _ensure_output_controls(node)
+    _ensure_refine_output_controls(node)
     reset_roi_to_input_for_node(node)
     knob_changed_for_node(node)
     return node

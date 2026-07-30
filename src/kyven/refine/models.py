@@ -30,6 +30,7 @@ class RefineRequest:
     source: Path
     mask: Path
     output: Path
+    trimap_output: Path | None = None
     provider_id: str = "vitmatte-small-composition-1k"
     profile: ExecutionProfile = ExecutionProfile.BALANCED
     roi: BoxPrompt | None = None
@@ -108,5 +109,6 @@ class RefinePrediction:
 @dataclass(frozen=True, slots=True)
 class RefineResult:
     output: Path
+    trimap_output: Path | None
     cache_key: str
     metadata: dict[str, Any]

@@ -56,6 +56,14 @@ class RefineService:
             if request.generate_trimap
             else normalize_trimap(mask_pixels)
         )
+        trimap_output = request.trimap_output
+        if trimap_output is not None:
+            if region is None:
+                full_trimap = trimap_pixels
+            else:
+                full_trimap = np.zeros((source.height, source.width), dtype=np.uint8)
+                full_trimap[region.y0 : region.y1, region.x0 : region.x1] = trimap_pixels
+            write_mask_png_atomic(trimap_output, full_trimap)
         provider = self._registry.activate(request.provider_id)
         capabilities = provider.capabilities
         with tempfile.TemporaryDirectory(prefix="kyven-refine-") as directory:
@@ -90,6 +98,7 @@ class RefineService:
             metadata["processing_roi"] = region.metadata()
         return RefineResult(
             output=request.output,
+            trimap_output=trimap_output,
             cache_key=request.cache_key(
                 capabilities.provider_version,
                 capabilities.model_checksum,

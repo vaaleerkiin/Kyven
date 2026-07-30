@@ -973,7 +973,7 @@ def _restyle_node_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 6</font>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 7</font>'
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
@@ -994,6 +994,7 @@ def _ensure_output_controls(node: Any) -> None:
             node,
             nuke.Enumeration_Knob("output_mode", "Output", list(OUTPUT_MODES)),
         )
+        node["output_mode"].setValue(1)
         help_text = nuke.Text_Knob(
             "output_help",
             "",
@@ -1190,7 +1191,7 @@ def create_segment_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 6</font>',
+            '<font color="#91a3b0">SAM 2 | Local inference | API 7</font>',
         ),
     )
 
@@ -1391,6 +1392,7 @@ def create_segment_node() -> Any:
         node,
         nuke.Enumeration_Knob("output_mode", "Output", list(OUTPUT_MODES)),
     )
+    node["output_mode"].setValue(1)
     _add_knob(
         nuke,
         node,

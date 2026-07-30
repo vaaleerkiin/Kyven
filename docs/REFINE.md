@@ -21,6 +21,15 @@ Foreground erosion produces definite white foreground, background dilation produ
 unknown band, and pixels outside the band remain definite black background. Disable the option only
 when input 1 is already an artist-created black/gray/white trimap.
 
+The `Output` selector includes the exact trimap written for ViTMatte:
+
+- `Trimap` displays the black / gray / white guidance as RGBA;
+- `Source + Trimap Alpha` keeps Source RGB and places the trimap in alpha;
+- `Trimap Cutout` premultiplies Source RGB by the trimap.
+
+`Source + Refined Alpha` is the default output. When Processing ROI is enabled, areas outside the
+actual model crop are black in the trimap preview because they were not sent to ViTMatte.
+
 ## Processing
 
 - `Live Current Frame` follows the timeline asynchronously.

@@ -119,7 +119,7 @@ class ServerTests(unittest.TestCase):
             try:
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
                 self.assertEqual(client.health()["status"], "ok")
-                self.assertEqual(client.health()["api_version"], 6)
+                self.assertEqual(client.health()["api_version"], 7)
                 self.assertEqual(len(client.models()), 5)
                 job_id = client.submit_segment(
                     {
@@ -165,11 +165,13 @@ class ServerTests(unittest.TestCase):
                     self.assertEqual(video_mask.getpixel((0, 0)), 0)
                     self.assertEqual(video_mask.getpixel((1, 1)), 255)
                 refine_output = root / "refined.png"
+                trimap_output = root / "trimap.png"
                 refine_job_id = client.submit_refine(
                     {
                         "source": str(source.resolve()),
                         "mask": str(output.resolve()),
                         "output": str(refine_output.resolve()),
+                        "trimap_output": str(trimap_output.resolve()),
                         "model_id": "vitmatte-small-composition-1k",
                         "generate_trimap": True,
                         "foreground_radius": 1,
@@ -180,6 +182,8 @@ class ServerTests(unittest.TestCase):
                 refine_result = client.wait(refine_job_id, timeout_seconds=5)
                 self.assertEqual(refine_result["status"], "succeeded")
                 self.assertTrue(refine_output.is_file())
+                self.assertEqual(refine_result["result"]["trimap_output"], str(trimap_output))
+                self.assertTrue(trimap_output.is_file())
                 with self.assertRaises(KyvenClientError):
                     KyvenClient(f"http://127.0.0.1:{server.port}", "y" * 32).health()
             finally:
