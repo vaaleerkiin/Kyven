@@ -55,8 +55,8 @@ class BoxPrompt:
         if self.x1 <= self.x0 or self.y1 <= self.y0:
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
-                message="The prompt box must have a positive width and height.",
-                suggested_action="Check the box coordinates.",
+                message="The rectangle must have a positive width and height.",
+                suggested_action="Check the rectangle coordinates.",
             )
 
     def canonical(self) -> dict[str, float]:
@@ -71,6 +71,7 @@ class SegmentRequest:
     output: Path
     points: tuple[PointPrompt, ...] = ()
     box: BoxPrompt | None = None
+    roi: BoxPrompt | None = None
     provider_id: str = "sam2"
     profile: ExecutionProfile = ExecutionProfile.BALANCED
     multimask_output: bool = True
@@ -95,6 +96,7 @@ class SegmentRequest:
         return {
             "points": [point.canonical() for point in self.points],
             "box": self.box.canonical() if self.box else None,
+            "roi": self.roi.canonical() if self.roi else None,
             "provider_id": self.provider_id,
             "profile": self.profile.value,
             "multimask_output": self.multimask_output,

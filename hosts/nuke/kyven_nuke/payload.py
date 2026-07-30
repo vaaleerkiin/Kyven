@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 MODEL_IDS = (
@@ -36,22 +37,17 @@ def segment_payload(
     model_index: int,
     profile: str,
     image_height: int,
-    positive_enabled: bool,
-    positive_xy: tuple[float, float],
-    negative_enabled: bool,
-    negative_xy: tuple[float, float],
+    positive_points: Sequence[tuple[float, float]],
+    negative_points: Sequence[tuple[float, float]],
     box_enabled: bool,
     box: tuple[float, float, float, float],
 ) -> dict[str, Any]:
-    points = []
-    if positive_enabled:
-        points.append(point(*positive_xy, image_height, "positive"))
-    if negative_enabled:
-        points.append(point(*negative_xy, image_height, "negative"))
-    box_payload = None
+    points = [point(*xy, image_height, "positive") for xy in positive_points]
+    points.extend(point(*xy, image_height, "negative") for xy in negative_points)
+    roi_payload = None
     if box_enabled:
         x0, y0, x1, y1 = box
-        box_payload = {
+        roi_payload = {
             "x0": float(x0),
             "y0": float(image_height) - float(y1),
             "x1": float(x1),
@@ -63,6 +59,51 @@ def segment_payload(
         "model_id": MODEL_IDS[model_index],
         "profile": profile,
         "points": points,
-        "box": box_payload,
+        "box": None,
+        "roi": roi_payload,
         "multimask_output": True,
+    }
+
+
+def segment_video_payload(
+    *,
+    frames_dir: str,
+    output_pattern: str,
+    model_index: int,
+    profile: str,
+    image_height: int,
+    positive_points: Sequence[tuple[float, float]],
+    negative_points: Sequence[tuple[float, float]],
+    box_enabled: bool,
+    box: tuple[float, float, float, float],
+    first_frame: int,
+    last_frame: int,
+    key_frame: int,
+    direction: str,
+) -> dict[str, Any]:
+    image_payload = segment_payload(
+        source="unused",
+        output="unused",
+        model_index=model_index,
+        profile=profile,
+        image_height=image_height,
+        positive_points=positive_points,
+        negative_points=negative_points,
+        box_enabled=box_enabled,
+        box=box,
+    )
+    return {
+        "frames_dir": frames_dir,
+        "output_pattern": output_pattern,
+        "model_id": image_payload["model_id"],
+        "profile": profile,
+        "points": image_payload["points"],
+        "box": None,
+        "roi": image_payload["roi"],
+        "first_frame": int(first_frame),
+        "last_frame": int(last_frame),
+        "key_frame": int(key_frame),
+        "direction": direction,
+        "offload_video_to_cpu": True,
+        "offload_state_to_cpu": True,
     }

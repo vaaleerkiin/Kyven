@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from PIL import Image
@@ -20,6 +20,9 @@ from kyven.segment.models import (
     SegmentRequest,
 )
 from kyven.segment.providers.base import SegmentationProvider
+
+if TYPE_CHECKING:
+    from kyven.segment.video import VideoSegmentRequest, VideoSegmentResult
 
 
 class Sam2Provider(SegmentationProvider):
@@ -42,6 +45,7 @@ class Sam2Provider(SegmentationProvider):
         self._display_name = display_name
         self._resolved_device = "unresolved"
         self._predictor: Any | None = None
+        self._video_predictor: Any | None = None
         self._checkpoint_checksum: str | None = None
 
     @property
@@ -82,6 +86,8 @@ class Sam2Provider(SegmentationProvider):
     def _load(self) -> Any:
         if self._predictor is not None:
             return self._predictor
+        if self._video_predictor is not None:
+            self._release_models()
         if not self._checkpoint.is_file():
             raise KyvenError(
                 code=ErrorCode.MODEL_NOT_FOUND,
@@ -133,6 +139,52 @@ class Sam2Provider(SegmentationProvider):
                 technical_detail=str(exc),
                 recoverable=True,
                 suggested_action="Check the checkpoint, model config, device, and runtime versions.",
+            ) from exc
+
+    def _load_video(self) -> Any:
+        if self._video_predictor is not None:
+            return self._video_predictor
+        if not self._checkpoint.is_file():
+            raise KyvenError(
+                code=ErrorCode.MODEL_NOT_FOUND,
+                message=f"SAM 2 checkpoint was not found: {self._checkpoint}",
+                suggested_action="Download the selected model from the trusted catalog.",
+            )
+        actual_checksum = self._calculate_checksum_if_present()
+        if self._expected_checksum and actual_checksum.lower() != self._expected_checksum.lower():
+            raise KyvenError(
+                code=ErrorCode.MODEL_NOT_FOUND,
+                message="The SAM 2 checkpoint checksum does not match the trusted manifest.",
+            )
+        try:
+            import torch
+            from sam2.build_sam import build_sam2_video_predictor
+        except ImportError as exc:
+            raise KyvenError(
+                code=ErrorCode.DEPENDENCY_MISSING,
+                message="The optional SAM 2 video runtime is not installed.",
+                technical_detail=str(exc),
+            ) from exc
+        self._resolved_device = (
+            "cuda" if self._requested_device == "auto" and torch.cuda.is_available() else self._requested_device
+        )
+        if self._resolved_device == "auto":
+            self._resolved_device = "cpu"
+        self._release_models()
+        try:
+            self._video_predictor = build_sam2_video_predictor(
+                self._model_config,
+                str(self._checkpoint),
+                device=self._resolved_device,
+            )
+            return self._video_predictor
+        except Exception as exc:
+            raise KyvenError(
+                code=ErrorCode.INFERENCE_FAILED,
+                message="SAM 2 video predictor could not be loaded.",
+                technical_detail=str(exc),
+                recoverable=True,
+                suggested_action="Try SAM 2.1 Tiny/Small or the Low Memory profile.",
             ) from exc
 
     def predict(
@@ -198,14 +250,114 @@ class Sam2Provider(SegmentationProvider):
             },
         )
 
-    def unload(self) -> None:
-        """Drop model references and release cached CUDA allocations when possible."""
+    def propagate_video(
+        self,
+        request: VideoSegmentRequest,
+        cancellation: CancellationToken,
+    ) -> VideoSegmentResult:
+        from kyven.segment.output import write_mask_png_atomic
+        from kyven.segment.video import VideoDirection, VideoSegmentResult
 
-        self._predictor = None
+        request.validate()
+        cancellation.raise_if_cancelled()
+        predictor = self._load_video()
+        point_coords = None
+        point_labels = None
+        if request.points:
+            point_coords = np.asarray([(point.x, point.y) for point in request.points])
+            point_labels = np.asarray(
+                [1 if point.label is PointLabel.POSITIVE else 0 for point in request.points]
+            )
+        box = None
+        if request.box is not None:
+            box = np.asarray(
+                [request.box.x0, request.box.y0, request.box.x1, request.box.y1]
+            )
+
         try:
             import torch
 
+            autocast = (
+                torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+                if self._resolved_device == "cuda"
+                else nullcontext()
+            )
+            outputs: dict[int, Path] = {}
+            with torch.inference_mode(), autocast:
+                state = predictor.init_state(
+                    video_path=str(request.frames_dir),
+                    offload_video_to_cpu=request.offload_video_to_cpu,
+                    offload_state_to_cpu=request.offload_state_to_cpu,
+                    async_loading_frames=True,
+                )
+                predictor.add_new_points_or_box(
+                    inference_state=state,
+                    frame_idx=request.key_index,
+                    obj_id=1,
+                    points=point_coords,
+                    labels=point_labels,
+                    box=box,
+                )
+                passes = []
+                if request.direction in {VideoDirection.BACKWARD, VideoDirection.BOTH}:
+                    passes.append(True)
+                if request.direction in {VideoDirection.FORWARD, VideoDirection.BOTH}:
+                    passes.append(False)
+                for reverse in passes:
+                    for frame_index, _object_ids, mask_logits in predictor.propagate_in_video(
+                        state,
+                        start_frame_idx=request.key_index,
+                        reverse=reverse,
+                    ):
+                        cancellation.raise_if_cancelled()
+                        mask = (mask_logits[0] > 0.0).detach().cpu().numpy().squeeze()
+                        output = request.output_for_index(frame_index)
+                        write_mask_png_atomic(output, np.asarray(mask, dtype=np.bool_))
+                        outputs[frame_index] = output
+                predictor.reset_state(state)
+        except KyvenError:
+            raise
+        except Exception as exc:
+            raise KyvenError(
+                code=ErrorCode.INFERENCE_FAILED,
+                message="SAM 2 video propagation failed.",
+                technical_detail=str(exc),
+                recoverable=True,
+                suggested_action="Try a shorter range or the Low Memory profile.",
+            ) from exc
+
+        ordered = tuple(outputs[index] for index in sorted(outputs))
+        produced_frames = [request.frame_number(index) for index in sorted(outputs)]
+        return VideoSegmentResult(
+            outputs=ordered,
+            first_frame=min(produced_frames),
+            last_frame=max(produced_frames),
+            key_frame=request.key_frame,
+            direction=request.direction,
+            metadata={
+                "provider": self._provider_id,
+                "model_config": self._model_config,
+                "device": self._resolved_device,
+                "offload_video_to_cpu": request.offload_video_to_cpu,
+                "offload_state_to_cpu": request.offload_state_to_cpu,
+            },
+        )
+
+    def _release_models(self) -> None:
+        self._predictor = None
+        self._video_predictor = None
+        try:
+            import gc
+
+            import torch
+
+            gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except ImportError:
             return
+
+    def unload(self) -> None:
+        """Drop model references and release cached CUDA allocations when possible."""
+
+        self._release_models()

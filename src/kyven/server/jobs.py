@@ -22,6 +22,11 @@ from kyven.segment.models import (
 )
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.segment.service import SegmentService
+from kyven.segment.video import (
+    VideoDirection,
+    VideoSegmentRequest,
+    VideoSegmentService,
+)
 
 
 class JobStatus(str, Enum):
@@ -35,7 +40,7 @@ class JobStatus(str, Enum):
 @dataclass(slots=True)
 class JobRecord:
     job_id: str
-    request: SegmentRequest
+    request: SegmentRequest | VideoSegmentRequest
     cancellation: CancellationToken = field(default_factory=CancellationToken)
     status: JobStatus = JobStatus.QUEUED
     created_at: float = field(default_factory=time.time)
@@ -59,11 +64,28 @@ class JobRecord:
 class JobManager:
     """Serialize GPU work while keeping HTTP and host UIs responsive."""
 
-    def __init__(self, service: SegmentService) -> None:
+    def __init__(
+        self,
+        service: SegmentService,
+        video_service: VideoSegmentService | None = None,
+    ) -> None:
         self._service = service
+        self._video_service = video_service
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kyven-gpu")
         self._jobs: dict[str, JobRecord] = {}
         self._lock = threading.RLock()
+
+    @staticmethod
+    def _box_from_payload(payload: dict[str, Any], field: str) -> BoxPrompt | None:
+        value = payload.get(field)
+        if value is None:
+            return None
+        return BoxPrompt(
+            float(value["x0"]),
+            float(value["y0"]),
+            float(value["x1"]),
+            float(value["y1"]),
+        )
 
     @staticmethod
     def request_from_payload(payload: dict[str, Any]) -> SegmentRequest:
@@ -83,20 +105,14 @@ class JobManager:
             )
             for item in payload.get("points", [])
         )
-        box_payload = payload.get("box")
-        box = None
-        if box_payload is not None:
-            box = BoxPrompt(
-                float(box_payload["x0"]),
-                float(box_payload["y0"]),
-                float(box_payload["x1"]),
-                float(box_payload["y1"]),
-            )
+        box = JobManager._box_from_payload(payload, "box")
+        roi = JobManager._box_from_payload(payload, "roi")
         return SegmentRequest(
             source=source,
             output=output,
             points=points,
             box=box,
+            roi=roi,
             provider_id=str(payload.get("model_id", "sam2.1-small")),
             profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
             multimask_output=bool(payload.get("multimask_output", True)),
@@ -111,12 +127,68 @@ class JobManager:
                 code=ErrorCode.INVALID_REQUEST,
                 message="The segment job payload is invalid.",
                 technical_detail=str(exc),
-                suggested_action="Check source, output, points, box, model, and profile fields.",
+                suggested_action="Check source, output, points, box, ROI, model, and profile fields.",
             ) from exc
         record = JobRecord(job_id=uuid.uuid4().hex, request=request)
         with self._lock:
             self._jobs[record.job_id] = record
         self._executor.submit(self._run, record)
+        return record.job_id
+
+    @staticmethod
+    def video_request_from_payload(payload: dict[str, Any]) -> VideoSegmentRequest:
+        frames_dir = Path(str(payload["frames_dir"]))
+        output_pattern = Path(str(payload["output_pattern"]))
+        if not frames_dir.is_absolute() or not output_pattern.is_absolute():
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="Video job paths must be absolute.",
+            )
+        points = tuple(
+            PointPrompt(
+                x=float(item["x"]),
+                y=float(item["y"]),
+                label=PointLabel(str(item.get("label", "positive"))),
+            )
+            for item in payload.get("points", [])
+        )
+        box = JobManager._box_from_payload(payload, "box")
+        roi = JobManager._box_from_payload(payload, "roi")
+        return VideoSegmentRequest(
+            frames_dir=frames_dir,
+            output_pattern=output_pattern,
+            first_frame=int(payload["first_frame"]),
+            last_frame=int(payload["last_frame"]),
+            key_frame=int(payload["key_frame"]),
+            direction=VideoDirection(str(payload.get("direction", "both"))),
+            points=points,
+            box=box,
+            roi=roi,
+            provider_id=str(payload.get("model_id", "sam2.1-small")),
+            profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
+            offload_video_to_cpu=bool(payload.get("offload_video_to_cpu", True)),
+            offload_state_to_cpu=bool(payload.get("offload_state_to_cpu", True)),
+        )
+
+    def submit_video(self, payload: dict[str, Any]) -> str:
+        if self._video_service is None:
+            raise KyvenError(
+                code=ErrorCode.PROVIDER_UNAVAILABLE,
+                message="Video segmentation service is unavailable.",
+            )
+        try:
+            request = self.video_request_from_payload(payload)
+            request.validate()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="The video segmentation payload is invalid.",
+                technical_detail=str(exc),
+            ) from exc
+        record = JobRecord(job_id=uuid.uuid4().hex, request=request)
+        with self._lock:
+            self._jobs[record.job_id] = record
+        self._executor.submit(self._run_video, record)
         return record.job_id
 
     def _run(self, record: JobRecord) -> None:
@@ -128,6 +200,11 @@ class JobManager:
             record.status = JobStatus.RUNNING
             record.started_at = time.time()
         try:
+            if not isinstance(record.request, SegmentRequest):
+                raise KyvenError(
+                    code=ErrorCode.INVALID_REQUEST,
+                    message="Image worker received a non-image request.",
+                )
             result = self._service.run(record.request, record.cancellation)
             with self._lock:
                 record.status = JobStatus.SUCCEEDED
@@ -152,6 +229,52 @@ class JobManager:
                     technical_detail=str(exc),
                     recoverable=True,
                     suggested_action="Inspect the server log and retry the job.",
+                ).to_dict()
+        finally:
+            with self._lock:
+                record.finished_at = time.time()
+
+    def _run_video(self, record: JobRecord) -> None:
+        with self._lock:
+            if record.cancellation.is_cancelled:
+                record.status = JobStatus.CANCELLED
+                record.finished_at = time.time()
+                return
+            record.status = JobStatus.RUNNING
+            record.started_at = time.time()
+        try:
+            if self._video_service is None or not isinstance(record.request, VideoSegmentRequest):
+                raise KyvenError(
+                    code=ErrorCode.PROVIDER_UNAVAILABLE,
+                    message="Video segmentation service is unavailable.",
+                )
+            result = self._video_service.run(record.request, record.cancellation)
+            with self._lock:
+                record.status = JobStatus.SUCCEEDED
+                record.result = {
+                    "output_pattern": str(record.request.output_pattern),
+                    "output_count": len(result.outputs),
+                    "first_frame": result.first_frame,
+                    "last_frame": result.last_frame,
+                    "key_frame": result.key_frame,
+                    "direction": result.direction.value,
+                    "metadata": result.metadata,
+                }
+        except KyvenError as exc:
+            with self._lock:
+                record.status = (
+                    JobStatus.CANCELLED if exc.code is ErrorCode.CANCELLED else JobStatus.FAILED
+                )
+                record.error = exc.to_dict()
+        except Exception as exc:  # noqa: BLE001 - worker boundary converts failures to job state
+            with self._lock:
+                record.status = JobStatus.FAILED
+                record.error = KyvenError(
+                    code=ErrorCode.SERVER_ERROR,
+                    message="The Kyven video worker failed unexpectedly.",
+                    technical_detail=str(exc),
+                    recoverable=True,
+                    suggested_action="Inspect the server log and retry with a shorter range.",
                 ).to_dict()
         finally:
             with self._lock:

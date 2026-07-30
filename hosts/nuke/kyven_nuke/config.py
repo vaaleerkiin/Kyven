@@ -17,6 +17,13 @@ def executable() -> Path:
     return root() / ".venv" / "Scripts" / "kyven.exe"
 
 
+def python_executable() -> Path:
+    override = os.environ.get("KYVEN_PYTHON_EXECUTABLE")
+    if override:
+        return Path(override).resolve()
+    return root() / ".venv" / "Scripts" / "python.exe"
+
+
 def models_dir() -> Path:
     return Path(os.environ.get("KYVEN_MODELS_DIR", root() / "models")).resolve()
 

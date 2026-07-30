@@ -76,6 +76,10 @@ class KyvenClient:
         response = self._request("POST", "/v1/jobs/segment", payload)
         return str(response["job_id"])
 
+    def submit_video(self, payload: dict[str, Any]) -> str:
+        response = self._request("POST", "/v1/jobs/segment-video", payload)
+        return str(response["job_id"])
+
     def job(self, job_id: str) -> dict[str, Any]:
         return self._request("GET", f"/v1/jobs/{job_id}")
 
