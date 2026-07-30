@@ -5,9 +5,11 @@ The initial adapter is under `hosts/nuke`. It creates a `KyvenSegment` Group nod
 - Source input and matte-only output;
 - selectable SAM 2.1 Tiny, Small, Base+, or Large model;
 - Low Memory, Balanced, and Quality execution profiles;
-- positive point, negative point, and box controls;
-- Process Current Frame and Cancel actions;
-- background Nuke source rendering;
+- dynamically addable/removable positive and negative point controls;
+- independent show/use toggles that hide disabled Viewer handles;
+- an input-sized prompt box and input-centered initial points;
+- Process Current Frame, Process Frame Range, and Cancel actions;
+- in-process source export followed by asynchronous inference;
 - asynchronous server submission and result polling;
 - model installation and VRAM warnings from the server catalog.
 
@@ -26,9 +28,11 @@ nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 Restart Nuke and choose `Kyven > Segment` from the Nodes menu. Set `KYVEN_ROOT` if the checkout
 is not at `D:/Kyven`.
 
-## Current limitation
+## Frame ranges
 
-Nuke was not installed on the development machine during this slice, so the adapter has passed
-Python compilation and payload tests but still requires an in-host validation pass. Interactive
-viewer handles, range processing, and source-with-alpha output are follow-up work; the current
-node outputs the generated matte for ordinary native graph composition.
+`Process Frame Range` exports the selected range and generates a lossless PNG matte sequence.
+The same static points and box are applied to every frame in this initial implementation. The
+resulting sequence is connected inside the Group as `matte.%04d.png`.
+
+The current node outputs the generated matte for ordinary native graph composition. Prompt
+tracking/animation and source-with-alpha output are follow-up work.

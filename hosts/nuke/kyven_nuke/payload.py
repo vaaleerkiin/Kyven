@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 MODEL_IDS = (
@@ -36,18 +37,13 @@ def segment_payload(
     model_index: int,
     profile: str,
     image_height: int,
-    positive_enabled: bool,
-    positive_xy: tuple[float, float],
-    negative_enabled: bool,
-    negative_xy: tuple[float, float],
+    positive_points: Sequence[tuple[float, float]],
+    negative_points: Sequence[tuple[float, float]],
     box_enabled: bool,
     box: tuple[float, float, float, float],
 ) -> dict[str, Any]:
-    points = []
-    if positive_enabled:
-        points.append(point(*positive_xy, image_height, "positive"))
-    if negative_enabled:
-        points.append(point(*negative_xy, image_height, "negative"))
+    points = [point(*xy, image_height, "positive") for xy in positive_points]
+    points.extend(point(*xy, image_height, "negative") for xy in negative_points)
     box_payload = None
     if box_enabled:
         x0, y0, x1, y1 = box
