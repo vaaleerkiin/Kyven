@@ -623,7 +623,7 @@ def create_read_from_current_matte() -> None:
 
 
 def delete_node_cache() -> None:
-    """Delete only the cache owned by the current Kyven Segment node."""
+    """Delete only the cache owned by the current Kyven node."""
     nuke = _nuke()
     node = nuke.thisNode()
     target = _cache_root_path(node)
@@ -633,16 +633,7 @@ def delete_node_cache() -> None:
     if not nuke.ask(f"Delete this Kyven node cache?\n\n{target}"):
         return
 
-    node.begin()
-    try:
-        switch = nuke.toNode("KyvenMatteSwitch")
-        matte = nuke.toNode("KyvenMatteRead")
-        if switch is not None:
-            switch["which"].setValue(0)
-        if matte is not None:
-            nuke.delete(matte)
-    finally:
-        node.end()
+    _disconnect_cached_matte(node)
     try:
         shutil.rmtree(target)
     except OSError as exc:
@@ -653,15 +644,28 @@ def delete_node_cache() -> None:
 
 
 def _disconnect_cached_matte(node: Any) -> None:
+    """Disconnect every cached Read type used by any Kyven Group."""
     nuke = _nuke()
     node.begin()
     try:
-        switch = nuke.toNode("KyvenMatteSwitch")
-        matte = nuke.toNode("KyvenMatteRead")
-        if switch is not None:
-            switch["which"].setValue(0)
-        if matte is not None:
-            nuke.delete(matte)
+        for switch_name in (
+            "KyvenMatteSwitch",
+            "KyvenTrimapSwitch",
+            "KyvenResultSwitch",
+            "KyvenProcessedMaskSwitch",
+        ):
+            switch = nuke.toNode(switch_name)
+            if switch is not None and "which" in switch.knobs():
+                switch["which"].setValue(0)
+        for read_name in (
+            "KyvenMatteRead",
+            "KyvenTrimapRead",
+            "KyvenResultRead",
+            "KyvenProcessedMaskRead",
+        ):
+            read = nuke.toNode(read_name)
+            if read is not None:
+                nuke.delete(read)
     finally:
         node.end()
 
@@ -697,7 +701,7 @@ def delete_all_cache() -> None:
     except OSError as exc:
         nuke.message(f"Could not delete all Kyven cache:\n{exc}")
         return
-    nuke.message(f"Kyven cache deleted. Updated {affected} Segment node(s).")
+    nuke.message(f"Kyven cache deleted. Updated {affected} Kyven node(s).")
 
 
 def _cache_paths(node: Any, frame: int) -> tuple[Path, Path, Path]:
@@ -1135,7 +1139,7 @@ def _restyle_node_ui(node: Any) -> None:
         "add_negative_point": "+ Negative Point",
         "remove_negative_point": "- Last Negative",
         "reset_prompts": "Reset Points + ROI to Input",
-        "process_range": "Process Range (Independent)",
+        "process_range": "Process Frame Range",
         "cancel": "Cancel",
         "set_key_frame": "Set Current as Key",
         "propagate_forward": "Forward",
@@ -1143,7 +1147,7 @@ def _restyle_node_ui(node: Any) -> None:
         "propagate_both": "Both Directions",
         "create_matte_read": "Create Matte Read",
         "delete_node_cache": "Delete Node Cache",
-        "delete_all_cache": "Delete All Cache",
+        "delete_all_cache": "Delete All Kyven Cache",
     }
     for name, label in labels.items():
         if name in node.knobs():
@@ -1158,15 +1162,16 @@ def _restyle_node_ui(node: Any) -> None:
         "propagate_backward",
         "propagate_both",
         "delete_node_cache",
-        "delete_all_cache",
     }
     for name in same_line:
         if name in node.knobs():
             node[name].clearFlag(nuke.STARTLINE)
+    if "delete_all_cache" in node.knobs():
+        node["delete_all_cache"].setFlag(nuke.STARTLINE)
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 10</font>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 14</font>'
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
@@ -1270,7 +1275,7 @@ def _ensure_cache_controls(node: Any) -> None:
         node,
         nuke.PyScript_Knob(
             "create_matte_read",
-            "Create Read from Current Matte",
+            "Create Matte Read",
             "kyven_nuke.node.create_read_from_current_matte()",
         ),
     )
@@ -1279,7 +1284,7 @@ def _ensure_cache_controls(node: Any) -> None:
         node,
         nuke.PyScript_Knob(
             "delete_node_cache",
-            "Delete This Node Cache",
+            "Delete Node Cache",
             "kyven_nuke.node.delete_node_cache()",
         ),
         start_line=False,
@@ -1292,7 +1297,7 @@ def _ensure_cache_controls(node: Any) -> None:
             "Delete All Kyven Cache",
             "kyven_nuke.node.delete_all_cache()",
         ),
-        start_line=False,
+        start_line=True,
     )
 
 
@@ -1406,7 +1411,7 @@ def create_segment_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 10</font>',
+            '<font color="#91a3b0">SAM 2 | Local inference | API 14</font>',
         ),
     )
 
@@ -1553,7 +1558,7 @@ def create_segment_node() -> Any:
         node,
         nuke.PyScript_Knob(
             "process_range",
-            "Process Range (Independent)",
+            "Process Frame Range",
             "kyven_nuke.node.process_frame_range()",
         ),
     )

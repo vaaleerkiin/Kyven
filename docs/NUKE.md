@@ -1,8 +1,8 @@
 # Kyven Tools for Nuke
 
 The Nuke adapter exposes independent Kyven Tools operations as native-looking Group nodes. The
-current Segment and Refine nodes export frames to the local Kyven Server and read cached PNG mattes
-back into the graph. Future Depth and Inpaint nodes will reuse the same host/server boundary and
+current Segment, Refine, and Inpaint nodes export frames to the local Kyven Server and read cached results
+back into the graph. Future Depth nodes will reuse the same host/server boundary and
 per-node cache conventions. Nuke remains responsive while server inference runs.
 
 ## Portable install
@@ -32,7 +32,25 @@ nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 
 The adapter discovers the repository from its own installed plugin path, so the folder may be placed
 anywhere. `KYVEN_ROOT` is only an optional override for custom deployments. Restart Nuke and choose
-`Kyven > Segment` or `Kyven > Refine` from the Nodes menu.
+`Kyven > Segment`, `Kyven > Refine`, or `Kyven > Inpaint` from the Nodes menu.
+
+## Inpaint workflow
+
+For a focused control-by-control guide, see [Kyven Inpaint](INPAINT.md).
+
+Connect Source to input 0 and a removal mask to input 1. Choose Alpha or Red for the mask channel.
+`Auto` Crop Mode finds the thresholded mask bounds and adds Context Padding; `Manual` exposes an
+animatable ROI; `Full` sends the complete frame. Grow gives the model enough area to replace object
+edges. `Model Mask Grow` affects what LaMa replaces; `Blend Mask Grow` and `Blend Feather` are a
+separate, usually tighter final composite mask. This separation prevents generated edge colors
+from creating a bright halo. Negative values erode. Threshold and Invert normalize different mask
+conventions. Only the processed blend mask is pasted over
+Source, so pixels outside it are preserved. LaMa ONNX works on CPU and does not consume the 4 GB GPU
+budget. Its fixed 512-square input uses aspect-preserving letterboxing, so a tight ROI improves
+effective detail without stretching the shot. Big-LaMa Native instead preserves ROI resolution and
+is preferable when the fixed input loses texture detail. New nodes combine Source RGB and Mask alpha into one
+uncompressed TIFF export, avoiding the previous double graph evaluation. Live follows timeline and control changes; range mode queues independent frames and may
+flicker on difficult footage because LaMa is not a temporal model.
 
 After updating Kyven, select an existing node and use the matching command:
 
@@ -99,7 +117,7 @@ how many holes were filled. Changing these controls changes cache identity and r
 
 `Process Current Frame` creates one matte for the playhead frame.
 
-`Process Range (Independent)` applies the same points and ROI independently to every frame between
+`Process Frame Range` applies the same points and ROI independently to every frame between
 `Range First` and `Range Last`. Use this when temporal consistency is not required or tracking is
 not appropriate.
 
@@ -166,16 +184,26 @@ Typical files include exported source frames, displayed `matte.%04d.png`, CPU-pr
 `raw_matte.%04d.png`, video JPEGs, `tracked_matte.%04d.png`, and
 `raw_tracked_matte.%04d.png`. Refine nodes add fast lossless `refine_source.%04d.tif`,
 `refine_mask.%04d.png`, `refined_matte.%04d.png`, exact processed trimaps, and lightweight
-`trimap_preview` files under their own UUID folder.
+`trimap_preview` files under their own UUID folder. Inpaint adds source, mask, and full-format
+`inpaint_result.%04d.png` and exact `inpaint_processed_mask.%04d.png` files. Inpaint outputs include
+Result, premultiplied Patch, Processed Mask, Difference, and Source.
+
+Inpaint offers two model choices. `LaMa ONNX Fast` is CPU-friendly and uses a fixed 512 model input,
+so it is the better Live option. `Big-LaMa Native` processes the selected ROI at native detail
+(internally padded only to a multiple of 8), which is slower but normally produces cleaner large
+repairs. The default Model Grow 12 / Blend Grow 8 / Feather 4 combination removes antialiased
+object fringes instead of leaving a bright outline. `Edge Color Match` aligns the patch with nearby
+clean RGB; lower it only when deliberate brightness changes inside the repaired area are desired.
 
 - `Create Matte Read` creates a normal Nuke Read pointing to the current cached matte or sequence.
+- `Create Result Read` does the same for an Inpaint result, including a rendered frame range.
 - `Delete Node Cache` disconnects and removes only the current node's cache after confirmation.
-- `Delete All Cache` removes `.runtime/nuke_cache` after confirmation. Models and server settings
+- `Delete All Kyven Cache` removes `.runtime/nuke_cache` after confirmation. Models and server settings
   are preserved.
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18773` and requires API 10. A
+The adapter starts an external hidden Python process on `127.0.0.1:18777` and requires API 14. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

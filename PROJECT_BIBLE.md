@@ -30,7 +30,7 @@ An artist must be able to run one useful AI-assisted operation, inspect or corre
 
 ### Product category
 
-Kyven Tools is not only an autorotoscoping or masking plug-in. It is a reusable inference and image-processing toolkit for compositing hosts. Segment and Refine are its first tools; Depth, Inpaint, and later utilities use the same engine while remaining separate nodes.
+Kyven Tools is not only an autorotoscoping or masking plug-in. It is a reusable inference and image-processing toolkit for compositing hosts. Segment, Refine, and Inpaint are its first tools; Depth and later utilities use the same engine while remaining separate nodes.
 
 ---
 
@@ -898,13 +898,14 @@ Advanced information may be available in diagnostics.
 - FP16, reduced working resolution, model unloading, and CPU fallback
 - commercial-license audit and 4 GB / 8 GB benchmarks before default installation
 
-### Phase 9: Kyven Inpaint discovery
+### Phase 9: Kyven Inpaint
 
-- define Source + Mask graph contract and cache identity
-- evaluate still-image and video-consistent providers
+- ship the Source + Mask graph contract with verified LaMa ONNX object removal
+- add PowerPaint later as an optional quality and guided-fill provider
+- evaluate video-consistent providers
 - audit code, checkpoint, training-data, and commercial-use terms
 - establish 4 GB fallback or clearly mark the tool as optional high-memory functionality
-- prototype current-frame processing before range or temporal modes
+- benchmark and harden current-frame, Live, and independent range processing
 
 Detailed options and current model candidates are maintained in `docs/ROADMAP.md` so this document
 can remain focused on long-lived product principles.

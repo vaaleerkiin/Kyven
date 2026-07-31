@@ -13,6 +13,8 @@ from typing import Any
 
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
+from kyven.inpaint.models import InpaintRequest
+from kyven.inpaint.service import InpaintService
 from kyven.refine.models import RefineRequest
 from kyven.refine.service import RefineService
 from kyven.segment.models import (
@@ -42,7 +44,7 @@ class JobStatus(str, Enum):
 @dataclass(slots=True)
 class JobRecord:
     job_id: str
-    request: SegmentRequest | VideoSegmentRequest | RefineRequest
+    request: SegmentRequest | VideoSegmentRequest | RefineRequest | InpaintRequest
     cancellation: CancellationToken = field(default_factory=CancellationToken)
     status: JobStatus = JobStatus.QUEUED
     created_at: float = field(default_factory=time.time)
@@ -74,10 +76,12 @@ class JobManager:
         service: SegmentService,
         video_service: VideoSegmentService | None = None,
         refine_service: RefineService | None = None,
+        inpaint_service: InpaintService | None = None,
     ) -> None:
         self._service = service
         self._video_service = video_service
         self._refine_service = refine_service
+        self._inpaint_service = inpaint_service
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kyven-gpu")
         self._jobs: dict[str, JobRecord] = {}
         self._lock = threading.RLock()
@@ -291,6 +295,49 @@ class JobManager:
         self._executor.submit(self._run_refine, record)
         return record.job_id
 
+    @staticmethod
+    def inpaint_request_from_payload(payload: dict[str, Any]) -> InpaintRequest:
+        source = Path(str(payload["source"]))
+        mask = Path(str(payload["mask"]))
+        output = Path(str(payload["output"]))
+        mask_output_value = payload.get("mask_output")
+        mask_output = Path(str(mask_output_value)) if mask_output_value else None
+        if not source.is_absolute() or not mask.is_absolute() or not output.is_absolute() or (mask_output is not None and not mask_output.is_absolute()):
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Inpaint job paths must be absolute.")
+        return InpaintRequest(
+            source=source,
+            mask=mask,
+            output=output,
+            mask_output=mask_output,
+            provider_id=str(payload.get("model_id", "lama-2025jan-onnx")),
+            profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
+            crop_mode=str(payload.get("crop_mode", "auto")),
+            roi=JobManager._box_from_payload(payload, "roi"),
+            context_padding=int(payload.get("context_padding", 128)),
+            mask_grow=int(payload.get("mask_grow", 12)),
+            blend_grow=int(payload.get("blend_grow", 8)),
+            mask_feather=float(payload.get("mask_feather", 4.0)),
+            edge_color_match=float(payload.get("edge_color_match", 1.0)),
+            mask_threshold=float(payload.get("mask_threshold", 0.5)),
+            invert_mask=bool(payload.get("invert_mask", False)),
+            mask_channel=str(payload.get("mask_channel", "luminance")),
+            processing_size=int(payload.get("processing_size", 0)),
+        )
+
+    def submit_inpaint(self, payload: dict[str, Any]) -> str:
+        if self._inpaint_service is None:
+            raise KyvenError(ErrorCode.PROVIDER_UNAVAILABLE, "Inpaint service is unavailable.")
+        try:
+            request = self.inpaint_request_from_payload(payload)
+            request.validate()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "The inpaint job payload is invalid.", technical_detail=str(exc)) from exc
+        record = JobRecord(job_id=uuid.uuid4().hex, request=request)
+        with self._lock:
+            self._jobs[record.job_id] = record
+        self._executor.submit(self._run_inpaint, record)
+        return record.job_id
+
     def _run(self, record: JobRecord) -> None:
         with self._lock:
             if record.cancellation.is_cancelled:
@@ -425,6 +472,47 @@ class JobManager:
                     technical_detail=str(exc),
                     recoverable=True,
                     suggested_action="Inspect the server log and retry with Low Memory.",
+                ).to_dict()
+        finally:
+            with self._lock:
+                record.finished_at = time.time()
+
+    def _run_inpaint(self, record: JobRecord) -> None:
+        with self._lock:
+            if record.cancellation.is_cancelled:
+                record.status = JobStatus.CANCELLED
+                record.finished_at = time.time()
+                return
+            record.status = JobStatus.RUNNING
+            record.started_at = time.time()
+        try:
+            if self._inpaint_service is None or not isinstance(record.request, InpaintRequest):
+                raise KyvenError(ErrorCode.PROVIDER_UNAVAILABLE, "Inpaint service is unavailable.")
+            result = self._inpaint_service.run(record.request, record.cancellation)
+            with self._lock:
+                record.status = JobStatus.SUCCEEDED
+                record.result = {
+                    "output": str(result.output),
+                    "mask_output": (
+                        str(result.mask_output) if result.mask_output is not None else None
+                    ),
+                    "cache_key": result.cache_key,
+                    "metadata": result.metadata,
+                }
+        except KyvenError as exc:
+            with self._lock:
+                record.status = (
+                    JobStatus.CANCELLED if exc.code is ErrorCode.CANCELLED else JobStatus.FAILED
+                )
+                record.error = exc.to_dict()
+        except Exception as exc:  # noqa: BLE001
+            with self._lock:
+                record.status = JobStatus.FAILED
+                record.error = KyvenError(
+                    ErrorCode.SERVER_ERROR,
+                    "The Kyven inpaint worker failed unexpectedly.",
+                    technical_detail=str(exc),
+                    recoverable=True,
                 ).to_dict()
         finally:
             with self._lock:

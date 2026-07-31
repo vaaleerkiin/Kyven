@@ -22,6 +22,11 @@ MODEL_LABELS = (
 
 REFINE_MODEL_IDS = ("vitmatte-small-composition-1k",)
 REFINE_MODEL_LABELS = ("ViTMatte Small (4 GB+, recommended for 8 GB)",)
+INPAINT_MODEL_IDS = ("lama-2025jan-onnx", "big-lama-native")
+INPAINT_MODEL_LABELS = (
+    "LaMa ONNX Fast (CPU / Live)",
+    "Big-LaMa Native (best detail / 4 GB+)",
+)
 
 
 def point(x: float, nuke_y: float, image_height: int, label: str) -> dict[str, Any]:
@@ -190,4 +195,34 @@ def refine_payload(
         "background_radius": int(background_radius),
         "tile_size": int(tile_size),
         "tile_overlap": int(tile_overlap),
+    }
+
+
+def inpaint_payload(
+    *, source: str, mask: str, output: str, mask_output: str, model_index: int, profile: str,
+    image_width: int, image_height: int, crop_mode: str,
+    roi: tuple[float, float, float, float], context_padding: int,
+    mask_grow: int, blend_grow: int, mask_feather: float, edge_color_match: float,
+    mask_threshold: float,
+    invert_mask: bool, mask_channel: str,
+    processing_size: int,
+) -> dict[str, Any]:
+    return {
+        "source": source,
+        "mask": mask,
+        "output": output,
+        "mask_output": mask_output,
+        "model_id": INPAINT_MODEL_IDS[model_index],
+        "profile": profile,
+        "crop_mode": crop_mode,
+        "roi": roi_box(roi, image_height, image_width) if crop_mode == "manual" else None,
+        "context_padding": int(context_padding),
+        "mask_grow": int(mask_grow),
+        "blend_grow": int(blend_grow),
+        "mask_feather": float(mask_feather),
+        "edge_color_match": float(edge_color_match),
+        "mask_threshold": float(mask_threshold),
+        "invert_mask": bool(invert_mask),
+        "mask_channel": mask_channel,
+        "processing_size": int(processing_size),
     }

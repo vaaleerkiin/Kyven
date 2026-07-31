@@ -35,7 +35,7 @@ actual model crop are black in the trimap preview because they were not sent to 
 - `Live Current Frame` follows the timeline and regenerates ViTMatte after model/ROI changes.
 - `Process Current Frame` updates one cached matte.
 - `Process Frame Range` exports and refines every selected frame sequentially.
-- `Create Read from Current Matte` creates a standard Nuke Read for the cached frame or sequence.
+- `Create Matte Read` creates a standard Nuke Read for the cached frame or sequence.
 - `Cancel` stops queued work cooperatively.
 
 Manual current-frame processing and frame-range processing open a native Nuke progress window with
@@ -49,7 +49,7 @@ falls back to the full input format.
 
 The cached files for a processed frame are `refine_source`, `refine_mask`, `refined_matte`, and
 `trimap`. Range processing writes matching `%04d` sequences and connects internal Reads to both the
-refined matte and trimap. `Create Read from Current Matte` creates a Read for the refined matte; use
+refined matte and trimap. `Create Matte Read` creates a Read for the refined matte; use
 the node's trimap output modes to inspect the cached trimap in context.
 
 Trimap preview is independent of ViTMatte. Connecting or changing Input 1, moving to another frame,

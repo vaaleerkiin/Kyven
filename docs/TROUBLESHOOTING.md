@@ -29,8 +29,8 @@ The Nuke adapter launches `python.exe -I -m kyven.server.bootstrap`. On Windows 
 the DLL directory inherited from Nuke before importing PyTorch; this prevents the common
 `c10.dll` / `WinError 1114` startup failure.
 
-Kyven API 10 uses port `18773`. Older development servers may remain on 8765-8769 or 18768-18772,
-but the adapter asks authenticated older servers to unload their models before starting API 10.
+Kyven API 14 uses port `18777`. Older development servers may remain on 8765-8769 or 18768-18776,
+but the adapter asks authenticated older servers to unload their models before starting API 14.
 
 ## Refine fails or returns the coarse mask unchanged
 
@@ -40,7 +40,7 @@ but the adapter asks authenticated older servers to unload their models before s
 - Select Red as `Input 1 Channel` when the mask/trimap is stored in RGB instead of alpha.
 - Increase erosion/dilation to give ViTMatte a wider unknown edge region.
 - Use Low Memory (512 px tiles) when VRAM is limited.
-- After updating from an older API, restart Nuke so it launches the server on port 18773.
+- After updating from an older API, restart Nuke so it launches the server on port 18777.
 
 ## Trimap output is missing or shows only the input mask
 
@@ -86,10 +86,11 @@ extension means upstream hole filling was skipped, but Kyven's own post-process 
 
 ## Read or cache problems
 
-The panel displays the exact cache directory for the current node. Use `Create Matte Read` only
-after a frame, range, or tracking job succeeds. If files were deleted externally, process again.
+The panel displays the exact cache directory for the current node. Use `Create Matte Read` for
+Segment/Refine or `Create Result Read` for Inpaint only after processing succeeds. Both buttons copy
+the active internal Read, including its frame range. If files were deleted externally, process again.
 
-`Delete Node Cache` affects one UUID folder. `Delete All Cache` affects only
+`Delete Node Cache` affects one UUID folder. `Delete All Kyven Cache` affects only
 `.runtime/nuke_cache`; it does not remove models, `.venv`, the authentication token, or source media.
 
 ## Useful files

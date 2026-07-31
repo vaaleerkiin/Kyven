@@ -43,13 +43,25 @@ Refine unloads a resident SAM model before loading ViTMatte, which keeps the 4â€
 kyven models download vitmatte-small-composition-1k --models-dir models
 ```
 
+## Inpaint catalog
+
+| Model ID | Display name | Download | Hardware guidance |
+| --- | --- | ---: | --- |
+| `lama-2025jan-onnx` | LaMa ONNX Fast | 93 MB | CPU; fixed 512 input; fastest Live mode |
+| `big-lama-native` | Big-LaMa Native | 196 MB | CPU or GPU; native ROI detail; 4 GB+ recommended |
+
+LaMa ONNX is downloaded from a pinned OpenCV Hugging Face revision and runs through ONNX Runtime.
+Big-LaMa Native is the resolution-robust TorchScript model derived from the original LaMa project;
+unlike the fast export it does not shrink every ROI into a fixed 512 x 512 canvas. Both downloads
+are pinned by exact byte size and SHA-256, use Apache-2.0 model code/weights, and permit commercial
+use. PowerPaint is intentionally not included: its roughly 15 GB multi-file runtime conflicts with
+Kyven's portable, efficient installation target.
+
 ## Planned provider families
 
-Depth and Inpaint are roadmap items and are not yet part of the catalog or installer. Planned Depth
+Depth is a roadmap item and is not yet part of the catalog or installer. Planned Depth
 work currently favors commercially safe Small variants for interactive and temporal processing;
-non-commercial Base/Large checkpoints must not appear as safe defaults. Inpaint has no selected
-provider until its commercial terms, hardware behavior, temporal quality, and output contract are
-audited.
+non-commercial Base/Large checkpoints must not appear as safe defaults.
 
 See [Kyven Tools vision and roadmap](ROADMAP.md) for candidate models and proposed controls. Adding
 a name to that roadmap does not make a checkpoint approved: catalog inclusion still requires a

@@ -699,7 +699,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 10</font>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 14</font>'
         )
     created_selector = "output_mode" not in node.knobs()
     previous_label = str(node["output_mode"].value()) if not created_selector else None
@@ -852,12 +852,12 @@ def _restyle_refine_ui(node: Any) -> None:
         "cancel": "Cancel",
         "range_first": "Range First",
         "range_last": "Range Last",
-        "process_range": "Process Range (Independent)",
+        "process_range": "Process Frame Range",
         "output_mode": "Output",
         "cache_location": "Cache Folder",
         "create_matte_read": "Create Matte Read",
         "delete_node_cache": "Delete Node Cache",
-        "delete_all_cache": "Delete All Cache",
+        "delete_all_cache": "Delete All Kyven Cache",
         "kyven_status": "Status",
     }
     for name, label in labels.items():
@@ -870,11 +870,12 @@ def _restyle_refine_ui(node: Any) -> None:
         "cancel",
         "range_last",
         "delete_node_cache",
-        "delete_all_cache",
     }
     for name in same_line:
         if name in node.knobs():
             node[name].clearFlag(nuke.STARTLINE)
+    if "delete_all_cache" in node.knobs():
+        node["delete_all_cache"].setFlag(nuke.STARTLINE)
     for name in (
         "tile_size",
         "foreground_radius",
@@ -887,7 +888,7 @@ def _restyle_refine_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 10</font>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 14</font>'
         )
     if "trimap_help" in node.knobs():
         node["trimap_help"].setValue(REFINE_TRIMAP_HELP)
@@ -930,7 +931,7 @@ def create_refine_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 10</font>',
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 14</font>',
         ),
     )
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
@@ -1031,7 +1032,7 @@ def create_refine_node() -> Any:
         node,
         nuke.PyScript_Knob(
             "process_range",
-            "Process Range (Independent)",
+            "Process Frame Range",
             "kyven_nuke.refine_node.process_frame_range()",
         ),
     )

@@ -37,7 +37,7 @@ path; setting `KYVEN_ROOT` is normally unnecessary. Restart Nuke after editing `
 
 | Path | Contents |
 | --- | --- |
-| `.venv/` | Private Python, PyTorch, SAM 2, ViTMatte runtime |
+| `.venv/` | Private Python, PyTorch, SAM 2, ViTMatte, and ONNX Runtime |
 | `models/` | Selected checkpoints verified by size and SHA-256 |
 | `.runtime/pip-cache/` | Reusable installer download cache |
 | `.runtime/server.token` | Private local bearer token |
@@ -50,14 +50,15 @@ Nothing is added to the system `PATH`, and the installer intentionally does not 
 ## Update
 
 Pull or replace the repository files, then run `install.cmd` again. Existing verified checkpoints
-and downloads are reused. Restart Nuke so Python modules and API 10 are reloaded, then update older
+and downloads are reused. Restart Nuke so Python modules and API 14 are reloaded, then update older
 Groups from the Nodes menu:
 
 - `Kyven > Upgrade Selected Segment Node`;
-- `Kyven > Upgrade Selected Refine Node`.
+- `Kyven > Upgrade Selected Refine Node`;
+- `Kyven > Upgrade Selected Inpaint Node`.
 
-These operations preserve node UUIDs and cached results. A Refine node must process once after its
-upgrade to create the new exact trimap cache.
+These operations preserve node UUIDs and cached results. Upgrading Inpaint also adds the current
+shared Cache controls without deleting an existing result sequence.
 
 ## Move the repository
 
@@ -69,6 +70,8 @@ A Windows virtual environment stores absolute paths. If the Kyven folder is move
 ```powershell
 .\install.ps1 -Model sam2.1-tiny
 .\install.ps1 -Model sam2.1-small,vitmatte-small-composition-1k
+.\install.ps1 -Model lama-2025jan-onnx
+.\install.ps1 -Model big-lama-native
 .\install.ps1 -Model none
 ```
 

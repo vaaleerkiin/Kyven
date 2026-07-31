@@ -120,8 +120,8 @@ class ServerTests(unittest.TestCase):
             try:
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
                 self.assertEqual(client.health()["status"], "ok")
-                self.assertEqual(client.health()["api_version"], 10)
-                self.assertEqual(len(client.models()), 5)
+                self.assertEqual(client.health()["api_version"], 14)
+                self.assertEqual(len(client.models()), 7)
                 job_id = client.submit_segment(
                     {
                         "source": str(source.resolve()),

@@ -1,8 +1,8 @@
 # Kyven Tools Server
 
 Kyven Server is the shared execution layer for the Kyven Tools toolkit. It isolates PyTorch, CUDA,
-model loading, and task-specific inference from Nuke, Fusion, and Resolve. Segment and Refine are
-the implemented APIs; planned tools such as Depth and Inpaint must extend the provider/job system
+model loading, and task-specific inference from Nuke, Fusion, and Resolve. Segment, Refine, and
+Inpaint are implemented APIs; planned tools such as Depth must extend the provider/job system
 instead of placing inference inside a host adapter. The server binds only to `127.0.0.1` and
 requires a random bearer token on every endpoint.
 
@@ -26,6 +26,7 @@ it must not be committed or logged.
 | `POST` | `/v1/jobs/segment` | Queue a segmentation job |
 | `POST` | `/v1/jobs/segment-video` | Queue SAM 2 temporal mask propagation |
 | `POST` | `/v1/jobs/refine` | Queue ViTMatte alpha refinement |
+| `POST` | `/v1/jobs/inpaint` | Queue LaMa Source + Mask object removal |
 | `POST` | `/v1/preview/trimap` | Build trimap on CPU without ViTMatte |
 | `POST` | `/v1/preview/mask-postprocess` | Rebuild matte from raw SAM output on CPU |
 | `GET` | `/v1/jobs/{id}` | Read status or result |
@@ -80,11 +81,25 @@ frame's original coordinates before the job succeeds.
 Outside an enabled Refine ROI, the coarse alpha is preserved in the refined result. The persisted
 trimap is black outside the ROI because those pixels were not sent to ViTMatte.
 
-API version 10 makes CPU-only previews single-flight and uses linear-time trimap morphology. It
+### Inpaint fields
+
+`source`, `mask`, and `output` are absolute paths; `mask_output` optionally persists the exact
+processed merge mask. `crop_mode` is `auto`, `manual`, or `full`;
+manual mode uses `roi`, while auto mode uses `context_padding`. `mask_grow`, `mask_feather`, and
+`mask_threshold`, `invert_mask`, and `mask_channel` control mask interpretation. `mask_grow`
+expands the model-removal area; the separate `blend_grow` and `mask_feather` define the final merge.
+`edge_color_match` (0-1) corrects a local RGB offset measured in clean pixels around the generated
+area, reducing visible patch boundaries without changing pixels outside the processed mask.
+Empty masks return Source unchanged without loading a model.
+
+API version 14 adds selectable fast LaMa ONNX and native-resolution Big-LaMa, edge color matching,
+and safer default blend coverage. It retains the API 13 single-file Source+Mask export, separate
+inference/final blend masks, persisted processed masks, signed grow/erode,
+aspect-preserving preprocessing, and diagnostic Nuke outputs. It
 retains `/v1/preview/trimap` and `/v1/preview/mask-postprocess`, so host controls update without
 rerunning a model. It also retains detailed Segment and Refine progress stages and the API 7
 persisted `trimap_output`. `GET /v1/jobs/{id}` returns `progress` (0.0-1.0) and
 `progress_message`. A video request may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
-returned masks to the original dimensions. The Nuke adapter uses versioned port `18773` to avoid
+returned masks to the original dimensions. The Nuke adapter uses versioned port `18777` to avoid
 connecting to stale API processes during development.
