@@ -43,8 +43,6 @@ Refine unloads a resident SAM model before loading ViTMatte, which keeps the 4â€
 kyven models download vitmatte-small-composition-1k --models-dir models
 ```
 
-## Planned provider families
-
 ## Inpaint catalog
 
 | Model ID | Display name | Download | Hardware guidance |

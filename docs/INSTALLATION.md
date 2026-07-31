@@ -54,10 +54,11 @@ and downloads are reused. Restart Nuke so Python modules and API 14 are reloaded
 Groups from the Nodes menu:
 
 - `Kyven > Upgrade Selected Segment Node`;
-- `Kyven > Upgrade Selected Refine Node`.
+- `Kyven > Upgrade Selected Refine Node`;
+- `Kyven > Upgrade Selected Inpaint Node`.
 
-These operations preserve node UUIDs and cached results. A Refine node must process once after its
-upgrade to create the new exact trimap cache.
+These operations preserve node UUIDs and cached results. Upgrading Inpaint also adds the current
+shared Cache controls without deleting an existing result sequence.
 
 ## Move the repository
 

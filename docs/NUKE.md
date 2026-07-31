@@ -36,6 +36,8 @@ anywhere. `KYVEN_ROOT` is only an optional override for custom deployments. Rest
 
 ## Inpaint workflow
 
+For a focused control-by-control guide, see [Kyven Inpaint](INPAINT.md).
+
 Connect Source to input 0 and a removal mask to input 1. Choose Alpha or Red for the mask channel.
 `Auto` Crop Mode finds the thresholded mask bounds and adds Context Padding; `Manual` exposes an
 animatable ROI; `Full` sends the complete frame. Grow gives the model enough area to replace object
