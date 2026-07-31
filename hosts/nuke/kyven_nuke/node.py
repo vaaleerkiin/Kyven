@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from kyven_nuke.branding import add_node_branding
 from kyven_nuke import config
 from kyven_nuke.payload import MODEL_LABELS, segment_payload, segment_video_payload
 from kyven_nuke.runtime import ensure_server, stop_server
@@ -1225,6 +1226,7 @@ def _section_markup(title: str) -> str:
 def _restyle_node_ui(node: Any) -> None:
     """Apply current labels and section styling to new or upgraded nodes."""
     nuke = _nuke()
+    add_node_branding(node, nuke)
     _place_knob_after(node, "open_model_manager", "refresh_models")
     sections = {
         "model_section": "MODEL AND PERFORMANCE",
@@ -1566,6 +1568,7 @@ def create_segment_node() -> Any:
     node.setInput(0, selected)
     node["label"].setValue("[value kyven_status]")
     node.addKnob(nuke.Tab_Knob("kyven", "Kyven Segment"))
+    add_node_branding(node, nuke)
     _add_knob(
         nuke,
         node,
