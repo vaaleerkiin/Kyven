@@ -108,8 +108,6 @@ class ModelCatalog:
                     expected_checksum=spec.sha256,
                     provider_id=spec.model_id,
                     display_name=spec.display_name,
-                    license_url=spec.license_url,
-                    minimum_vram_mb=spec.recommended_vram_mb,
                 ),
             )
         resources = Path(__file__).parents[1] / "resources" / "models"
@@ -124,6 +122,8 @@ class ModelCatalog:
                     expected_checksum=spec.sha256,
                     provider_id=spec.model_id,
                     display_name=spec.display_name,
+                    license_url=spec.license_url,
+                    minimum_vram_mb=spec.recommended_vram_mb,
                 ),
             )
         for spec in self.list("inpaint"):

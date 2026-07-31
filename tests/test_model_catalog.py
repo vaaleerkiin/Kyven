@@ -17,6 +17,13 @@ class ModelCatalogTests(unittest.TestCase):
         self.assertTrue(all(len(model.sha256) == 64 for model in models))
         self.assertTrue(all(model.commercial_use for model in models))
 
+    def test_segment_provider_factory_accepts_catalog_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            registry = ModelCatalog.builtin().registry(Path(directory), "cpu")
+            provider = registry.get("sam2.1-small")
+
+        self.assertEqual(provider.capabilities.provider_id, "sam2.1-small")
+
     def test_snapshot_reports_installation_and_vram_advice(self) -> None:
         model = ModelCatalog.builtin().get("sam2.1-small")
         with tempfile.TemporaryDirectory() as directory:
@@ -45,6 +52,14 @@ class ModelCatalogTests(unittest.TestCase):
         self.assertEqual(capabilities.license_name, "Apache-2.0")
         self.assertTrue(capabilities.supports_cpu)
         self.assertTrue(capabilities.supports_tiling)
+
+    def test_vitmatte_base_provider_uses_base_hardware_and_license_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            registry = ModelCatalog.builtin().registry(Path(directory), "cpu")
+            capabilities = registry.get("vitmatte-base-distinctions-646").capabilities
+
+        self.assertEqual(capabilities.minimum_vram_mb, 8192)
+        self.assertIn("vitmatte-base-distinctions-646", capabilities.license_url)
 
     def test_inpaint_catalog_offers_fast_and_native_lama(self) -> None:
         models = ModelCatalog.builtin().list("inpaint")
