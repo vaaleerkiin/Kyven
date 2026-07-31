@@ -21,6 +21,7 @@ from kyven_nuke.node import (
     _nuke_file_path,
     _path_for_frame,
     _progress_cancelled,
+    _section_markup,
     _set_busy,
     _set_matte_read,
     _set_status,
@@ -45,9 +46,17 @@ REFINE_OUTPUT_MODES = (
     "Source (Bypass)",
 )
 REFINE_OUTPUT_HELP = (
-    "<b>Source + Refined Alpha</b> is the default compositing output.<br>"
-    "<b>Trimap</b> shows black / gray / white model guidance; "
-    "<b>Source + Trimap Alpha</b> keeps Source RGB and places that trimap in alpha."
+    "<b>Refined</b>: Matte / Source + Alpha / Cutout<br>"
+    "<b>Trimap</b>: Matte / Source + Alpha / Cutout<br>"
+    "<b>Source</b>: bypass &nbsp; | &nbsp; Default: Source + Refined Alpha"
+)
+REFINE_TRIMAP_HELP = (
+    "CPU-only preview; these controls never run ViTMatte.<br>"
+    "<b>On</b>: build from mask &nbsp; | &nbsp; <b>Off</b>: use artist trimap"
+)
+REFINE_LIVE_HELP = (
+    "Live follows timeline and model / ROI changes asynchronously.<br>"
+    "Trimap controls remain CPU-only."
 )
 
 
@@ -731,10 +740,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
             node[name].setRange(0, 100)
             node[name].setFlag(nuke.STARTLINE)
     if "trimap_help" in node.knobs():
-        node["trimap_help"].setValue(
-            "CPU-only live preview — these sliders never run ViTMatte. "
-            "On: build from a coarse mask. Off: normalize an artist trimap."
-        )
+        node["trimap_help"].setValue(REFINE_TRIMAP_HELP)
 
     node.begin()
     try:
@@ -814,6 +820,83 @@ def _ensure_refine_output_controls(node: Any) -> None:
         node.end()
 
 
+def _restyle_refine_ui(node: Any) -> None:
+    """Apply the shared compact Kyven layout to new and upgraded Refine nodes."""
+
+    nuke = _nuke()
+    sections = {
+        "model_section": "MODEL AND PERFORMANCE",
+        "trimap_section": "TRIMAP",
+        "roi_section": "PROCESSING ROI / MODEL CROP",
+        "processing_section": "INDEPENDENT FRAME PROCESSING",
+        "output_section": "OUTPUT",
+        "cache_section": "CACHE",
+        "status_section": "STATUS",
+    }
+    for name, title in sections.items():
+        if name in node.knobs():
+            node[name].setValue(_section_markup(title))
+
+    labels = {
+        "refresh_models": "Refresh Models",
+        "tile_size": "Tile Size (0 = Auto)",
+        "tile_overlap": "Tile Overlap",
+        "mask_channel": "Input 1 Channel",
+        "generate_trimap": "Generate Trimap from Mask",
+        "foreground_radius": "Foreground Erosion (px)",
+        "background_radius": "Background Dilation (px)",
+        "roi_enabled": "Enable Processing ROI",
+        "reset_roi": "Reset ROI to Source",
+        "live_mode": "Live Current Frame",
+        "process_frame": "Process Current Frame",
+        "cancel": "Cancel",
+        "range_first": "Range First",
+        "range_last": "Range Last",
+        "process_range": "Process Range (Independent)",
+        "output_mode": "Output",
+        "cache_location": "Cache Folder",
+        "create_matte_read": "Create Matte Read",
+        "delete_node_cache": "Delete Node Cache",
+        "delete_all_cache": "Delete All Cache",
+        "kyven_status": "Status",
+    }
+    for name, label in labels.items():
+        if name in node.knobs():
+            node[name].setLabel(label)
+
+    same_line = {
+        "refresh_models",
+        "tile_overlap",
+        "cancel",
+        "range_last",
+        "delete_node_cache",
+        "delete_all_cache",
+    }
+    for name in same_line:
+        if name in node.knobs():
+            node[name].clearFlag(nuke.STARTLINE)
+    for name in (
+        "tile_size",
+        "foreground_radius",
+        "background_radius",
+        "create_matte_read",
+    ):
+        if name in node.knobs():
+            node[name].setFlag(nuke.STARTLINE)
+
+    if "kyven_title" in node.knobs():
+        node["kyven_title"].setValue(
+            '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 10</font>'
+        )
+    if "trimap_help" in node.knobs():
+        node["trimap_help"].setValue(REFINE_TRIMAP_HELP)
+    if "live_help" in node.knobs():
+        node["live_help"].setValue(REFINE_LIVE_HELP)
+    if "output_help" in node.knobs():
+        node["output_help"].setValue(REFINE_OUTPUT_HELP)
+
+
 def upgrade_selected_refine_node() -> None:
     """Add trimap outputs to an existing Kyven Refine node without changing its matte."""
 
@@ -825,6 +908,7 @@ def upgrade_selected_refine_node() -> None:
         return
     try:
         _ensure_refine_output_controls(node)
+        _restyle_refine_ui(node)
     except Exception as exc:  # noqa: BLE001
         nuke.message(f"Could not upgrade the selected Refine node:\n{exc}")
         return
@@ -865,7 +949,7 @@ def create_refine_node() -> Any:
         ),
         start_line=False,
     )
-    tile_size = nuke.Int_Knob("tile_size", "Custom Tile Size (0 = Auto)")
+    tile_size = nuke.Int_Knob("tile_size", "Tile Size (0 = Auto)")
     tile_size.setRange(0, 8192)
     tile_size.setValue(0)
     _add_knob(nuke, node, tile_size)
@@ -897,8 +981,7 @@ def create_refine_node() -> Any:
         nuke.Text_Knob(
             "trimap_help",
             "",
-            "CPU-only live preview — these sliders never run ViTMatte. "
-            "On: build from a coarse mask. Off: normalize an artist trimap.",
+            REFINE_TRIMAP_HELP,
         ),
     )
 
@@ -913,7 +996,7 @@ def create_refine_node() -> Any:
         ),
     )
 
-    _add_section(nuke, node, "processing_section", "PROCESSING")
+    _add_section(nuke, node, "processing_section", "INDEPENDENT FRAME PROCESSING")
     _ensure_live_controls(node, "refine")
     _add_knob(
         nuke,
@@ -921,7 +1004,7 @@ def create_refine_node() -> Any:
         nuke.Text_Knob(
             "live_help",
             "",
-            "Live processes the current frame after the timeline changes; GPU work stays asynchronous.",
+            REFINE_LIVE_HELP,
         ),
     )
     _add_knob(
@@ -947,7 +1030,9 @@ def create_refine_node() -> Any:
         nuke,
         node,
         nuke.PyScript_Knob(
-            "process_range", "Process Frame Range", "kyven_nuke.refine_node.process_frame_range()"
+            "process_range",
+            "Process Range (Independent)",
+            "kyven_nuke.refine_node.process_frame_range()",
         ),
     )
 
@@ -969,7 +1054,7 @@ def create_refine_node() -> Any:
     _add_section(nuke, node, "status_section", "STATUS")
     status = nuke.String_Knob("kyven_status", "Status")
     status.setFlag(nuke.READ_ONLY)
-    status.setValue("Connect Source and Mask, then process a frame.")
+    status.setValue("Ready")
     _add_knob(nuke, node, status)
     job_id = nuke.String_Knob("kyven_job_id", "Job ID")
     job_id.setVisible(False)
@@ -1013,6 +1098,7 @@ def create_refine_node() -> Any:
     finally:
         node.end()
     _ensure_refine_output_controls(node)
+    _restyle_refine_ui(node)
     reset_roi_to_input_for_node(node)
     knob_changed_for_node(node)
     return node
