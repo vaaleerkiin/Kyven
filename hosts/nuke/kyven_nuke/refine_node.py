@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from kyven_nuke.branding import add_node_branding
 from kyven_nuke.node import (
     _add_knob,
     _add_section,
@@ -825,6 +826,7 @@ def _restyle_refine_ui(node: Any) -> None:
     """Apply the shared compact Kyven layout to new and upgraded Refine nodes."""
 
     nuke = _nuke()
+    add_node_branding(node, nuke)
     _place_knob_after(node, "open_model_manager", "refresh_models")
     sections = {
         "model_section": "MODEL AND PERFORMANCE",
@@ -940,6 +942,7 @@ def create_refine_node() -> Any:
     node.setInput(0, selected)
     node["label"].setValue("[value kyven_status]")
     node.addKnob(nuke.Tab_Knob("kyven", "Kyven Refine"))
+    add_node_branding(node, nuke)
     _add_knob(
         nuke,
         node,
