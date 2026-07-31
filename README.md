@@ -1,10 +1,7 @@
-# Kyven Tools
-
-<p align="center">
-  <a href="https://github.com/vaaleerkiin/Kyven">
-    <img src="hosts/nuke/icons/kyven_logo.png" alt="Kyven Tools" width="180">
-  </a>
-</p>
+<h1>
+  <a href="https://github.com/vaaleerkiin/Kyven"><img src="hosts/nuke/icons/kyven_logo.png" alt="Kyven Tools logo" width="48" align="center"></a>
+  Kyven Tools
+</h1>
 
 **Local AI tools for node-based compositing. Open source, portable, and host-safe.**
 

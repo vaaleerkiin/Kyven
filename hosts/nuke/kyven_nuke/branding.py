@@ -22,31 +22,19 @@ def logo_markup() -> str:
     # Nuke's Qt rich-text renderer accepts a native absolute path here, but displays
     # a broken-document icon for a file:// URI on Windows.
     logo_path = LOGO_PATH.resolve().as_posix()
-    return (
-        f'<a href="{PROJECT_URL}"><img src="{logo_path}" width="72" height="72"></a>'
-        '<br><font color="#91a3b0">Click the logo to open the Kyven GitHub project.</font>'
-    )
+    return f'<a href="{PROJECT_URL}" title="Open Kyven on GitHub"><img src="{logo_path}" width="48" height="48"></a>'
 
 
 def add_node_branding(node: Any, nuke: Any) -> None:
-    """Add the linked logo and reliable browser-button fallback to a Kyven node."""
+    """Add a compact linked logo to the top of a Kyven node."""
 
     if "kyven_logo" not in node.knobs():
         node.addKnob(nuke.Text_Knob("kyven_logo", "", logo_markup()))
     else:
         node["kyven_logo"].setValue(logo_markup())
 
-    if "open_kyven_github" not in node.knobs():
-        button = nuke.PyScript_Knob(
-            "open_kyven_github",
-            "Open Kyven on GitHub",
-            "kyven_nuke.branding.open_project_page()",
-        )
-        button.setTooltip("Open https://github.com/vaaleerkiin/Kyven")
-        button.setFlag(nuke.STARTLINE)
-        node.addKnob(button)
-    else:
-        node["open_kyven_github"].setFlag(nuke.STARTLINE)
+    if "open_kyven_github" in node.knobs():
+        node.removeKnob(node["open_kyven_github"])
 
     # Existing nodes receive these knobs during upgrade, so explicitly keep them at the top.
     names = list(node.knobs())
@@ -56,7 +44,7 @@ def add_node_branding(node: Any, nuke: Any) -> None:
     tail = [node[name] for name in names[anchor + 1 :]]
     for knob in tail:
         node.removeKnob(knob)
-    preferred = ("kyven_logo", "kyven_title", "open_kyven_github")
+    preferred = ("kyven_logo", "kyven_title")
     for name in preferred:
         for knob in tail:
             if knob.name() == name:

@@ -18,7 +18,7 @@ import kyven_nuke
 
 ICONS_ROOT = Path(__file__).parent / "icons"
 nuke.pluginAddPath(str(ICONS_ROOT))
-LOGO_ICON = "kyven_logo.png"
+LOGO_ICON = "kyven_logo_icon.png"
 
 menu = nuke.menu("Nodes").addMenu("Kyven", icon=LOGO_ICON)
 menu.addCommand("Model Manager...", kyven_nuke.show_model_manager, icon=LOGO_ICON)
