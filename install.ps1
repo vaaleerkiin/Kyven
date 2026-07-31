@@ -81,7 +81,8 @@ function Select-Models {
         [pscustomobject]@{ Number = "3"; Id = "sam2.1-base-plus"; Label = "SAM 2.1 Base+"; Guidance = "8-12 GB VRAM" },
         [pscustomobject]@{ Number = "4"; Id = "sam2.1-large"; Label = "SAM 2.1 Large"; Guidance = "12+ GB VRAM" },
         [pscustomobject]@{ Number = "5"; Id = "vitmatte-small-composition-1k"; Label = "ViTMatte Small"; Guidance = "4 GB+, refinement" },
-        [pscustomobject]@{ Number = "6"; Id = "lama-2025jan-onnx"; Label = "LaMa Inpaint"; Guidance = "CPU / low VRAM, object removal" },
+        [pscustomobject]@{ Number = "6"; Id = "lama-2025jan-onnx"; Label = "LaMa ONNX Fast"; Guidance = "CPU / Live, fixed 512 input" },
+        [pscustomobject]@{ Number = "7"; Id = "big-lama-native"; Label = "Big-LaMa Native"; Guidance = "best detail, native ROI, 4 GB+" },
         [pscustomobject]@{ Number = "0"; Id = "none"; Label = "No model"; Guidance = "install runtime only" }
     )
 
@@ -103,7 +104,7 @@ function Select-Models {
         }
         $Match = $Choices | Where-Object Number -eq $Part
         if (-not $Match) {
-            throw "Unknown model choice '$Part'. Run the installer again and enter 0-6."
+            throw "Unknown model choice '$Part'. Run the installer again and enter 0-7."
         }
         if ($Match.Id -eq "none") {
             $AnswerParts = @($Answer -split "[,; ]+" | Where-Object { $_ })
@@ -126,7 +127,8 @@ function Resolve-RequestedModels([string[]]$RequestedModels) {
         "sam2.1-base-plus",
         "sam2.1-large",
         "vitmatte-small-composition-1k",
-        "lama-2025jan-onnx"
+        "lama-2025jan-onnx",
+        "big-lama-native"
     )
     if (-not $RequestedModels -or $RequestedModels.Count -eq 0) {
         return @(Select-Models)

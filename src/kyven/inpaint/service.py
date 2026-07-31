@@ -53,6 +53,31 @@ def _auto_region(mask: np.ndarray, padding: int) -> ResolvedRegion | None:
     )
 
 
+def _match_patch_color(
+    predicted: np.ndarray,
+    original: np.ndarray,
+    inference_mask: np.ndarray,
+    strength: float,
+) -> tuple[np.ndarray, list[float]]:
+    """Remove a local RGB offset measured in the clean ring around the generated area."""
+
+    if strength <= 0:
+        return predicted, [0.0, 0.0, 0.0]
+    mask_image = Image.fromarray(inference_mask, mode="L")
+    ring_radius = 16
+    expanded = np.asarray(
+        mask_image.filter(ImageFilter.MaxFilter(_mask_filter_size(ring_radius))),
+        dtype=np.uint8,
+    )
+    ring = (expanded >= 128) & (inference_mask < 128)
+    if int(np.count_nonzero(ring)) < 32:
+        return predicted, [0.0, 0.0, 0.0]
+    differences = original[ring].astype(np.float32) - predicted[ring].astype(np.float32)
+    offset = np.clip(np.median(differences, axis=0), -32.0, 32.0) * float(strength)
+    matched = np.clip(predicted.astype(np.float32) + offset, 0, 255).astype(np.uint8)
+    return matched, [round(float(value), 3) for value in offset]
+
+
 class InpaintService:
     def __init__(self, registry: ProviderRegistry) -> None:
         self._registry = registry
@@ -126,6 +151,13 @@ class InpaintService:
         if predicted.shape != expected:
             raise KyvenError(ErrorCode.INFERENCE_FAILED, "The inpaint provider returned an invalid image size.", technical_detail=f"Expected {expected}, received {predicted.shape}.")
 
+        original_crop = source_pixels[region.y0 : region.y1, region.x0 : region.x1]
+        predicted, color_offset = _match_patch_color(
+            predicted,
+            original_crop,
+            inference_mask,
+            request.edge_color_match,
+        )
         merge_mask = Image.fromarray(binary_mask, mode="L").crop(crop_box)
         if request.blend_grow > 0:
             merge_mask = merge_mask.filter(
@@ -142,7 +174,6 @@ class InpaintService:
         full_merge_mask[region.y0 : region.y1, region.x0 : region.x1] = np.asarray(merge_mask)
         if request.mask_output is not None:
             write_mask_png_atomic(request.mask_output, full_merge_mask)
-        original_crop = source_pixels[region.y0 : region.y1, region.x0 : region.x1]
         merged_crop = np.clip(original_crop * (1.0 - alpha) + predicted * alpha, 0, 255).astype(np.uint8)
         output = source_pixels.copy()
         output[region.y0 : region.y1, region.x0 : region.x1] = merged_crop
@@ -150,7 +181,11 @@ class InpaintService:
         _write_rgb_atomic(request.output, output)
         token.report_progress(1.0, "Inpaint complete")
         metadata = dict(prediction.metadata)
-        metadata.update({"processing_roi": region.metadata(), "crop_mode": request.crop_mode})
+        metadata.update({
+            "processing_roi": region.metadata(),
+            "crop_mode": request.crop_mode,
+            "edge_color_offset": color_offset,
+        })
         return InpaintResult(
             request.output,
             request.mask_output,

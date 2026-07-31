@@ -49,11 +49,15 @@ kyven models download vitmatte-small-composition-1k --models-dir models
 
 | Model ID | Display name | Download | Hardware guidance |
 | --- | --- | ---: | --- |
-| `lama-2025jan-onnx` | LaMa 2025-01 ONNX | 93 MB | CPU; no GPU VRAM required |
+| `lama-2025jan-onnx` | LaMa ONNX Fast | 93 MB | CPU; fixed 512 input; fastest Live mode |
+| `big-lama-native` | Big-LaMa Native | 196 MB | CPU or GPU; native ROI detail; 4 GB+ recommended |
 
-LaMa is downloaded from a pinned OpenCV Hugging Face revision, verified by size and SHA-256, and
-runs through ONNX Runtime. Both model and runtime permit commercial use. PowerPaint remains a
-planned optional quality provider because its multi-file download is several gigabytes.
+LaMa ONNX is downloaded from a pinned OpenCV Hugging Face revision and runs through ONNX Runtime.
+Big-LaMa Native is the resolution-robust TorchScript model derived from the original LaMa project;
+unlike the fast export it does not shrink every ROI into a fixed 512 x 512 canvas. Both downloads
+are pinned by exact byte size and SHA-256, use Apache-2.0 model code/weights, and permit commercial
+use. PowerPaint is intentionally not included: its roughly 15 GB multi-file runtime conflicts with
+Kyven's portable, efficient installation target.
 
 ## Planned provider families
 

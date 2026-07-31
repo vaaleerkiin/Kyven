@@ -40,6 +40,15 @@ class ModelCatalogTests(unittest.TestCase):
         self.assertTrue(capabilities.supports_cpu)
         self.assertTrue(capabilities.supports_tiling)
 
+    def test_inpaint_catalog_offers_fast_and_native_lama(self) -> None:
+        models = ModelCatalog.builtin().list("inpaint")
+        self.assertEqual(
+            [model.model_id for model in models],
+            ["lama-2025jan-onnx", "big-lama-native"],
+        )
+        self.assertTrue(all(model.commercial_use for model in models))
+        self.assertEqual(models[1].size_bytes, 205669692)
+
 
 if __name__ == "__main__":
     unittest.main()

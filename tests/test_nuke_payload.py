@@ -137,7 +137,7 @@ class NukePayloadTests(unittest.TestCase):
             mask_output="D:/processed.png", model_index=0, profile="balanced",
             image_width=1920, image_height=1080, crop_mode="manual",
             roi=(10, 20, 300, 400), context_padding=96, mask_grow=-2,
-            blend_grow=1, mask_feather=3.5, mask_threshold=0.25,
+            blend_grow=1, mask_feather=3.5, edge_color_match=0.75, mask_threshold=0.25,
             invert_mask=True, mask_channel="alpha", processing_size=0,
         )
         self.assertEqual(payload["model_id"], "lama-2025jan-onnx")
@@ -145,6 +145,7 @@ class NukePayloadTests(unittest.TestCase):
         self.assertEqual(payload["roi"]["y0"], 680.0)
         self.assertEqual(payload["mask_grow"], -2)
         self.assertEqual(payload["blend_grow"], 1)
+        self.assertEqual(payload["edge_color_match"], 0.75)
         self.assertEqual(payload["mask_channel"], "alpha")
         self.assertTrue(payload["invert_mask"])
 

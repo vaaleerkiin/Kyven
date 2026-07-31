@@ -43,9 +43,10 @@ edges. `Model Mask Grow` affects what LaMa replaces; `Blend Mask Grow` and `Blen
 separate, usually tighter final composite mask. This separation prevents generated edge colors
 from creating a bright halo. Negative values erode. Threshold and Invert normalize different mask
 conventions. Only the processed blend mask is pasted over
-Source, so pixels outside it are preserved. LaMa works on CPU and does not consume the 4 GB GPU
+Source, so pixels outside it are preserved. LaMa ONNX works on CPU and does not consume the 4 GB GPU
 budget. Its fixed 512-square input uses aspect-preserving letterboxing, so a tight ROI improves
-effective detail without stretching the shot. New nodes combine Source RGB and Mask alpha into one
+effective detail without stretching the shot. Big-LaMa Native instead preserves ROI resolution and
+is preferable when the fixed input loses texture detail. New nodes combine Source RGB and Mask alpha into one
 uncompressed TIFF export, avoiding the previous double graph evaluation. Live follows timeline and control changes; range mode queues independent frames and may
 flicker on difficult footage because LaMa is not a temporal model.
 
@@ -185,6 +186,13 @@ Typical files include exported source frames, displayed `matte.%04d.png`, CPU-pr
 `inpaint_result.%04d.png` and exact `inpaint_processed_mask.%04d.png` files. Inpaint outputs include
 Result, premultiplied Patch, Processed Mask, Difference, and Source.
 
+Inpaint offers two model choices. `LaMa ONNX Fast` is CPU-friendly and uses a fixed 512 model input,
+so it is the better Live option. `Big-LaMa Native` processes the selected ROI at native detail
+(internally padded only to a multiple of 8), which is slower but normally produces cleaner large
+repairs. The default Model Grow 12 / Blend Grow 8 / Feather 4 combination removes antialiased
+object fringes instead of leaving a bright outline. `Edge Color Match` aligns the patch with nearby
+clean RGB; lower it only when deliberate brightness changes inside the repaired area are desired.
+
 - `Create Matte Read` creates a normal Nuke Read pointing to the current cached matte or sequence.
 - `Delete Node Cache` disconnects and removes only the current node's cache after confirmation.
 - `Delete All Cache` removes `.runtime/nuke_cache` after confirmation. Models and server settings
@@ -192,7 +200,7 @@ Result, premultiplied Patch, Processed Mask, Difference, and Source.
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18776` and requires API 13. A
+The adapter starts an external hidden Python process on `127.0.0.1:18777` and requires API 14. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

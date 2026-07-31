@@ -89,6 +89,7 @@ class ModelCatalog:
         )
 
     def registry(self, models_dir: Path, device: str) -> ProviderRegistry:
+        from kyven.inpaint.providers.big_lama import BigLamaProvider
         from kyven.inpaint.providers.lama import LamaOnnxProvider
         from kyven.refine.providers.vitmatte import VitMatteProvider
         from kyven.segment.providers.sam2 import Sam2Provider
@@ -121,14 +122,24 @@ class ModelCatalog:
                 ),
             )
         for spec in self.list("inpaint"):
-            registry.register(
-                spec.model_id,
-                lambda spec=spec: LamaOnnxProvider(
-                    checkpoint=str(spec.path(models_dir)),
-                    expected_checksum=spec.sha256,
-                    device=device,
-                ),
-            )
+            if spec.provider == "big-lama-torchscript":
+                registry.register(
+                    spec.model_id,
+                    lambda spec=spec: BigLamaProvider(
+                        checkpoint=str(spec.path(models_dir)),
+                        expected_checksum=spec.sha256,
+                        device=device,
+                    ),
+                )
+            else:
+                registry.register(
+                    spec.model_id,
+                    lambda spec=spec: LamaOnnxProvider(
+                        checkpoint=str(spec.path(models_dir)),
+                        expected_checksum=spec.sha256,
+                        device=device,
+                    ),
+                )
         return registry
 
     def download(self, model_id: str, models_dir: Path) -> Path:

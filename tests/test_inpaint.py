@@ -40,7 +40,7 @@ class InpaintServiceTests(unittest.TestCase):
             Image.fromarray(np.full((20, 30, 3), 50, dtype=np.uint8)).save(source)
             pixels = np.zeros((20, 30), dtype=np.uint8); pixels[8:12, 13:17] = 255; Image.fromarray(pixels).save(mask)
             provider = FakeInpaintProvider()
-            result = InpaintService(self._registry(provider)).run(InpaintRequest(source, mask, output, provider_id="fake", context_padding=2, mask_grow=0, blend_grow=0, mask_feather=0))
+            result = InpaintService(self._registry(provider)).run(InpaintRequest(source, mask, output, provider_id="fake", context_padding=2, mask_grow=0, blend_grow=0, mask_feather=0, edge_color_match=0))
             rendered = np.asarray(Image.open(output).convert("RGB"))
             self.assertTrue(np.all(rendered[0, 0] == 50)); self.assertTrue(np.all(rendered[9, 14] == (255, 0, 0)))
             self.assertEqual(result.metadata["processing_roi"]["width"], 8)
@@ -94,6 +94,23 @@ class InpaintServiceTests(unittest.TestCase):
             ))
             self.assertEqual(int(np.count_nonzero(np.asarray(Image.open(processed)))), 16)
             self.assertEqual(len(provider.requests), 1)
+
+    def test_edge_color_match_corrects_patch_offset_without_touching_outside(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); source = root / "source.png"; mask = root / "mask.png"
+            output = root / "output.png"
+            Image.fromarray(np.full((40, 40, 3), 50, dtype=np.uint8)).save(source)
+            pixels = np.zeros((40, 40), dtype=np.uint8); pixels[16:24, 16:24] = 255
+            Image.fromarray(pixels).save(mask)
+            provider = FakeInpaintProvider()
+            result = InpaintService(self._registry(provider)).run(InpaintRequest(
+                source, mask, output, provider_id="fake", context_padding=8,
+                mask_grow=0, blend_grow=0, mask_feather=0, edge_color_match=1,
+            ))
+            rendered = np.asarray(Image.open(output).convert("RGB"))
+            np.testing.assert_array_equal(rendered[0, 0], (50, 50, 50))
+            np.testing.assert_array_equal(rendered[20, 20], (223, 32, 32))
+            self.assertEqual(result.metadata["edge_color_offset"], [-32.0, 32.0, 32.0])
 
 
 if __name__ == "__main__":

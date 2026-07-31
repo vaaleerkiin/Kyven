@@ -22,8 +22,11 @@ MODEL_LABELS = (
 
 REFINE_MODEL_IDS = ("vitmatte-small-composition-1k",)
 REFINE_MODEL_LABELS = ("ViTMatte Small (4 GB+, recommended for 8 GB)",)
-INPAINT_MODEL_IDS = ("lama-2025jan-onnx",)
-INPAINT_MODEL_LABELS = ("LaMa (CPU / low VRAM)",)
+INPAINT_MODEL_IDS = ("lama-2025jan-onnx", "big-lama-native")
+INPAINT_MODEL_LABELS = (
+    "LaMa ONNX Fast (CPU / Live)",
+    "Big-LaMa Native (best detail / 4 GB+)",
+)
 
 
 def point(x: float, nuke_y: float, image_height: int, label: str) -> dict[str, Any]:
@@ -199,7 +202,8 @@ def inpaint_payload(
     *, source: str, mask: str, output: str, mask_output: str, model_index: int, profile: str,
     image_width: int, image_height: int, crop_mode: str,
     roi: tuple[float, float, float, float], context_padding: int,
-    mask_grow: int, blend_grow: int, mask_feather: float, mask_threshold: float,
+    mask_grow: int, blend_grow: int, mask_feather: float, edge_color_match: float,
+    mask_threshold: float,
     invert_mask: bool, mask_channel: str,
     processing_size: int,
 ) -> dict[str, Any]:
@@ -216,6 +220,7 @@ def inpaint_payload(
         "mask_grow": int(mask_grow),
         "blend_grow": int(blend_grow),
         "mask_feather": float(mask_feather),
+        "edge_color_match": float(edge_color_match),
         "mask_threshold": float(mask_threshold),
         "invert_mask": bool(invert_mask),
         "mask_channel": mask_channel,

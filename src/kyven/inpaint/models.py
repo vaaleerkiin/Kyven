@@ -34,9 +34,10 @@ class InpaintRequest:
     crop_mode: str = "auto"
     roi: BoxPrompt | None = None
     context_padding: int = 128
-    mask_grow: int = 8
-    blend_grow: int = 2
-    mask_feather: float = 1.0
+    mask_grow: int = 12
+    blend_grow: int = 8
+    mask_feather: float = 4.0
+    edge_color_match: float = 1.0
     mask_threshold: float = 0.5
     invert_mask: bool = False
     mask_channel: str = "luminance"
@@ -56,6 +57,8 @@ class InpaintRequest:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Mask grow values must be between -128 and 128 pixels.")
         if not 0.0 <= self.mask_threshold <= 1.0:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Mask threshold must be between 0 and 1.")
+        if not 0.0 <= self.edge_color_match <= 1.0:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Edge color match must be between 0 and 1.")
         if self.mask_channel not in {"luminance", "alpha"}:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Mask channel must be luminance or alpha.")
         if self.processing_size and self.processing_size < 128:
@@ -71,6 +74,7 @@ class InpaintRequest:
             "mask_grow": self.mask_grow,
             "blend_grow": self.blend_grow,
             "mask_feather": self.mask_feather,
+            "edge_color_match": self.edge_color_match,
             "mask_threshold": self.mask_threshold,
             "invert_mask": self.invert_mask,
             "mask_channel": self.mask_channel,

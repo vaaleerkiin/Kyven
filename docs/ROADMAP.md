@@ -14,7 +14,7 @@ Kyven Tools
 |-- Segment       available in Nuke
 |-- Refine        available in Nuke
 |-- Depth         planned next
-|-- Inpaint       LaMa available; PowerPaint quality provider planned
+|-- Inpaint       LaMa ONNX Fast and Big-LaMa Native available
 |-- Utils         future focused image and paint utilities
 |-- Server        shared local inference and cache service
 |-- SDK           future provider and host APIs
@@ -131,9 +131,10 @@ checkpoint hashes are complete.
 
 ## Kyven Inpaint
 
-The first Inpaint provider is OpenCV's Apache-2.0 LaMa ONNX model. It provides fast object removal,
-works without GPU VRAM, and keeps the 4 GB project baseline intact. PowerPaint is planned as a
-separate optional quality/guided-fill provider after secure bundle installation is implemented.
+Inpaint offers OpenCV's fast Apache-2.0 LaMa ONNX model and the resolution-robust Big-LaMa Native
+model. The fast provider works without GPU VRAM and keeps the 4 GB baseline intact; Big-LaMa keeps
+native ROI detail and is the quality option for larger repairs. PowerPaint was evaluated but is not
+planned for the portable distribution because its model bundle is roughly 15 GB.
 
 ### Current node contract
 
@@ -147,7 +148,7 @@ separate optional quality/guided-fill provider after secure bundle installation 
 - standard progress, cancel, cache, Create Read, and cleanup controls;
 - result, patch/mask diagnostics, and Source (Bypass) outputs.
 
-### Quality-provider work still required
+### Future inpaint work
 
 1. Is the goal object removal, clean-plate generation, generative fill, or separate modes?
 2. Can the selected model and weights be used commercially and redistributed or downloaded safely?
@@ -156,8 +157,8 @@ separate optional quality/guided-fill provider after secure bundle installation 
 5. Should temporal inpainting be a later provider rather than post-stabilized still inpainting?
 6. Which cache format preserves source color, bit depth, and alpha correctly?
 
-LaMa is selectable in the installer. Heavy providers remain optional and cannot silently redefine
-the project's 4 GB baseline.
+Both LaMa variants are selectable in the installer. Future heavy providers remain optional and
+cannot silently redefine the project's 4 GB baseline.
 
 ## Future Kyven Utils
 

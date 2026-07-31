@@ -47,8 +47,14 @@ def _payload(node: Any, source: Any, source_path: Path, mask_path: Path, output_
         image_width=int(source.width()), image_height=int(source.height()),
         crop_mode=str(node["crop_mode"].value()), roi=tuple(node["processing_roi"].value()),
         context_padding=int(node["context_padding"].value()), mask_grow=int(node["mask_grow"].value()),
-        blend_grow=int(node["blend_grow"].value()) if "blend_grow" in node.knobs() else 2,
-        mask_feather=float(node["mask_feather"].value()), mask_threshold=float(node["mask_threshold"].value()),
+        blend_grow=int(node["blend_grow"].value()) if "blend_grow" in node.knobs() else 8,
+        mask_feather=float(node["mask_feather"].value()),
+        edge_color_match=(
+            float(node["edge_color_match"].value())
+            if "edge_color_match" in node.knobs()
+            else 1.0
+        ),
+        mask_threshold=float(node["mask_threshold"].value()),
         invert_mask=bool(node["invert_mask"].value()), mask_channel=mask_channel, processing_size=0,
     )
 
@@ -233,6 +239,11 @@ def knob_changed() -> None:
     nuke = _nuke(); node = nuke.thisNode(); knob_name = nuke.thisKnob().name()
     node["processing_roi"].setVisible(str(node["crop_mode"].value()) == "manual")
     node["context_padding"].setVisible(str(node["crop_mode"].value()) == "auto")
+    if knob_name == "model":
+        if int(node["model"].getValue()) == 0:
+            node["model_help"].setValue("Fast: fixed 512 x 512 model input, CPU-friendly and best for Live. Use a tight Auto ROI for more detail.")
+        else:
+            node["model_help"].setValue("Quality: native ROI resolution (padded only to a multiple of 8). Better detail, but slower and uses more memory.")
     from kyven_nuke.live import affects_live_result, request_live_update
     if affects_live_result(knob_name, "inpaint"):
         node["kyven_live_frame"].setValue(-2147483647)
@@ -243,20 +254,21 @@ def create_inpaint_node() -> Any:
     nuke = _nuke(); selected = nuke.selectedNodes(); source = selected[0] if selected else None; mask = selected[1] if len(selected) > 1 else None
     node = nuke.nodes.Group(name="KyvenInpaint"); node.setInput(0, source); node.setInput(1, mask)
     node["label"].setValue("[value kyven_status]"); node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint"))
-    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa 512 | Source + Mask | API 13</font>'))
+    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 14</font>'))
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
     _add_knob(nuke, node, nuke.Enumeration_Knob("profile", "Memory Profile", ["low_memory", "balanced", "quality"])); node["profile"].setValue(1)
     size = nuke.Int_Knob("processing_size", "Processing Size"); size.setValue(512); size.setVisible(False); node.addKnob(size)
-    _add_knob(nuke, node, nuke.Text_Knob("model_help", "", "LaMa uses a fixed 512 x 512 model input. A tighter Auto ROI gives the object more model detail."))
+    _add_knob(nuke, node, nuke.Text_Knob("model_help", "", "Fast: fixed 512 x 512 model input, CPU-friendly and best for Live. Use a tight Auto ROI for more detail."))
     _add_section(nuke, node, "mask_section", "MASK")
     _add_knob(nuke, node, nuke.Enumeration_Knob("mask_channel", "Input 1 Channel", ["Alpha", "Red"]))
     invert = nuke.Boolean_Knob("invert_mask", "Invert Input Mask"); _add_knob(nuke, node, invert)
     threshold = nuke.Double_Knob("mask_threshold", "Threshold"); threshold.setRange(0, 1); threshold.setValue(0.5); _add_knob(nuke, node, threshold)
     grow = nuke.Int_Knob("mask_grow", "Model Mask Grow (px)"); grow.setRange(-128, 128); grow.setValue(12); _add_knob(nuke, node, grow)
-    blend_grow = nuke.Int_Knob("blend_grow", "Blend Mask Grow (px)"); blend_grow.setRange(-128, 128); blend_grow.setValue(2); _add_knob(nuke, node, blend_grow)
-    feather = nuke.Double_Knob("mask_feather", "Blend Feather (px)"); feather.setRange(0, 64); feather.setValue(1); _add_knob(nuke, node, feather)
-    _add_knob(nuke, node, nuke.Text_Knob("mask_help", "", "Model Grow gives LaMa clean pixels around the object. Blend Grow/Feather control only the final composite and help avoid bright halos."))
+    blend_grow = nuke.Int_Knob("blend_grow", "Blend Mask Grow (px)"); blend_grow.setRange(-128, 128); blend_grow.setValue(8); _add_knob(nuke, node, blend_grow)
+    feather = nuke.Double_Knob("mask_feather", "Blend Feather (px)"); feather.setRange(0, 64); feather.setValue(4); _add_knob(nuke, node, feather)
+    color_match = nuke.Double_Knob("edge_color_match", "Edge Color Match"); color_match.setRange(0, 1); color_match.setValue(1); _add_knob(nuke, node, color_match)
+    _add_knob(nuke, node, nuke.Text_Knob("mask_help", "", "Model Grow removes the old antialiased edge. Blend Grow/Feather hide the seam; Edge Color Match aligns the patch to nearby clean pixels."))
     _add_section(nuke, node, "roi_section", "PROCESSING ROI / MODEL CROP")
     _add_knob(nuke, node, nuke.Enumeration_Knob("crop_mode", "Crop Mode", ["auto", "manual", "full"]))
     padding = nuke.Int_Knob("context_padding", "Context Padding (px)"); padding.setRange(0, 1024); padding.setValue(128); _add_knob(nuke, node, padding)

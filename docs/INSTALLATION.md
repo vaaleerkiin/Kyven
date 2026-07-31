@@ -50,7 +50,7 @@ Nothing is added to the system `PATH`, and the installer intentionally does not 
 ## Update
 
 Pull or replace the repository files, then run `install.cmd` again. Existing verified checkpoints
-and downloads are reused. Restart Nuke so Python modules and API 13 are reloaded, then update older
+and downloads are reused. Restart Nuke so Python modules and API 14 are reloaded, then update older
 Groups from the Nodes menu:
 
 - `Kyven > Upgrade Selected Segment Node`;
@@ -70,6 +70,7 @@ A Windows virtual environment stores absolute paths. If the Kyven folder is move
 .\install.ps1 -Model sam2.1-tiny
 .\install.ps1 -Model sam2.1-small,vitmatte-small-composition-1k
 .\install.ps1 -Model lama-2025jan-onnx
+.\install.ps1 -Model big-lama-native
 .\install.ps1 -Model none
 ```
 

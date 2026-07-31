@@ -53,8 +53,8 @@ revision starts.
 - **Kyven Depth:** interactive single-frame depth, temporally consistent video depth, independent
   frame fallback, scene-cut handling, temporal stabilization, multiple output views, and a
   low-memory/CPU path.
-- **Kyven Inpaint quality mode:** PowerPaint is the planned optional guided-fill provider after its
-  large multi-file checkpoint and runtime receive a secure installer path.
+- **Kyven Inpaint:** fast LaMa ONNX and native-resolution Big-LaMa are available as separate,
+  commercially safe choices for Live work and higher-detail cleanup.
 - **Kyven Utils:** future focused utilities such as paint/cleanup assistance and other compositing
   image operations. Each major operation remains an independent node.
 
@@ -88,6 +88,7 @@ For unattended installation, models can also be selected explicitly:
 .\install.ps1 -Model sam2.1-large
 .\install.ps1 -Model vitmatte-small-composition-1k
 .\install.ps1 -Model lama-2025jan-onnx
+.\install.ps1 -Model big-lama-native
 .\install.ps1 -Model none
 ```
 
