@@ -89,7 +89,7 @@ extension means upstream hole filling was skipped, but Kyven's own post-process 
 The panel displays the exact cache directory for the current node. Use `Create Matte Read` only
 after a frame, range, or tracking job succeeds. If files were deleted externally, process again.
 
-`Delete Node Cache` affects one UUID folder. `Delete All Cache` affects only
+`Delete Node Cache` affects one UUID folder. `Delete All Kyven Cache` affects only
 `.runtime/nuke_cache`; it does not remove models, `.venv`, the authentication token, or source media.
 
 ## Useful files

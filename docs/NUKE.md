@@ -115,7 +115,7 @@ how many holes were filled. Changing these controls changes cache identity and r
 
 `Process Current Frame` creates one matte for the playhead frame.
 
-`Process Range (Independent)` applies the same points and ROI independently to every frame between
+`Process Frame Range` applies the same points and ROI independently to every frame between
 `Range First` and `Range Last`. Use this when temporal consistency is not required or tracking is
 not appropriate.
 
@@ -194,8 +194,9 @@ object fringes instead of leaving a bright outline. `Edge Color Match` aligns th
 clean RGB; lower it only when deliberate brightness changes inside the repaired area are desired.
 
 - `Create Matte Read` creates a normal Nuke Read pointing to the current cached matte or sequence.
+- `Create Result Read` does the same for an Inpaint result, including a rendered frame range.
 - `Delete Node Cache` disconnects and removes only the current node's cache after confirmation.
-- `Delete All Cache` removes `.runtime/nuke_cache` after confirmation. Models and server settings
+- `Delete All Kyven Cache` removes `.runtime/nuke_cache` after confirmation. Models and server settings
   are preserved.
 
 ## Server behavior

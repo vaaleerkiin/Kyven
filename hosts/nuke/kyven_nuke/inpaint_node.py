@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import threading
 import time
 import uuid
@@ -218,16 +217,41 @@ def cancel_current_job() -> None:
 
 
 def create_read_from_current_result() -> None:
-    nuke = _nuke(); node = nuke.thisNode(); frame = int(nuke.frame()); path = _paths(node, frame)[2]
-    if not path.is_file():
-        nuke.message("Process the current frame before creating a Read node."); return
-    read = nuke.nodes.Read(file=_nuke_file_path(path)); read.setXpos(node.xpos() + 180); read.setYpos(node.ypos() + 120)
+    """Create a root-level Read matching the cached result frame or sequence."""
+
+    nuke = _nuke()
+    node = nuke.thisNode()
+    node.begin()
+    try:
+        cached = nuke.toNode("KyvenResultRead")
+        switch = nuke.toNode("KyvenResultSwitch")
+        if cached is None or switch is None or int(switch["which"].value()) != 1:
+            nuke.message("Process a frame or frame range first; this node has no cached result yet.")
+            return
+        file_path = str(cached["file"].value())
+        frame_values = {
+            name: int(cached[name].value())
+            for name in ("first", "last", "origfirst", "origlast")
+            if name in cached.knobs()
+        }
+    finally:
+        node.end()
+
+    read = nuke.nodes.Read(file=file_path)
+    for name, value in frame_values.items():
+        if name in read.knobs():
+            read[name].setValue(value)
+    read["label"].setValue("Kyven cached result")
+    read.setXpos(node.xpos() + 140)
+    read.setYpos(node.ypos() + 120)
+    read.setSelected(True)
+    _set_status(node.fullName(), f"Created Read: {read.name()}")
 
 
 def delete_this_node_cache() -> None:
-    node = _nuke().thisNode(); root = _cache_root(node)
-    if root.is_dir(): shutil.rmtree(root)
-    _set_status(node.fullName(), "This node cache was deleted.")
+    from kyven_nuke.node import delete_node_cache
+
+    delete_node_cache()
 
 
 def reset_roi_to_input() -> None:
@@ -248,6 +272,35 @@ def knob_changed() -> None:
     if affects_live_result(knob_name, "inpaint"):
         node["kyven_live_frame"].setValue(-2147483647)
         request_live_update(node)
+
+
+def _restyle_inpaint_cache(node: Any) -> None:
+    """Apply the shared Cache labels and compact three-row layout."""
+
+    nuke = _nuke()
+    labels = {
+        "cache_folder": "Cache Folder",
+        "cache_location": "Cache Folder",
+        "create_result_read": "Create Result Read",
+        "delete_node_cache": "Delete Node Cache",
+        "delete_all_cache": "Delete All Kyven Cache",
+    }
+    for name, label in labels.items():
+        if name in node.knobs():
+            node[name].setLabel(label)
+    if "create_result_read" in node.knobs():
+        node["create_result_read"].setFlag(nuke.STARTLINE)
+        node["create_result_read"].setCommand(
+            "kyven_nuke.inpaint_node.create_read_from_current_result()"
+        )
+    if "delete_node_cache" in node.knobs():
+        node["delete_node_cache"].clearFlag(nuke.STARTLINE)
+        node["delete_node_cache"].setCommand(
+            "kyven_nuke.inpaint_node.delete_this_node_cache()"
+        )
+    if "delete_all_cache" in node.knobs():
+        node["delete_all_cache"].setFlag(nuke.STARTLINE)
+        node["delete_all_cache"].setCommand("kyven_nuke.node.delete_all_cache()")
 
 
 def create_inpaint_node() -> Any:
@@ -275,7 +328,7 @@ def create_inpaint_node() -> Any:
     _add_knob(nuke, node, nuke.BBox_Knob("processing_roi", "Manual ROI"))
     _add_knob(nuke, node, nuke.PyScript_Knob("reset_roi", "Reset ROI to Source", "kyven_nuke.inpaint_node.reset_roi_to_input()"))
     _add_knob(nuke, node, nuke.Text_Knob("roi_help", "", "Auto crops to mask bounds plus context. The result is pasted only through the grown / feathered mask."))
-    _add_section(nuke, node, "processing_section", "PROCESSING")
+    _add_section(nuke, node, "processing_section", "INDEPENDENT FRAME PROCESSING")
     _ensure_live_controls(node, "inpaint")
     _add_knob(nuke, node, nuke.PyScript_Knob("process_frame", "Process Current Frame", "kyven_nuke.inpaint_node.process_current_frame()"))
     _add_knob(nuke, node, nuke.PyScript_Knob("cancel", "Cancel", "kyven_nuke.inpaint_node.cancel_current_job()"), start_line=False)
@@ -287,9 +340,10 @@ def create_inpaint_node() -> Any:
     _add_knob(nuke, node, nuke.Text_Knob("output_help", "", "Result keeps Source alpha. Patch is premultiplied by the processed mask. Difference reveals changed pixels."))
     uid = nuke.String_Knob("kyven_uuid", "UUID"); uid.setValue(uuid.uuid4().hex); uid.setVisible(False); node.addKnob(uid)
     _add_section(nuke, node, "cache_section", "CACHE")
-    folder = nuke.String_Knob("cache_folder", "Cache Folder"); folder.setFlag(nuke.READ_ONLY); folder.setValue(str(_cache_root(node))); _add_knob(nuke, node, folder)
-    _add_knob(nuke, node, nuke.PyScript_Knob("create_result_read", "Create Read from Current Result", "kyven_nuke.inpaint_node.create_read_from_current_result()"))
-    _add_knob(nuke, node, nuke.PyScript_Knob("delete_node_cache", "Delete This Node Cache", "kyven_nuke.inpaint_node.delete_this_node_cache()"), start_line=False)
+    folder = nuke.String_Knob("cache_location", "Cache Folder"); folder.setFlag(nuke.READ_ONLY); folder.setValue(str(_cache_root(node))); _add_knob(nuke, node, folder)
+    _add_knob(nuke, node, nuke.PyScript_Knob("create_result_read", "Create Result Read", "kyven_nuke.inpaint_node.create_read_from_current_result()"))
+    _add_knob(nuke, node, nuke.PyScript_Knob("delete_node_cache", "Delete Node Cache", "kyven_nuke.inpaint_node.delete_this_node_cache()"), start_line=False)
+    _add_knob(nuke, node, nuke.PyScript_Knob("delete_all_cache", "Delete All Kyven Cache", "kyven_nuke.node.delete_all_cache()"))
     job = nuke.String_Knob("kyven_job_id", "Job ID"); job.setVisible(False); node.addKnob(job)
     _add_section(nuke, node, "status_section", "STATUS"); status = nuke.String_Knob("kyven_status", "Status"); status.setFlag(nuke.READ_ONLY); status.setValue("Ready"); _add_knob(nuke, node, status)
     node["knobChanged"].setValue("kyven_nuke.inpaint_node.knob_changed()")
@@ -320,8 +374,39 @@ def create_inpaint_node() -> Any:
     reset = source
     if reset is not None: node["processing_roi"].setValue([0, 0, float(reset.width()), float(reset.height())])
     node["processing_roi"].setVisible(False)
+    _restyle_inpaint_cache(node)
     return node
 
 
 def upgrade_selected_inpaint_node() -> None:
-    _nuke().message("Create a new Kyven Inpaint node to use the current layout.")
+    nuke = _nuke()
+    selected = nuke.selectedNodes()
+    if len(selected) != 1 or selected[0].Class() != "Group":
+        nuke.message("Select one Kyven Inpaint Group node first.")
+        return
+    node = selected[0]
+    if "create_result_read" not in node.knobs() or "kyven_uuid" not in node.knobs():
+        nuke.message("The selected Group is not a Kyven Inpaint node.")
+        return
+    if "delete_all_cache" not in node.knobs():
+        tail = [
+            node[name]
+            for name in ("kyven_job_id", "status_section", "kyven_status")
+            if name in node.knobs()
+        ]
+        for knob in tail:
+            node.removeKnob(knob)
+        _add_knob(
+            nuke,
+            node,
+            nuke.PyScript_Knob(
+                "delete_all_cache",
+                "Delete All Kyven Cache",
+                "kyven_nuke.node.delete_all_cache()",
+            ),
+        )
+        for knob in tail:
+            node.addKnob(knob)
+    _restyle_inpaint_cache(node)
+    if "kyven_status" in node.knobs():
+        node["kyven_status"].setValue("Inpaint UI upgraded. Cached results were preserved.")

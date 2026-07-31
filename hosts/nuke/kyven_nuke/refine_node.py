@@ -852,12 +852,12 @@ def _restyle_refine_ui(node: Any) -> None:
         "cancel": "Cancel",
         "range_first": "Range First",
         "range_last": "Range Last",
-        "process_range": "Process Range (Independent)",
+        "process_range": "Process Frame Range",
         "output_mode": "Output",
         "cache_location": "Cache Folder",
         "create_matte_read": "Create Matte Read",
         "delete_node_cache": "Delete Node Cache",
-        "delete_all_cache": "Delete All Cache",
+        "delete_all_cache": "Delete All Kyven Cache",
         "kyven_status": "Status",
     }
     for name, label in labels.items():
@@ -870,11 +870,12 @@ def _restyle_refine_ui(node: Any) -> None:
         "cancel",
         "range_last",
         "delete_node_cache",
-        "delete_all_cache",
     }
     for name in same_line:
         if name in node.knobs():
             node[name].clearFlag(nuke.STARTLINE)
+    if "delete_all_cache" in node.knobs():
+        node["delete_all_cache"].setFlag(nuke.STARTLINE)
     for name in (
         "tile_size",
         "foreground_radius",
@@ -1031,7 +1032,7 @@ def create_refine_node() -> Any:
         node,
         nuke.PyScript_Knob(
             "process_range",
-            "Process Range (Independent)",
+            "Process Frame Range",
             "kyven_nuke.refine_node.process_frame_range()",
         ),
     )
