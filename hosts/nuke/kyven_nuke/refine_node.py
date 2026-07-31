@@ -34,6 +34,7 @@ _range_cancellations: set[str] = set()
 _range_cancel_lock = threading.RLock()
 _trimap_preview_lock = threading.RLock()
 _trimap_preview_revisions: dict[str, int] = {}
+_trimap_preview_running: set[str] = set()
 REFINE_OUTPUT_MODES = (
     "Refined Matte",
     "Source + Refined Alpha",
@@ -67,6 +68,13 @@ def _cache_patterns(node: Any) -> tuple[Path, Path, Path, Path]:
         root / "refine_mask.%04d.png",
         root / "refined_matte.%04d.png",
         root / "trimap.%04d.png",
+    )
+
+
+def _trimap_preview_paths(root: Path, frame: int, revision: int) -> tuple[Path, Path]:
+    return (
+        root / f"trimap_preview_input.{frame:04d}.{revision}.png",
+        root / f"trimap_preview_r{revision}.{frame:04d}.png",
     )
 
 
@@ -185,6 +193,8 @@ def _start_trimap_preview(node_name: str, revision: int) -> None:
     with _trimap_preview_lock:
         if _trimap_preview_revisions.get(node_name) != revision:
             return
+        if node_name in _trimap_preview_running:
+            return
     node = nuke.toNode(node_name)
     if node is None or node.input(1) is None:
         return
@@ -195,8 +205,7 @@ def _start_trimap_preview(node_name: str, revision: int) -> None:
         return
     frame = int(nuke.frame())
     root = _cache_root(node)
-    mask_path = root / f"trimap_preview_input.{frame:04d}.{revision}.png"
-    output_path = root / f"trimap_preview.{frame:04d}.{revision}.png"
+    mask_path, output_path = _trimap_preview_paths(root, frame, revision)
     writer = _inside(node, "KyvenRefineMaskWrite")
     writer["file"].setValue(_nuke_file_path(mask_path))
     try:
@@ -221,9 +230,11 @@ def _start_trimap_preview(node_name: str, revision: int) -> None:
         ),
     }
     node["kyven_status"].setValue("Updating trimap preview (CPU only)...")
+    with _trimap_preview_lock:
+        _trimap_preview_running.add(node_name)
     threading.Thread(
         target=_trimap_preview_worker,
-        args=(node_name, revision, mask_path, output_path, payload),
+        args=(node_name, revision, frame, mask_path, output_path, payload),
         name="kyven-trimap-preview",
         daemon=True,
     ).start()
@@ -232,42 +243,52 @@ def _start_trimap_preview(node_name: str, revision: int) -> None:
 def _trimap_preview_worker(
     node_name: str,
     revision: int,
+    frame: int,
     mask_path: Path,
     output_path: Path,
     payload: dict[str, Any],
 ) -> None:
+    error = ""
     try:
         ensure_server().preview_trimap(payload)
-        _nuke().executeInMainThread(
-            _apply_trimap_preview,
-            args=(node_name, revision, mask_path, output_path),
-        )
     except Exception as exc:  # noqa: BLE001
-        mask_path.unlink(missing_ok=True)
-        _nuke().executeInMainThread(
-            _set_status,
-            args=(node_name, f"Trimap preview failed: {exc}"),
-        )
+        error = str(exc)
+    _nuke().executeInMainThread(
+        _finish_trimap_preview,
+        args=(node_name, revision, frame, mask_path, output_path, error),
+    )
 
 
-def _apply_trimap_preview(
+def _finish_trimap_preview(
     node_name: str,
     revision: int,
+    frame: int,
     mask_path: Path,
     output_path: Path,
+    error: str,
 ) -> None:
     mask_path.unlink(missing_ok=True)
     with _trimap_preview_lock:
+        _trimap_preview_running.discard(node_name)
         current = _trimap_preview_revisions.get(node_name)
     if current != revision:
         output_path.unlink(missing_ok=True)
+        if current is not None:
+            _start_trimap_preview(node_name, current)
         return
     node = _nuke().toNode(node_name)
-    if node is None or not output_path.is_file():
+    if node is None:
         output_path.unlink(missing_ok=True)
         return
-    _set_trimap_read(node, _nuke_file_path(output_path))
-    node["kyven_status"].setValue("Trimap preview ready instantly — ViTMatte was not run.")
+    if error:
+        output_path.unlink(missing_ok=True)
+        node["kyven_status"].setValue(f"Trimap preview failed: {error}")
+        return
+    if not output_path.is_file():
+        node["kyven_status"].setValue("Trimap preview failed: server did not create the PNG.")
+        return
+    _set_trimap_read(node, _nuke_file_path(output_path), frame, frame)
+    node["kyven_status"].setValue("Trimap preview ready - ViTMatte was not run.")
 
 
 def _submit_and_wait(
@@ -649,7 +670,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 9</font>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 10</font>'
         )
     created_selector = "output_mode" not in node.knobs()
     previous_label = str(node["output_mode"].value()) if not created_selector else None
@@ -805,7 +826,7 @@ def create_refine_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 9</font>',
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 10</font>',
         ),
     )
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")

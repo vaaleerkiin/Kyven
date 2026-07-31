@@ -77,10 +77,11 @@ frame's original coordinates before the job succeeds.
 Outside an enabled Refine ROI, the coarse alpha is preserved in the refined result. The persisted
 trimap is black outside the ROI because those pixels were not sent to ViTMatte.
 
-API version 9 adds CPU-only `/v1/preview/trimap` and `/v1/preview/mask-postprocess` routes so host
-controls can update without rerunning a model. It retains detailed Segment and Refine progress
-stages and the API 7 persisted `trimap_output`. `GET /v1/jobs/{id}` returns `progress` (0.0-1.0) and
+API version 10 makes CPU-only previews single-flight and uses linear-time trimap morphology. It
+retains `/v1/preview/trimap` and `/v1/preview/mask-postprocess`, so host controls update without
+rerunning a model. It also retains detailed Segment and Refine progress stages and the API 7
+persisted `trimap_output`. `GET /v1/jobs/{id}` returns `progress` (0.0-1.0) and
 `progress_message`. A video request may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
-returned masks to the original dimensions. The Nuke adapter uses versioned port `18772` to avoid
+returned masks to the original dimensions. The Nuke adapter uses versioned port `18773` to avoid
 connecting to stale API processes during development.

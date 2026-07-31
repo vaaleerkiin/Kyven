@@ -41,6 +41,7 @@ class KyvenClient:
         method: str,
         path: str,
         payload: dict[str, Any] | None = None,
+        timeout_seconds: float | None = None,
     ) -> dict[str, Any]:
         data = None
         headers = {
@@ -57,7 +58,8 @@ class KyvenClient:
             method=method,
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+            timeout = self.timeout_seconds if timeout_seconds is None else timeout_seconds
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
@@ -85,10 +87,20 @@ class KyvenClient:
         return str(response["job_id"])
 
     def preview_trimap(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._request("POST", "/v1/preview/trimap", payload)
+        return self._request(
+            "POST",
+            "/v1/preview/trimap",
+            payload,
+            timeout_seconds=60.0,
+        )
 
     def preview_mask_postprocess(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._request("POST", "/v1/preview/mask-postprocess", payload)
+        return self._request(
+            "POST",
+            "/v1/preview/mask-postprocess",
+            payload,
+            timeout_seconds=60.0,
+        )
 
     def job(self, job_id: str) -> dict[str, Any]:
         return self._request("GET", f"/v1/jobs/{job_id}")

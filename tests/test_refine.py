@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
@@ -53,6 +53,30 @@ class SyntheticRefinementProvider(RefinementProvider):
 
 
 class TrimapTests(unittest.TestCase):
+    def test_integral_morphology_matches_pillow_rank_filters(self) -> None:
+        pixels = (np.random.default_rng(7).random((23, 31)) > 0.58).astype(np.uint8) * 255
+        image = Image.fromarray(pixels, mode="L")
+        for foreground_radius, background_radius in ((0, 0), (1, 2), (3, 1)):
+            foreground = (
+                np.asarray(
+                    image.filter(ImageFilter.MinFilter(foreground_radius * 2 + 1))
+                )
+                >= 128
+            )
+            possible = (
+                np.asarray(
+                    image.filter(ImageFilter.MaxFilter(background_radius * 2 + 1))
+                )
+                >= 128
+            )
+            expected = np.where(foreground, 255, np.where(possible, 128, 0)).astype(
+                np.uint8
+            )
+
+            actual = generate_trimap(pixels, foreground_radius, background_radius)
+
+            np.testing.assert_array_equal(actual, expected)
+
     def test_generated_trimap_has_three_regions(self) -> None:
         mask = np.zeros((9, 9), dtype=np.uint8)
         mask[2:7, 2:7] = 255

@@ -25,7 +25,7 @@ class NukeKyvenClient:
             raise NukeKyvenClientError(f"Kyven token file is empty: {token_file}")
         return cls(f"http://127.0.0.1:{port}", token, timeout_seconds)
 
-    def _request(self, method, path, payload=None):
+    def _request(self, method, path, payload=None, timeout_seconds=None):
         data = None
         headers = {
             "Accept": "application/json",
@@ -41,7 +41,8 @@ class NukeKyvenClient:
             method=method,
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+            timeout = self.timeout_seconds if timeout_seconds is None else timeout_seconds
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
@@ -67,10 +68,15 @@ class NukeKyvenClient:
         return str(self._request("POST", "/v1/jobs/refine", payload)["job_id"])
 
     def preview_trimap(self, payload):
-        return self._request("POST", "/v1/preview/trimap", payload)
+        return self._request("POST", "/v1/preview/trimap", payload, timeout_seconds=60.0)
 
     def preview_mask_postprocess(self, payload):
-        return self._request("POST", "/v1/preview/mask-postprocess", payload)
+        return self._request(
+            "POST",
+            "/v1/preview/mask-postprocess",
+            payload,
+            timeout_seconds=60.0,
+        )
 
     def job(self, job_id):
         return self._request("GET", f"/v1/jobs/{job_id}")

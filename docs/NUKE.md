@@ -170,7 +170,7 @@ Typical files include exported source frames, displayed `matte.%04d.png`, CPU-pr
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18772` and requires API 9. A
+The adapter starts an external hidden Python process on `127.0.0.1:18773` and requires API 10. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

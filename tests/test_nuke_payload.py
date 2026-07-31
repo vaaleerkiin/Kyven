@@ -19,11 +19,16 @@ from kyven_nuke.node import (
     _section_markup,
 )
 from kyven_nuke.payload import refine_payload, segment_payload, segment_video_payload
-from kyven_nuke.refine_node import REFINE_OUTPUT_MODES
+from kyven_nuke.refine_node import REFINE_OUTPUT_MODES, _trimap_preview_paths
 from kyven_nuke.runtime import _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_trimap_preview_read_name_ends_with_nuke_frame(self) -> None:
+        _input, output = _trimap_preview_paths(Path("D:/cache"), frame=67, revision=23)
+
+        self.assertEqual(output.name, "trimap_preview_r23.0067.png")
+
     def test_live_invalidation_tracks_prompts_roi_and_refine_controls(self) -> None:
         self.assertTrue(affects_live_result("positive_point_3", "segment"))
         self.assertTrue(affects_live_result("prompt_box", "segment"))
