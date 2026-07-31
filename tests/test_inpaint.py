@@ -68,7 +68,7 @@ class InpaintServiceTests(unittest.TestCase):
             result = InpaintService(self._registry(provider)).run(InpaintRequest(source, mask, output, provider_id="fake", crop_mode="manual", roi=BoxPrompt(0, 0, 5, 5)))
             self.assertTrue(result.metadata["empty_mask"]); self.assertFalse(provider.requests)
 
-    def test_invert_keeps_clean_soft_composite_mask(self) -> None:
+    def test_invert_and_grow_drive_effective_composite_mask(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); source = root / "source.png"; mask = root / "mask.png"
             output = root / "output.png"; processed = root / "processed.png"
@@ -81,7 +81,7 @@ class InpaintServiceTests(unittest.TestCase):
             ))
             processed_pixels = np.asarray(Image.open(processed))
             self.assertEqual(result.mask_output, processed)
-            self.assertEqual(int(np.count_nonzero(processed_pixels)), 64)
+            self.assertEqual(int(np.count_nonzero(processed_pixels)), 36)
 
     def test_rgba_source_can_supply_mask_alpha_in_one_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -122,11 +122,13 @@ class InpaintServiceTests(unittest.TestCase):
             mask = root / "mask.png"
             output = root / "output.png"
             processed = root / "processed.png"
+            model_mask = root / "model-mask.png"
             Image.fromarray(np.full((8, 8, 3), 25, dtype=np.uint8)).save(source)
             pixels = np.zeros((8, 8), dtype=np.uint8)
             pixels[2:6, 2:6] = 192
             pixels[3:5, 3:5] = 255
             Image.fromarray(pixels).save(mask)
+            Image.fromarray(np.where(pixels >= 128, 255, 0).astype(np.uint8)).save(model_mask)
             provider = FakeInpaintProvider()
 
             InpaintService(self._registry(provider)).run(
@@ -134,6 +136,7 @@ class InpaintServiceTests(unittest.TestCase):
                     source,
                     mask,
                     output,
+                    model_mask=model_mask,
                     mask_output=processed,
                     provider_id="fake",
                     crop_mode="full",
@@ -147,7 +150,7 @@ class InpaintServiceTests(unittest.TestCase):
             np.testing.assert_array_equal(np.asarray(Image.open(processed)), pixels)
             self.assertEqual(len(provider.requests), 1)
 
-    def test_exported_model_mask_drives_inference_but_clean_mask_drives_composite(self) -> None:
+    def test_exported_model_mask_drives_inference_and_composite(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source.png"
@@ -155,6 +158,7 @@ class InpaintServiceTests(unittest.TestCase):
             model_mask = root / "model-mask.png"
             output = root / "output.png"
             patch = root / "patch.png"
+            processed = root / "processed.png"
             Image.fromarray(np.full((20, 20, 3), 25, dtype=np.uint8)).save(source)
             clean = np.zeros((20, 20), dtype=np.uint8)
             clean[9:11, 9:11] = 255
@@ -170,6 +174,7 @@ class InpaintServiceTests(unittest.TestCase):
                     mask,
                     output,
                     model_mask=model_mask,
+                    mask_output=processed,
                     patch_output=patch,
                     provider_id="fake",
                     crop_mode="full",
@@ -180,9 +185,10 @@ class InpaintServiceTests(unittest.TestCase):
             )
 
             self.assertEqual(int(np.count_nonzero(provider.mask_pixels[0])), 64)
+            np.testing.assert_array_equal(np.asarray(Image.open(processed)), exported)
             rendered = np.asarray(Image.open(output).convert("RGB"))
             rendered_patch = np.asarray(Image.open(patch).convert("RGB"))
-            self.assertTrue(np.all(rendered[6, 6] == 25))
+            self.assertTrue(np.all(rendered[6, 6] == (255, 0, 0)))
             self.assertTrue(np.all(rendered[9, 9] == (255, 0, 0)))
             self.assertTrue(np.all(rendered_patch[6, 6] == (255, 0, 0)))
 

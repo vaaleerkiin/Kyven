@@ -34,12 +34,35 @@ from kyven_nuke.runtime import ensure_server
 
 INPAINT_OUTPUT_MODES = (
     "Result",
-    "Result + Source Alpha",
+    "Result + Mask Alpha",
     "Result Premult",
     "Generated Patch",
     "Difference",
     "Source",
 )
+MASK_INPUT = 0
+SOURCE_INPUT = 1
+
+
+def _ensure_input_order(node: Any) -> None:
+    """Keep Source on the left connector and Mask on the right without swapping media."""
+
+    old_source = node.input(0)
+    old_mask = node.input(1)
+    needs_migration = False
+    node.begin()
+    try:
+        source = _nuke().toNode("Source")
+        mask = _nuke().toNode("Mask")
+        if source is not None and mask is not None:
+            needs_migration = int(source["number"].value()) == 0
+            source["number"].setValue(SOURCE_INPUT)
+            mask["number"].setValue(MASK_INPUT)
+    finally:
+        node.end()
+    if needs_migration:
+        node.setInput(MASK_INPUT, old_mask)
+        node.setInput(SOURCE_INPUT, old_source)
 
 
 def _paths(node: Any, frame: int) -> tuple[Path, Path, Path, Path, Path, Path]:
@@ -135,15 +158,17 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
     """Build the live Nuke model mask and wire the public output modes."""
 
     nuke = _nuke()
+    _ensure_input_order(node)
     if "output_mode" in node.knobs():
         previous = str(node["output_mode"].value())
         node["output_mode"].setValues(list(INPAINT_OUTPUT_MODES))
         previous = {
-            "Result": "Result + Source Alpha",
+            "Result": "Result + Mask Alpha",
+            "Result + Source Alpha": "Result + Mask Alpha",
             "Patch": "Generated Patch",
-            "Model Mask Preview": "Result + Source Alpha",
-            "Processed Mask": "Result + Source Alpha",
-            "Blend Mask": "Result + Source Alpha",
+            "Model Mask Preview": "Result + Mask Alpha",
+            "Processed Mask": "Result + Mask Alpha",
+            "Blend Mask": "Result + Mask Alpha",
         }.get(previous, previous)
         if previous in INPAINT_OUTPUT_MODES:
             node["output_mode"].setValue(INPAINT_OUTPUT_MODES.index(previous))
@@ -165,17 +190,6 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         result_opaque.setInput(0, result_switch)
         if "alpha" in result_opaque.knobs():
             result_opaque["alpha"].setValue("white")
-        result_source_alpha = nuke.toNode("KyvenResultSourceAlpha")
-        if result_source_alpha is None:
-            result_source_alpha = nuke.nodes.Copy(name="KyvenResultSourceAlpha")
-        result_source_alpha.setInput(0, result_opaque)
-        result_source_alpha.setInput(1, source)
-        result_source_alpha["from0"].setValue("rgba.alpha")
-        result_source_alpha["to0"].setValue("rgba.alpha")
-        result_premult = nuke.toNode("KyvenResultPremult")
-        if result_premult is None:
-            result_premult = nuke.nodes.Premult(name="KyvenResultPremult")
-        result_premult.setInput(0, result_source_alpha)
         patch_switch = nuke.toNode("KyvenPatchSwitch")
         if patch_switch is None:
             patch_switch = nuke.nodes.Switch(name="KyvenPatchSwitch")
@@ -202,6 +216,27 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         model_mask["size"].setExpression(
             "parent.preprocess_mask ? -parent.mask_grow : 0"
         )
+        effective_mask = nuke.toNode("KyvenEffectiveMask")
+        if effective_mask is None:
+            effective_mask = nuke.nodes.Switch(name="KyvenEffectiveMask")
+        effective_mask.setInput(0, channel_switch)
+        effective_mask.setInput(1, model_mask)
+        effective_mask["which"].setExpression("parent.preprocess_mask")
+        processed_mask = nuke.toNode("KyvenProcessedMaskSwitch")
+        if processed_mask is None:
+            processed_mask = nuke.nodes.Switch(name="KyvenProcessedMaskSwitch")
+        processed_mask.setInput(0, effective_mask)
+        result_mask_alpha = nuke.toNode("KyvenResultSourceAlpha")
+        if result_mask_alpha is None:
+            result_mask_alpha = nuke.nodes.Copy(name="KyvenResultSourceAlpha")
+        result_mask_alpha.setInput(0, result_opaque)
+        result_mask_alpha.setInput(1, processed_mask)
+        result_mask_alpha["from0"].setValue("rgba.red")
+        result_mask_alpha["to0"].setValue("rgba.alpha")
+        result_premult = nuke.toNode("KyvenResultPremult")
+        if result_premult is None:
+            result_premult = nuke.nodes.Premult(name="KyvenResultPremult")
+        result_premult.setInput(0, result_mask_alpha)
         writer = nuke.toNode("KyvenInpaintModelMaskWrite")
         if writer is None:
             writer = nuke.nodes.Write(name="KyvenInpaintModelMaskWrite")
@@ -210,7 +245,7 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         writer.setInput(0, model_mask)
         if output_switch is not None:
             output_switch.setInput(0, result_opaque)
-            output_switch.setInput(1, result_source_alpha)
+            output_switch.setInput(1, result_mask_alpha)
             output_switch.setInput(2, result_premult)
             output_switch.setInput(3, patch_switch)
             output_switch.setInput(4, difference)
@@ -247,10 +282,11 @@ def process_current_frame_for_node(node: Any, live: bool = False) -> None:
         if not live:
             _set_status(node_name, "Inpaint is already processing this node.")
         return
-    source, mask = node.input(0), node.input(1)
+    _ensure_input_order(node)
+    source, mask = node.input(SOURCE_INPUT), node.input(MASK_INPUT)
     if source is None or mask is None:
         if not live:
-            nuke.message("Kyven Inpaint needs Source on input 0 and Mask on input 1.")
+            nuke.message("Kyven Inpaint needs Source and Mask inputs.")
         return
     if _inside(node, "KyvenInpaintModelMaskWrite") is None:
         _ensure_inpaint_preview_graph(node)
@@ -331,7 +367,7 @@ def process_current_frame(node: Any | None = None, live: bool = False) -> None:
 
 
 def process_frame_range() -> None:
-    nuke = _nuke(); node = nuke.thisNode(); source, mask = node.input(0), node.input(1)
+    nuke = _nuke(); node = nuke.thisNode(); _ensure_input_order(node); source, mask = node.input(SOURCE_INPUT), node.input(MASK_INPUT)
     node_name = str(node.fullName())
     if bool(node["kyven_busy"].value()):
         _set_status(node_name, "Inpaint is already processing this node.")
@@ -442,7 +478,7 @@ def delete_this_node_cache() -> None:
 
 
 def reset_roi_to_input() -> None:
-    node = _nuke().thisNode(); source = node.input(0)
+    node = _nuke().thisNode(); _ensure_input_order(node); source = node.input(SOURCE_INPUT)
     if source is not None: node["processing_roi"].setValue([0, 0, float(source.width()), float(source.height())])
 
 
@@ -458,6 +494,19 @@ def knob_changed() -> None:
         "mask_grow",
     } and _inside(node, "KyvenInpaintModelMaskWrite") is None:
         _ensure_inpaint_preview_graph(node)
+    if knob_name in {
+        "inputChange",
+        "mask_channel",
+        "preprocess_mask",
+        "invert_mask",
+        "mask_threshold",
+        "mask_grow",
+        "crop_mode",
+        "processing_roi",
+    }:
+        processed_mask = _inside(node, "KyvenProcessedMaskSwitch")
+        if processed_mask is not None:
+            processed_mask["which"].setValue(0)
     node["processing_roi"].setVisible(str(node["crop_mode"].value()) == "manual")
     node["context_padding"].setVisible(str(node["crop_mode"].value()) == "auto")
     if knob_name == "model":
@@ -509,6 +558,8 @@ def _ensure_inpaint_mask_sliders(node: Any) -> None:
     """Use full-width sliders for all continuous input-mask controls."""
 
     nuke = _nuke()
+    if "mask_channel" in node.knobs():
+        node["mask_channel"].setLabel("Mask Input Channel")
     if "preprocess_mask" not in node.knobs():
         enabled = nuke.Boolean_Knob("preprocess_mask", "Preprocess Input Mask")
         enabled.setValue(True)
@@ -565,9 +616,9 @@ def _restyle_inpaint_cache(node: Any) -> None:
 
 def create_inpaint_node() -> Any:
     nuke = _nuke(); selected = nuke.selectedNodes(); source = selected[0] if selected else None; mask = selected[1] if len(selected) > 1 else None
-    node = nuke.nodes.Group(name="KyvenInpaint"); node.setInput(0, source); node.setInput(1, mask)
+    node = nuke.nodes.Group(name="KyvenInpaint"); node.setInput(SOURCE_INPUT, source); node.setInput(MASK_INPUT, mask)
     node["label"].setValue("[value kyven_status]"); node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint")); add_node_branding(node, nuke)
-    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 19</font>'))
+    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 20</font>'))
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
     _add_knob(nuke, node, nuke.Enumeration_Knob("profile", "Memory Profile", ["low_memory", "balanced", "quality"])); node["profile"].setValue(1)
@@ -576,17 +627,17 @@ def create_inpaint_node() -> Any:
     size = nuke.Int_Knob("processing_size", "Processing Size"); size.setValue(512); size.setVisible(False); node.addKnob(size)
     _add_knob(nuke, node, nuke.Text_Knob("model_help", "", "Fast: fixed 512 x 512 model input, CPU-friendly and best for Live. Use a tight Auto ROI for more detail."))
     _add_section(nuke, node, "mask_section", "MASK")
-    _add_knob(nuke, node, nuke.Enumeration_Knob("mask_channel", "Input 1 Channel", ["Alpha", "Red"]))
+    _add_knob(nuke, node, nuke.Enumeration_Knob("mask_channel", "Mask Input Channel", ["Alpha", "Red"]))
     preprocess = nuke.Boolean_Knob("preprocess_mask", "Preprocess Input Mask"); preprocess.setValue(True); _add_knob(nuke, node, preprocess)
     invert = nuke.Boolean_Knob("invert_mask", "Invert Input Mask"); _add_knob(nuke, node, invert)
     _ensure_inpaint_mask_sliders(node)
-    _add_knob(nuke, node, nuke.Text_Knob("mask_help", "", "Preview Model Mask shows exactly what LaMa receives. Threshold converts soft gray pixels to black or white; Model Grow expands or erodes that binary area. The clean input mask is used for the final composite."))
+    _add_knob(nuke, node, nuke.Text_Knob("mask_help", "", "When Preprocess is enabled, LaMa receives Invert + Threshold + Model Grow. When disabled, those controls are bypassed. Preview Model Mask shows the mask supplied to LaMa."))
     _add_section(nuke, node, "roi_section", "PROCESSING ROI / MODEL CROP")
     _add_knob(nuke, node, nuke.Enumeration_Knob("crop_mode", "Crop Mode", ["auto", "manual", "full"]))
     padding = nuke.Int_Knob("context_padding", "Context Padding (px)"); padding.setRange(0, 1024); padding.setValue(128); _add_knob(nuke, node, padding)
     _add_knob(nuke, node, nuke.BBox_Knob("processing_roi", "Manual ROI"))
     _add_knob(nuke, node, nuke.PyScript_Knob("reset_roi", "Reset ROI to Source", "kyven_nuke.inpaint_node.reset_roi_to_input()"))
-    _add_knob(nuke, node, nuke.Text_Knob("roi_help", "", "Auto crops to model-mask bounds plus context. The generated result is composited through the clean input mask."))
+    _add_knob(nuke, node, nuke.Text_Knob("roi_help", "", "Auto crops to model-mask bounds plus context. The generated result is composited through the effective Inpaint mask."))
     _add_section(nuke, node, "processing_section", "INDEPENDENT FRAME PROCESSING")
     _ensure_live_controls(node, "inpaint")
     _add_knob(nuke, node, nuke.PyScript_Knob("process_frame", "Process Current Frame", "kyven_nuke.inpaint_node.process_current_frame()"))
@@ -597,7 +648,7 @@ def create_inpaint_node() -> Any:
     _add_section(nuke, node, "output_section", "OUTPUT")
     _add_knob(nuke, node, nuke.Enumeration_Knob("output_mode", "Output", list(INPAINT_OUTPUT_MODES)))
     node["output_mode"].setValue(1)
-    _add_knob(nuke, node, nuke.Text_Knob("output_help", "", "Result is opaque RGB. Result + Source Alpha is the default. Result Premult applies that alpha. Generated Patch is the uncomposited model RGB for an external Merge."))
+    _add_knob(nuke, node, nuke.Text_Knob("output_help", "", "Result is opaque RGB. Result + Mask Alpha uses the effective Inpaint mask and is the default. Result Premult applies that mask. Generated Patch is the uncomposited model RGB."))
     uid = nuke.String_Knob("kyven_uuid", "UUID"); uid.setValue(uuid.uuid4().hex); uid.setVisible(False); node.addKnob(uid)
     _add_section(nuke, node, "cache_section", "CACHE")
     folder = nuke.String_Knob("cache_location", "Cache Folder"); folder.setFlag(nuke.READ_ONLY); folder.setValue(str(_cache_root(node))); _add_knob(nuke, node, folder)
@@ -609,8 +660,8 @@ def create_inpaint_node() -> Any:
     node["knobChanged"].setValue("kyven_nuke.inpaint_node.knob_changed()")
     node.begin()
     try:
-        src = nuke.nodes.Input(name="Source"); src["number"].setValue(0); src.setXpos(-120)
-        msk = nuke.nodes.Input(name="Mask"); msk["number"].setValue(1); msk.setXpos(120)
+        src = nuke.nodes.Input(name="Source"); src["number"].setValue(SOURCE_INPUT)
+        msk = nuke.nodes.Input(name="Mask"); msk["number"].setValue(MASK_INPUT)
         result_switch = nuke.nodes.Switch(name="KyvenResultSwitch"); result_switch.setInput(0, src)
         processed_mask = nuke.nodes.Switch(name="KyvenProcessedMaskSwitch"); processed_mask.setInput(0, msk)
         result_opaque = nuke.nodes.Shuffle(name="KyvenResultOpaque"); result_opaque.setInput(0, result_switch); result_opaque["alpha"].setValue("white")
@@ -700,18 +751,19 @@ def upgrade_selected_inpaint_node() -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br>'
-            '<font color="#91a3b0">LaMa | Source + Mask | API 19</font>'
+            '<font color="#91a3b0">LaMa | Source + Mask | API 20</font>'
         )
     if "mask_help" in node.knobs():
         node["mask_help"].setValue(
-            "Preview Model Mask shows exactly what LaMa receives. Threshold converts soft gray "
-            "pixels to black or white; Model Grow expands or erodes that binary area. The clean "
-            "input mask is used for the final composite."
+            "When Preprocess is enabled, LaMa receives Invert + Threshold + Model Grow. When "
+            "disabled, those controls are bypassed. Preview Model Mask shows the mask supplied "
+            "to LaMa."
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
-            "Result is opaque RGB. Result + Source Alpha is the default. Result Premult applies "
-            "that alpha. Generated Patch is the uncomposited model RGB for an external Merge."
+            "Result is opaque RGB. Result + Mask Alpha uses the effective Inpaint mask and is "
+            "the default. Result Premult applies that mask. Generated Patch is the uncomposited "
+            "model RGB."
         )
     if "kyven_status" in node.knobs():
         node["kyven_status"].setValue("Inpaint UI upgraded. Cached results were preserved.")

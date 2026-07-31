@@ -107,8 +107,8 @@ class InpaintService:
                 0,
             ).astype(np.uint8)
             merge_full = (
-                255 - mask_pixels
-                if request.preprocess_mask and request.invert_mask
+                inference_full.copy()
+                if request.preprocess_mask
                 else mask_pixels.copy()
             )
         else:
@@ -119,6 +119,8 @@ class InpaintService:
                 threshold=request.mask_threshold,
                 model_grow=request.mask_grow,
             )
+            if request.preprocess_mask:
+                merge_full = inference_full.copy()
         if not np.any(inference_full):
             _write_rgb_atomic(request.output, source_pixels)
             if request.patch_output is not None:
@@ -156,6 +158,8 @@ class InpaintService:
                 threshold=request.mask_threshold,
                 model_grow=request.mask_grow,
             )
+            if request.preprocess_mask:
+                merge_crop_pixels = inference_mask.copy()
         if not np.any(inference_mask):
             _write_rgb_atomic(request.output, source_pixels)
             if request.patch_output is not None:

@@ -207,8 +207,8 @@ Typical files include exported source frames, displayed `matte.%04d.png`, CPU-pr
 `raw_tracked_matte.%04d.png`. Refine nodes add fast lossless `refine_source.%04d.tif`,
 `refine_mask.%04d.png`, `refined_matte.%04d.png`, exact processed trimaps, and lightweight
 `trimap_preview` files under their own UUID folder. Inpaint adds source, mask, and full-format
-`inpaint_result.%04d.png`, `inpaint_patch.%04d.png`, and the clean composite-mask files. Inpaint
-outputs include opaque Result, default Result + Source Alpha, Result Premult, uncomposited Generated
+`inpaint_result.%04d.png`, `inpaint_patch.%04d.png`, and the effective Inpaint-mask files. Inpaint
+outputs include opaque Result, default Result + Mask Alpha, Result Premult, uncomposited Generated
 Patch, Difference, and Source.
 Disable **Preprocess Input Mask** to use the untouched soft input for compositing; the preview still
 shows the unavoidable binary mask supplied to LaMa. **Preview Model Mask** is the only live mask
@@ -229,7 +229,7 @@ clean RGB; lower it only when deliberate brightness changes inside the repaired 
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18782` and requires API 19. A
+The adapter starts an external hidden Python process on `127.0.0.1:18783` and requires API 20. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

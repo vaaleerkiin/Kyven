@@ -12,7 +12,7 @@ Roto / Paint / Segment mask -----> Kyven Inpaint (input 1)
 ```
 
 Input 0 supplies RGB and the alpha preserved by the default Result output. Input 1 defines pixels
-to remove. Choose Alpha or Red with **Input 1 Channel** and use **Invert Input Mask** when the mask
+to remove. Choose Alpha or Red with **Mask Input Channel** and use **Invert Input Mask** when the mask
 convention is reversed.
 
 ## Choosing a model
@@ -58,9 +58,9 @@ so the displayed mask and the model input cannot drift apart. The Output menu de
 repeat this temporary preview option.
 
 `Preprocess Input Mask` is enabled by default. In this mode Invert, Threshold, and Model Mask Grow
-prepare the model input. The clean soft input mask is always used for the default Result composite.
-Disable preprocessing to bypass Invert, Threshold, and Grow; only LaMa's mandatory 0.5 binary
-conversion remains. For custom edge treatment, select **Generated Patch** and combine it with Source using
+prepare both the model input and the Result composite. Disable preprocessing to bypass Invert,
+Threshold, and Grow; the original input mask is then used for compositing while LaMa still performs
+its mandatory binary conversion. For custom edge treatment, select **Generated Patch** and combine it with Source using
 ordinary Nuke mask-processing nodes and Merge.
 
 ## Processing modes
@@ -79,8 +79,8 @@ stabilization in the current node.
 | Output | Result |
 | --- | --- |
 | **Result** | Final reconstructed RGB with opaque alpha |
-| **Result + Source Alpha** | Final RGB carrying Source alpha; default |
-| **Result Premult** | Result + Source Alpha after Premult |
+| **Result + Mask Alpha** | Final RGB carrying the effective Inpaint mask in alpha; default |
+| **Result Premult** | Result + Mask Alpha after Premult |
 | **Generated Patch** | Full-format uncomposited model RGB; use with an external mask and Merge |
 | **Difference** | Absolute change between Result and Source |
 | **Source** | Unchanged bypass |
@@ -89,7 +89,7 @@ stabilization in the current node.
 
 Every Inpaint node stores exported inputs, the exact `inpaint_model_mask.%04d.png` seen in preview,
 `inpaint_result.%04d.png`, the full-format
-`inpaint_patch.%04d.png`, and its clean composite mask under its UUID folder.
+`inpaint_patch.%04d.png`, and its effective Inpaint mask under its UUID folder.
 
 - **Create Result Read** creates a normal Nuke Read for the cached frame or sequence.
 - **Delete Node Cache** removes only this Inpaint node's generated files.

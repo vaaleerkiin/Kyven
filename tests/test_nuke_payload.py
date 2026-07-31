@@ -9,7 +9,18 @@ NUKE_ROOT = Path(__file__).parents[1] / "hosts" / "nuke"
 sys.path.insert(0, str(NUKE_ROOT))
 
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
-from kyven_nuke.inpaint_node import INPAINT_OUTPUT_MODES
+from kyven_nuke.inpaint_node import (
+    INPAINT_OUTPUT_MODES,
+)
+from kyven_nuke.inpaint_node import (
+    MASK_INPUT as INPAINT_MASK_INPUT,
+)
+from kyven_nuke.inpaint_node import (
+    SOURCE_INPUT as INPAINT_SOURCE_INPUT,
+)
+from kyven_nuke.inpaint_node import (
+    _ensure_input_order as ensure_inpaint_input_order,
+)
 from kyven_nuke.live import affects_live_result
 from kyven_nuke.node import (
     OUTPUT_MODES,
@@ -30,11 +41,84 @@ from kyven_nuke.payload import (
     segment_payload,
     segment_video_payload,
 )
-from kyven_nuke.refine_node import REFINE_OUTPUT_MODES, _trimap_preview_paths
+from kyven_nuke.refine_node import (
+    MASK_INPUT as REFINE_MASK_INPUT,
+)
+from kyven_nuke.refine_node import (
+    REFINE_OUTPUT_MODES,
+    _trimap_preview_paths,
+)
+from kyven_nuke.refine_node import (
+    SOURCE_INPUT as REFINE_SOURCE_INPUT,
+)
+from kyven_nuke.refine_node import (
+    _ensure_input_order as ensure_refine_input_order,
+)
 from kyven_nuke.runtime import _listener_pids, _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_two_input_groups_migrate_source_left_without_swapping_media(self) -> None:
+        class Knob:
+            def __init__(self, value):
+                self.current = value
+
+            def value(self):
+                return self.current
+
+            def setValue(self, value):
+                self.current = value
+
+        class InputNode:
+            def __init__(self, number):
+                self.number = Knob(number)
+
+            def __getitem__(self, name):
+                self.assert_number(name)
+                return self.number
+
+            @staticmethod
+            def assert_number(name):
+                if name != "number":
+                    raise KeyError(name)
+
+        class Group:
+            def __init__(self):
+                self.connections = ["source-media", "mask-media"]
+
+            def input(self, index):
+                return self.connections[index]
+
+            def setInput(self, index, value):
+                self.connections[index] = value
+
+            def begin(self):
+                pass
+
+            def end(self):
+                pass
+
+        for module, ensure, mask_name in (
+            ("kyven_nuke.inpaint_node", ensure_inpaint_input_order, "Mask"),
+            ("kyven_nuke.refine_node", ensure_refine_input_order, "MaskOrTrimap"),
+        ):
+            source = InputNode(0)
+            mask = InputNode(1)
+            fake_nuke = mock.Mock()
+            fake_nuke.toNode.side_effect = lambda name, source=source, mask_name=mask_name, mask=mask: {
+                "Source": source,
+                mask_name: mask,
+            }.get(name)
+            group = Group()
+            with mock.patch(f"{module}._nuke", return_value=fake_nuke):
+                ensure(group)
+            self.assertEqual(group.connections, ["mask-media", "source-media"])
+            self.assertEqual(source.number.value(), 1)
+            self.assertEqual(mask.number.value(), 0)
+
+        self.assertEqual(INPAINT_SOURCE_INPUT, REFINE_SOURCE_INPUT)
+        self.assertEqual(INPAINT_MASK_INPUT, REFINE_MASK_INPUT)
+
     def test_nuke_client_wait_retries_transient_poll_timeout(self) -> None:
         client = NukeKyvenClient("http://127.0.0.1:1", "token")
         client.job = mock.Mock(
@@ -117,9 +201,9 @@ class NukePayloadTests(unittest.TestCase):
 
     def test_listener_pid_parser_uses_only_exact_listening_port(self) -> None:
         output = """
-          TCP    127.0.0.1:18782    0.0.0.0:0    LISTENING    17020
+          TCP    127.0.0.1:18783    0.0.0.0:0    LISTENING    17020
           TCP    127.0.0.1:18777    0.0.0.0:0    LISTENING    999
-          TCP    127.0.0.1:18782    127.0.0.1:50000    TIME_WAIT    0
+          TCP    127.0.0.1:18783    127.0.0.1:50000    TIME_WAIT    0
         """
 
         self.assertEqual(_listener_pids(output), (17020,))
@@ -277,7 +361,7 @@ class NukePayloadTests(unittest.TestCase):
             INPAINT_OUTPUT_MODES,
             (
                 "Result",
-                "Result + Source Alpha",
+                "Result + Mask Alpha",
                 "Result Premult",
                 "Generated Patch",
                 "Difference",

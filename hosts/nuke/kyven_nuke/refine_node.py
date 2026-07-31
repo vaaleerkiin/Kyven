@@ -41,6 +41,8 @@ _range_cancel_lock = threading.RLock()
 _trimap_preview_lock = threading.RLock()
 _trimap_preview_revisions: dict[str, int] = {}
 _trimap_preview_running: set[str] = set()
+MASK_INPUT = 0
+SOURCE_INPUT = 1
 REFINE_OUTPUT_MODES = (
     "Refined Matte",
     "Source + Refined Alpha",
@@ -63,6 +65,27 @@ REFINE_LIVE_HELP = (
     "Live follows timeline and model / ROI changes asynchronously.<br>"
     "Trimap controls remain CPU-only."
 )
+
+
+def _ensure_input_order(node: Any) -> None:
+    """Keep Source on the left connector and Mask/Trimap on the right."""
+
+    old_source = node.input(0)
+    old_mask = node.input(1)
+    needs_migration = False
+    node.begin()
+    try:
+        source = _nuke().toNode("Source")
+        mask = _nuke().toNode("MaskOrTrimap")
+        if source is not None and mask is not None:
+            needs_migration = int(source["number"].value()) == 0
+            source["number"].setValue(SOURCE_INPUT)
+            mask["number"].setValue(MASK_INPUT)
+    finally:
+        node.end()
+    if needs_migration:
+        node.setInput(MASK_INPUT, old_mask)
+        node.setInput(SOURCE_INPUT, old_source)
 
 
 def _cache_paths(node: Any, frame: int) -> tuple[Path, Path, Path, Path]:
@@ -222,7 +245,9 @@ def _start_trimap_preview(node_name: str, revision: int) -> None:
         if node_name in _trimap_preview_running:
             return
     node = nuke.toNode(node_name)
-    if node is None or node.input(1) is None:
+    if node is not None:
+        _ensure_input_order(node)
+    if node is None or node.input(MASK_INPUT) is None:
         return
     if nuke.executing() or bool(node["kyven_busy"].value()):
         timer = threading.Timer(0.2, _dispatch_trimap_preview, args=(node_name, revision))
@@ -243,7 +268,7 @@ def _start_trimap_preview(node_name: str, revision: int) -> None:
     if not mask_path.is_file():
         node["kyven_status"].setValue("Trimap preview export did not create a PNG.")
         return
-    image_height = int(node.input(0).height()) if node.input(0) is not None else int(node.input(1).height())
+    image_height = int(node.input(SOURCE_INPUT).height()) if node.input(SOURCE_INPUT) is not None else int(node.input(MASK_INPUT).height())
     payload = {
         "mask": str(mask_path.resolve()),
         "output": str(output_path.resolve()),
@@ -255,9 +280,9 @@ def _start_trimap_preview(node_name: str, revision: int) -> None:
                 tuple(node["processing_roi"].value()),
                 image_height,
                 (
-                    int(node.input(0).width())
-                    if node.input(0) is not None
-                    else int(node.input(1).width())
+                    int(node.input(SOURCE_INPUT).width())
+                    if node.input(SOURCE_INPUT) is not None
+                    else int(node.input(MASK_INPUT).width())
                 ),
             )
             if bool(node["roi_enabled"].value())
@@ -395,8 +420,9 @@ def _export(node: Any, frame: int, source_path: Path, mask_path: Path) -> bool:
 def process_current_frame(node: Any | None = None, live: bool = False) -> None:
     nuke = _nuke()
     node = node or nuke.thisNode()
-    source = node.input(0)
-    mask = node.input(1)
+    _ensure_input_order(node)
+    source = node.input(SOURCE_INPUT)
+    mask = node.input(MASK_INPUT)
     if source is None or mask is None:
         if not live:
             nuke.message("Kyven Refine requires Source and Mask/Trimap inputs.")
@@ -529,8 +555,9 @@ def _range_worker(
 def process_frame_range() -> None:
     nuke = _nuke()
     node = nuke.thisNode()
-    source = node.input(0)
-    if source is None or node.input(1) is None:
+    _ensure_input_order(node)
+    source = node.input(SOURCE_INPUT)
+    if source is None or node.input(MASK_INPUT) is None:
         nuke.message("Kyven Refine requires Source and Mask/Trimap inputs.")
         return
     if bool(node["kyven_busy"].value()):
@@ -631,7 +658,8 @@ def cancel_current_job() -> None:
 def reset_roi_to_input() -> None:
     nuke = _nuke()
     node = nuke.thisNode()
-    source = node.input(0)
+    _ensure_input_order(node)
+    source = node.input(SOURCE_INPUT)
     if source is None:
         nuke.message("Connect a Source first.")
         return
@@ -700,10 +728,11 @@ def _ensure_refine_output_controls(node: Any) -> None:
     """Build Refine and exact-trimap output branches for new or existing Groups."""
 
     nuke = _nuke()
+    _ensure_input_order(node)
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 19</font>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 20</font>'
         )
     created_selector = "output_mode" not in node.knobs()
     previous_label = str(node["output_mode"].value()) if not created_selector else None
@@ -850,7 +879,7 @@ def _restyle_refine_ui(node: Any) -> None:
         "open_model_manager": "Model Manager...",
         "tile_size": "Tile Size (0 = Auto)",
         "tile_overlap": "Tile Overlap",
-        "mask_channel": "Input 1 Channel",
+        "mask_channel": "Mask Input Channel",
         "generate_trimap": "Generate Trimap from Mask",
         "foreground_radius": "Foreground Erosion (px)",
         "background_radius": "Background Dilation (px)",
@@ -899,7 +928,7 @@ def _restyle_refine_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 19</font>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 20</font>'
         )
     if "trimap_help" in node.knobs():
         node["trimap_help"].setValue(REFINE_TRIMAP_HELP)
@@ -943,7 +972,7 @@ def create_refine_node() -> Any:
     nuke = _nuke()
     selected = nuke.selectedNode() if nuke.selectedNodes() else None
     node = nuke.nodes.Group(name="KyvenRefine")
-    node.setInput(0, selected)
+    node.setInput(SOURCE_INPUT, selected)
     node["label"].setValue("[value kyven_status]")
     node.addKnob(nuke.Tab_Knob("kyven", "Kyven Refine"))
     add_node_branding(node, nuke)
@@ -954,7 +983,7 @@ def create_refine_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 19</font>',
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 20</font>',
         ),
     )
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
@@ -996,7 +1025,7 @@ def create_refine_node() -> Any:
     _add_knob(
         nuke,
         node,
-        nuke.Enumeration_Knob("mask_channel", "Input 1 Channel", ["Alpha", "Red"]),
+        nuke.Enumeration_Knob("mask_channel", "Mask Input Channel", ["Alpha", "Red"]),
     )
     generate = nuke.Boolean_Knob("generate_trimap", "Generate Trimap from Mask")
     generate.setValue(True)
@@ -1093,11 +1122,9 @@ def create_refine_node() -> Any:
     node.begin()
     try:
         source = nuke.nodes.Input(name="Source")
-        source["number"].setValue(0)
-        source.setXpos(-120)
+        source["number"].setValue(SOURCE_INPUT)
         mask = nuke.nodes.Input(name="MaskOrTrimap")
-        mask["number"].setValue(1)
-        mask.setXpos(120)
+        mask["number"].setValue(MASK_INPUT)
         alpha_extract = nuke.nodes.Shuffle(name="KyvenMaskExtractAlpha")
         alpha_extract.setInput(0, mask)
         for channel in ("red", "green", "blue", "alpha"):
@@ -1136,7 +1163,7 @@ def create_refine_node() -> Any:
 
 
 def reset_roi_to_input_for_node(node: Any) -> None:
-    source = node.input(0)
+    source = node.input(SOURCE_INPUT)
     if source is not None:
         node["processing_roi"].setValue(
             [0.0, 0.0, float(source.width()), float(source.height())]
@@ -1148,5 +1175,5 @@ def knob_changed_for_node(node: Any) -> None:
     node["foreground_radius"].setVisible(generated)
     node["background_radius"].setVisible(generated)
     node["processing_roi"].setVisible(bool(node["roi_enabled"].value()))
-    if node.input(1) is not None:
+    if node.input(MASK_INPUT) is not None:
         request_trimap_preview(node)
