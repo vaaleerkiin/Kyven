@@ -44,6 +44,7 @@ class VideoSegmentRequest:
     offload_state_to_cpu: bool = True
     fill_holes: bool = True
     max_hole_area: int = 2_048
+    raw_output_pattern: Path | None = None
 
     def validate(self) -> None:
         if not self.frames_dir.is_dir():
@@ -70,6 +71,11 @@ class VideoSegmentRequest:
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
                 message="Video output_pattern must contain a printf-style frame placeholder.",
+            )
+        if self.raw_output_pattern is not None and "%" not in self.raw_output_pattern.name:
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="Video raw_output_pattern must contain a printf-style frame placeholder.",
             )
         if self.max_hole_area < 0:
             raise KyvenError(
@@ -102,6 +108,11 @@ class VideoSegmentRequest:
 
     def output_for_index(self, index: int) -> Path:
         return Path(str(self.output_pattern) % self.frame_number(index))
+
+    def raw_output_for_frame(self, frame: int) -> Path | None:
+        if self.raw_output_pattern is None:
+            return None
+        return Path(str(self.raw_output_pattern) % frame)
 
     def roi_for_frame(self, frame: int) -> BoxPrompt | None:
         return dict(self.rois).get(frame, self.roi)
@@ -152,6 +163,12 @@ class VideoSegmentService:
         request: VideoSegmentRequest,
         token: CancellationToken,
     ) -> VideoSegmentResult:
+        for index, output in enumerate(result.outputs):
+            raw_output = request.raw_output_for_frame(result.first_frame + index)
+            if raw_output is None:
+                continue
+            with Image.open(output) as image:
+                write_mask_png_atomic(raw_output, np.asarray(image.convert("L")))
         if not request.fill_holes:
             return result
         filled_holes = 0

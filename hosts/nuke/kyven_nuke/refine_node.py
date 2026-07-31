@@ -27,11 +27,13 @@ from kyven_nuke.node import (
     _start_progress,
     _update_progress,
 )
-from kyven_nuke.payload import REFINE_MODEL_LABELS, refine_payload
+from kyven_nuke.payload import REFINE_MODEL_LABELS, refine_payload, roi_box
 from kyven_nuke.runtime import ensure_server
 
 _range_cancellations: set[str] = set()
 _range_cancel_lock = threading.RLock()
+_trimap_preview_lock = threading.RLock()
+_trimap_preview_revisions: dict[str, int] = {}
 REFINE_OUTPUT_MODES = (
     "Refined Matte",
     "Source + Refined Alpha",
@@ -156,6 +158,116 @@ def _set_trimap_read(
         nuke.toNode("KyvenTrimapSwitch")["which"].setValue(1)
     finally:
         node.end()
+
+
+def request_trimap_preview(node: Any, delay_seconds: float = 0.18) -> None:
+    """Debounce trimap controls into a CPU-only preview without ViTMatte."""
+
+    node_name = str(node.fullName())
+    with _trimap_preview_lock:
+        revision = _trimap_preview_revisions.get(node_name, 0) + 1
+        _trimap_preview_revisions[node_name] = revision
+    timer = threading.Timer(
+        delay_seconds,
+        _dispatch_trimap_preview,
+        args=(node_name, revision),
+    )
+    timer.daemon = True
+    timer.start()
+
+
+def _dispatch_trimap_preview(node_name: str, revision: int) -> None:
+    _nuke().executeInMainThread(_start_trimap_preview, args=(node_name, revision))
+
+
+def _start_trimap_preview(node_name: str, revision: int) -> None:
+    nuke = _nuke()
+    with _trimap_preview_lock:
+        if _trimap_preview_revisions.get(node_name) != revision:
+            return
+    node = nuke.toNode(node_name)
+    if node is None or node.input(1) is None:
+        return
+    if nuke.executing() or bool(node["kyven_busy"].value()):
+        timer = threading.Timer(0.2, _dispatch_trimap_preview, args=(node_name, revision))
+        timer.daemon = True
+        timer.start()
+        return
+    frame = int(nuke.frame())
+    root = _cache_root(node)
+    mask_path = root / f"trimap_preview_input.{frame:04d}.{revision}.png"
+    output_path = root / f"trimap_preview.{frame:04d}.{revision}.png"
+    writer = _inside(node, "KyvenRefineMaskWrite")
+    writer["file"].setValue(_nuke_file_path(mask_path))
+    try:
+        nuke.execute(writer, frame, frame)
+    except Exception as exc:  # noqa: BLE001
+        node["kyven_status"].setValue(f"Trimap preview export failed: {exc}")
+        return
+    if not mask_path.is_file():
+        node["kyven_status"].setValue("Trimap preview export did not create a PNG.")
+        return
+    image_height = int(node.input(0).height()) if node.input(0) is not None else int(node.input(1).height())
+    payload = {
+        "mask": str(mask_path.resolve()),
+        "output": str(output_path.resolve()),
+        "generate_trimap": bool(node["generate_trimap"].value()),
+        "foreground_radius": int(node["foreground_radius"].value()),
+        "background_radius": int(node["background_radius"].value()),
+        "roi": (
+            roi_box(tuple(node["processing_roi"].value()), image_height)
+            if bool(node["roi_enabled"].value())
+            else None
+        ),
+    }
+    node["kyven_status"].setValue("Updating trimap preview (CPU only)...")
+    threading.Thread(
+        target=_trimap_preview_worker,
+        args=(node_name, revision, mask_path, output_path, payload),
+        name="kyven-trimap-preview",
+        daemon=True,
+    ).start()
+
+
+def _trimap_preview_worker(
+    node_name: str,
+    revision: int,
+    mask_path: Path,
+    output_path: Path,
+    payload: dict[str, Any],
+) -> None:
+    try:
+        ensure_server().preview_trimap(payload)
+        _nuke().executeInMainThread(
+            _apply_trimap_preview,
+            args=(node_name, revision, mask_path, output_path),
+        )
+    except Exception as exc:  # noqa: BLE001
+        mask_path.unlink(missing_ok=True)
+        _nuke().executeInMainThread(
+            _set_status,
+            args=(node_name, f"Trimap preview failed: {exc}"),
+        )
+
+
+def _apply_trimap_preview(
+    node_name: str,
+    revision: int,
+    mask_path: Path,
+    output_path: Path,
+) -> None:
+    mask_path.unlink(missing_ok=True)
+    with _trimap_preview_lock:
+        current = _trimap_preview_revisions.get(node_name)
+    if current != revision:
+        output_path.unlink(missing_ok=True)
+        return
+    node = _nuke().toNode(node_name)
+    if node is None or not output_path.is_file():
+        output_path.unlink(missing_ok=True)
+        return
+    _set_trimap_read(node, _nuke_file_path(output_path))
+    node["kyven_status"].setValue("Trimap preview ready instantly — ViTMatte was not run.")
 
 
 def _submit_and_wait(
@@ -481,6 +593,18 @@ def knob_changed() -> None:
     node["foreground_radius"].setVisible(generated)
     node["background_radius"].setVisible(generated)
     node["processing_roi"].setVisible(bool(node["roi_enabled"].value()))
+    if name in {
+        "inputChange",
+        "mask_channel",
+        "generate_trimap",
+        "foreground_radius",
+        "background_radius",
+        "roi_enabled",
+        "processing_roi",
+    }:
+        if "kyven_trimap_preview_frame" in node.knobs():
+            node["kyven_trimap_preview_frame"].setValue(-2147483647)
+        request_trimap_preview(node)
     from kyven_nuke.live import affects_live_result, request_live_update
 
     if affects_live_result(name, "refine"):
@@ -525,7 +649,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 8</font>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 9</font>'
         )
     created_selector = "output_mode" not in node.knobs()
     previous_label = str(node["output_mode"].value()) if not created_selector else None
@@ -555,6 +679,21 @@ def _ensure_refine_output_controls(node: Any) -> None:
         _add_knob(nuke, node, nuke.Text_Knob("output_help", "", REFINE_OUTPUT_HELP))
     else:
         node["output_help"].setValue(REFINE_OUTPUT_HELP)
+    if "kyven_trimap_preview_frame" not in node.knobs():
+        preview_frame = nuke.Int_Knob("kyven_trimap_preview_frame", "Trimap Preview Frame")
+        preview_frame.setValue(-2147483647)
+        preview_frame.setVisible(False)
+        preview_frame.clearFlag(nuke.STARTLINE)
+        node.addKnob(preview_frame)
+    for name in ("foreground_radius", "background_radius"):
+        if name in node.knobs():
+            node[name].setRange(0, 100)
+            node[name].setFlag(nuke.STARTLINE)
+    if "trimap_help" in node.knobs():
+        node["trimap_help"].setValue(
+            "CPU-only live preview — these sliders never run ViTMatte. "
+            "On: build from a coarse mask. Off: normalize an artist trimap."
+        )
 
     node.begin()
     try:
@@ -648,7 +787,8 @@ def upgrade_selected_refine_node() -> None:
     except Exception as exc:  # noqa: BLE001
         nuke.message(f"Could not upgrade the selected Refine node:\n{exc}")
         return
-    node["kyven_status"].setValue("Refine outputs upgraded. Process a frame to cache the trimap.")
+    request_trimap_preview(node)
+    node["kyven_status"].setValue("Refine upgraded. Trimap preview uses CPU only.")
 
 
 def create_refine_node() -> Any:
@@ -665,7 +805,7 @@ def create_refine_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 8</font>',
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 9</font>',
         ),
     )
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
@@ -703,21 +843,21 @@ def create_refine_node() -> Any:
     generate.setValue(True)
     _add_knob(nuke, node, generate)
     foreground = nuke.Int_Knob("foreground_radius", "Foreground Erosion (px)")
-    foreground.setRange(0, 49)
+    foreground.setRange(0, 100)
     foreground.setValue(10)
     _add_knob(nuke, node, foreground)
     background = nuke.Int_Knob("background_radius", "Background Dilation (px)")
-    background.setRange(0, 49)
+    background.setRange(0, 100)
     background.setValue(15)
-    _add_knob(nuke, node, background, start_line=False)
+    _add_knob(nuke, node, background)
     _add_knob(
         nuke,
         node,
         nuke.Text_Knob(
             "trimap_help",
             "",
-            "On: Input 1 is a coarse mask and Kyven creates the trimap. "
-            "Off: Input 1 must already be black / gray / white trimap.",
+            "CPU-only live preview — these sliders never run ViTMatte. "
+            "On: build from a coarse mask. Off: normalize an artist trimap.",
         ),
     )
 
@@ -850,3 +990,5 @@ def knob_changed_for_node(node: Any) -> None:
     node["foreground_radius"].setVisible(generated)
     node["background_radius"].setVisible(generated)
     node["processing_roi"].setVisible(bool(node["roi_enabled"].value()))
+    if node.input(1) is not None:
+        request_trimap_preview(node)

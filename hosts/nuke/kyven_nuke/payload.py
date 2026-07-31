@@ -51,6 +51,7 @@ def segment_payload(
     *,
     source: str,
     output: str,
+    raw_output: str | None = None,
     model_index: int,
     profile: str,
     image_height: int,
@@ -69,6 +70,7 @@ def segment_payload(
     return {
         "source": source,
         "output": output,
+        "raw_output": raw_output,
         "model_id": MODEL_IDS[model_index],
         "profile": profile,
         "points": points,
@@ -84,6 +86,7 @@ def segment_video_payload(
     *,
     frames_dir: str,
     output_pattern: str,
+    raw_output_pattern: str | None = None,
     model_index: int,
     profile: str,
     image_height: int,
@@ -102,6 +105,7 @@ def segment_video_payload(
     image_payload = segment_payload(
         source="unused",
         output="unused",
+        raw_output=None,
         model_index=model_index,
         profile=profile,
         image_height=image_height,
@@ -115,6 +119,7 @@ def segment_video_payload(
     return {
         "frames_dir": frames_dir,
         "output_pattern": output_pattern,
+        "raw_output_pattern": raw_output_pattern,
         "model_id": image_payload["model_id"],
         "profile": profile,
         "points": image_payload["points"],

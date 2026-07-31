@@ -32,7 +32,7 @@ actual model crop are black in the trimap preview because they were not sent to 
 
 ## Processing
 
-- `Live Current Frame` follows the timeline and regenerates after trimap/ROI setting changes.
+- `Live Current Frame` follows the timeline and regenerates ViTMatte after model/ROI changes.
 - `Process Current Frame` updates one cached matte.
 - `Process Frame Range` exports and refines every selected frame sequentially.
 - `Create Read from Current Matte` creates a standard Nuke Read for the cached frame or sequence.
@@ -46,6 +46,11 @@ The cached files for a processed frame are `refine_source`, `refine_mask`, `refi
 `trimap`. Range processing writes matching `%04d` sequences and connects internal Reads to both the
 refined matte and trimap. `Create Read from Current Matte` creates a Read for the refined matte; use
 the node's trimap output modes to inspect the cached trimap in context.
+
+Trimap preview is independent of ViTMatte. Connecting or changing Input 1, moving to another frame,
+or adjusting `Foreground Erosion`, `Background Dilation`, trimap mode, or ROI immediately rebuilds
+the black/gray/white preview on CPU. The two radius controls are full-width sliders. This preview
+does not load or run ViTMatte; press Process only when the guidance looks correct.
 
 Processing ROI crops both image and mask before inference, then pastes the refined alpha into the
 full-size coarse mask. Low Memory uses 512 px tiles, Balanced uses 1024 px tiles, and Quality uses a
@@ -64,5 +69,5 @@ Add `--manual-trimap` when the mask path is already a trimap.
 
 After updating the repository and restarting Nuke, select an older Refine Group and choose
 `Kyven > Upgrade Selected Refine Node`. The command adds the current seven output modes without
-discarding the existing refined matte. Process a frame or range once to create the exact trimap
-cache required by the three trimap output modes.
+discarding the existing refined matte. The trimap outputs become available immediately from the
+CPU-only preview; process a frame or range only when you want a new ViTMatte result.

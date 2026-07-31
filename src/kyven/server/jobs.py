@@ -98,7 +98,13 @@ class JobManager:
     def request_from_payload(payload: dict[str, Any]) -> SegmentRequest:
         source = Path(str(payload["source"]))
         output = Path(str(payload["output"]))
-        if not source.is_absolute() or not output.is_absolute():
+        raw_output_value = payload.get("raw_output")
+        raw_output = Path(str(raw_output_value)) if raw_output_value else None
+        if (
+            not source.is_absolute()
+            or not output.is_absolute()
+            or (raw_output is not None and not raw_output.is_absolute())
+        ):
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
                 message="Server job paths must be absolute.",
@@ -117,6 +123,7 @@ class JobManager:
         return SegmentRequest(
             source=source,
             output=output,
+            raw_output=raw_output,
             points=points,
             box=box,
             roi=roi,
@@ -148,7 +155,15 @@ class JobManager:
     def video_request_from_payload(payload: dict[str, Any]) -> VideoSegmentRequest:
         frames_dir = Path(str(payload["frames_dir"]))
         output_pattern = Path(str(payload["output_pattern"]))
-        if not frames_dir.is_absolute() or not output_pattern.is_absolute():
+        raw_output_pattern_value = payload.get("raw_output_pattern")
+        raw_output_pattern = (
+            Path(str(raw_output_pattern_value)) if raw_output_pattern_value else None
+        )
+        if (
+            not frames_dir.is_absolute()
+            or not output_pattern.is_absolute()
+            or (raw_output_pattern is not None and not raw_output_pattern.is_absolute())
+        ):
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
                 message="Video job paths must be absolute.",
@@ -192,6 +207,7 @@ class JobManager:
             offload_state_to_cpu=bool(payload.get("offload_state_to_cpu", True)),
             fill_holes=bool(payload.get("fill_holes", True)),
             max_hole_area=int(payload.get("max_hole_area", 2_048)),
+            raw_output_pattern=raw_output_pattern,
         )
 
     def submit_video(self, payload: dict[str, Any]) -> str:
@@ -294,6 +310,11 @@ class JobManager:
                 record.status = JobStatus.SUCCEEDED
                 record.result = {
                     "output": str(result.output),
+                    "raw_output": (
+                        str(record.request.raw_output)
+                        if record.request.raw_output is not None
+                        else None
+                    ),
                     "score": result.score,
                     "cache_key": result.cache_key,
                     "metadata": result.metadata,

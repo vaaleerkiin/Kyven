@@ -28,7 +28,8 @@ class NukePayloadTests(unittest.TestCase):
         self.assertTrue(affects_live_result("positive_point_3", "segment"))
         self.assertTrue(affects_live_result("prompt_box", "segment"))
         self.assertTrue(affects_live_result("processing_roi", "refine"))
-        self.assertTrue(affects_live_result("foreground_radius", "refine"))
+        self.assertFalse(affects_live_result("foreground_radius", "refine"))
+        self.assertFalse(affects_live_result("max_hole_area", "segment"))
         self.assertFalse(affects_live_result("output_mode", "segment"))
         self.assertFalse(affects_live_result("output_mode", "refine"))
 
@@ -104,6 +105,7 @@ class NukePayloadTests(unittest.TestCase):
         payload = segment_video_payload(
             frames_dir="D:/cache/frames",
             output_pattern="D:/cache/matte.%04d.png",
+            raw_output_pattern="D:/cache/raw_matte.%04d.png",
             model_index=1,
             profile="low_memory",
             image_height=1080,
@@ -119,6 +121,7 @@ class NukePayloadTests(unittest.TestCase):
 
         self.assertEqual(payload["key_frame"], 50)
         self.assertEqual(payload["direction"], "both")
+        self.assertEqual(payload["raw_output_pattern"], "D:/cache/raw_matte.%04d.png")
         self.assertTrue(payload["offload_video_to_cpu"])
         self.assertEqual(payload["points"][0]["y"], 880.0)
         self.assertIsNone(payload["box"])

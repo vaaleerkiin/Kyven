@@ -42,7 +42,7 @@ path; setting `KYVEN_ROOT` is normally unnecessary. Restart Nuke after editing `
 | `.runtime/pip-cache/` | Reusable installer download cache |
 | `.runtime/server.token` | Private local bearer token |
 | `.runtime/server.log` | Latest server output |
-| `.runtime/nuke_cache/` | Per-node exported frames, mattes, and trimaps |
+| `.runtime/nuke_cache/` | Per-node exported frames, raw/displayed mattes, and trimap previews |
 
 Nothing is added to the system `PATH`, and the installer intentionally does not edit Nuke's
 `init.py`.
@@ -50,7 +50,7 @@ Nothing is added to the system `PATH`, and the installer intentionally does not 
 ## Update
 
 Pull or replace the repository files, then run `install.cmd` again. Existing verified checkpoints
-and downloads are reused. Restart Nuke so Python modules and API 8 are reloaded, then update older
+and downloads are reused. Restart Nuke so Python modules and API 9 are reloaded, then update older
 Groups from the Nodes menu:
 
 - `Kyven > Upgrade Selected Segment Node`;

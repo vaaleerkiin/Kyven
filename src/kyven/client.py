@@ -84,6 +84,12 @@ class KyvenClient:
         response = self._request("POST", "/v1/jobs/refine", payload)
         return str(response["job_id"])
 
+    def preview_trimap(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/v1/preview/trimap", payload)
+
+    def preview_mask_postprocess(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/v1/preview/mask-postprocess", payload)
+
     def job(self, job_id: str) -> dict[str, Any]:
         return self._request("GET", f"/v1/jobs/{job_id}")
 

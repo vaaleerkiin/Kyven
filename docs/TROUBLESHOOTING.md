@@ -29,8 +29,8 @@ The Nuke adapter launches `python.exe -I -m kyven.server.bootstrap`. On Windows 
 the DLL directory inherited from Nuke before importing PyTorch; this prevents the common
 `c10.dll` / `WinError 1114` startup failure.
 
-Kyven API 8 uses port `18771`. Older development servers may remain on 8765-8769 or 18768-18770, but
-the adapter asks authenticated older servers to unload their models before starting API 8.
+Kyven API 9 uses port `18772`. Older development servers may remain on 8765-8769 or 18768-18771, but
+the adapter asks authenticated older servers to unload their models before starting API 9.
 
 ## Refine fails or returns the coarse mask unchanged
 
@@ -40,17 +40,17 @@ the adapter asks authenticated older servers to unload their models before start
 - Select Red as `Input 1 Channel` when the mask/trimap is stored in RGB instead of alpha.
 - Increase erosion/dilation to give ViTMatte a wider unknown edge region.
 - Use Low Memory (512 px tiles) when VRAM is limited.
-- After updating from an older API, restart Nuke so it launches the server on port 18771.
+- After updating from an older API, restart Nuke so it launches the server on port 18772.
 
 ## Trimap output is missing or shows only the input mask
 
 - Restart Nuke after updating, select the Refine node, and run
   `Kyven > Upgrade Selected Refine Node`.
-- Process the current frame or range at least once. Before that, trimap modes intentionally preview
-  the selected Input 1 channel because no exact cached trimap exists yet.
+- Connect Input 1. The CPU-only trimap preview should appear without processing a frame or loading
+  ViTMatte.
 - With Processing ROI enabled, black outside the ROI is expected: ViTMatte did not receive those
   pixels. The refined-alpha output still preserves the coarse mask outside the ROI.
-- Confirm that `.runtime/nuke_cache/<node-uuid>/trimap.<frame>.png` exists.
+- Confirm that `.runtime/nuke_cache/<node-uuid>/trimap_preview.<frame>.<revision>.png` exists.
 
 ## CUDA or model loading fails
 

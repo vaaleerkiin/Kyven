@@ -41,6 +41,8 @@ class SegmentService:
         token.report_progress(0.90, "Post-processing matte")
 
         mask = np.asarray(prediction.mask)
+        if request.raw_output is not None:
+            write_mask_png_atomic(request.raw_output, mask)
         metadata = dict(prediction.metadata)
         if request.fill_holes:
             filled = fill_enclosed_holes(mask, request.max_hole_area)

@@ -43,10 +43,11 @@ A newly created node always receives the latest controls and output graph.
 
 Both Segment and Refine have `Live Current Frame`. When enabled, moving to another timeline frame
 exports and submits that frame automatically. Only one GPU job runs at a time; rapid scrubbing does
-not create concurrent model copies. Editing a Segment point or Processing ROI, or changing a Refine
-trimap/ROI setting, also invalidates and regenerates the visible frame after a short debounce. If an
-older job is still running, the latest edit runs when it finishes. Output-only controls do not rerun
-inference. Disable Live before rendering a range.
+not create concurrent model copies. Editing a Segment point or Processing ROI also invalidates and
+regenerates the visible frame after a short debounce. Refine ROI changes do the same when Live is
+enabled. Trimap radii and Segment mask post-process settings use separate CPU-only previews and
+never rerun SAM or ViTMatte. Output-only controls do not rerun inference. Disable Live before
+rendering a range.
 
 ## Segment controls
 
@@ -156,9 +157,11 @@ Each Segment node owns a UUID folder under:
 D:/Kyven/.runtime/nuke_cache/<node-uuid>/
 ```
 
-Typical files include exported source frames, `matte.%04d.png`, video JPEGs, and
-`tracked_matte.%04d.png`. Refine nodes add `refine_source.%04d.png`, `refine_mask.%04d.png`,
-`refined_matte.%04d.png`, and the exact `trimap.%04d.png` sequence under their own UUID folder.
+Typical files include exported source frames, displayed `matte.%04d.png`, CPU-preview source
+`raw_matte.%04d.png`, video JPEGs, `tracked_matte.%04d.png`, and
+`raw_tracked_matte.%04d.png`. Refine nodes add `refine_source.%04d.png`,
+`refine_mask.%04d.png`, `refined_matte.%04d.png`, exact processed trimaps, and lightweight
+`trimap_preview` files under their own UUID folder.
 
 - `Create Matte Read` creates a normal Nuke Read pointing to the current cached matte or sequence.
 - `Delete Node Cache` disconnects and removes only the current node's cache after confirmation.
@@ -167,7 +170,7 @@ Typical files include exported source frames, `matte.%04d.png`, video JPEGs, and
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18771` and requires API 8. A
+The adapter starts an external hidden Python process on `127.0.0.1:18772` and requires API 9. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

@@ -61,7 +61,9 @@ the source dimensions. ROI participates in deterministic cache identity.
 
 After inference, optional enclosed-hole filling labels black connected components and fills only
 those that do not touch the frame border and fit under `max_hole_area`. This changes neither the
-outer silhouette nor model inference. Post-process settings are also part of cache identity.
+outer silhouette nor model inference. The Nuke adapter stores an additional raw SAM matte; changing
+the post-process checkbox or full-width area slider rebuilds the displayed matte immediately on CPU
+without running SAM again.
 
 On success the CLI prints structured JSON with the output path, selected-mask score,
 deterministic cache key, device, and provider metadata. On failure it prints a structured Kyven

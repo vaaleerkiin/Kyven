@@ -23,6 +23,8 @@ it must not be committed or logged.
 | `POST` | `/v1/jobs/segment` | Queue a segmentation job |
 | `POST` | `/v1/jobs/segment-video` | Queue SAM 2 temporal mask propagation |
 | `POST` | `/v1/jobs/refine` | Queue ViTMatte alpha refinement |
+| `POST` | `/v1/preview/trimap` | Build trimap on CPU without ViTMatte |
+| `POST` | `/v1/preview/mask-postprocess` | Rebuild matte from raw SAM output on CPU |
 | `GET` | `/v1/jobs/{id}` | Read status or result |
 | `POST` | `/v1/jobs/{id}/cancel` | Request cooperative cancellation |
 | `POST` | `/v1/providers/unload-all` | Safely unload models after active work |
@@ -35,6 +37,7 @@ unloading is queued behind active inference so it cannot race a running kernel.
 | Field | Meaning |
 | --- | --- |
 | `source`, `output` | Absolute local paths |
+| `raw_output` | Optional unmodified SAM matte used for live post-process previews |
 | `model_id` | Stable model catalog identifier |
 | `profile` | `low_memory`, `balanced`, or `quality` |
 | `points` | Top-left-origin positive and negative point prompts |
@@ -49,6 +52,7 @@ unloading is queued behind active inference so it cannot race a running kernel.
 | Field | Meaning |
 | --- | --- |
 | `frames_dir`, `output_pattern` | Absolute JPEG input directory and printf-style PNG destination |
+| `raw_output_pattern` | Optional printf-style unmodified SAM matte sequence |
 | `first_frame`, `last_frame`, `key_frame` | Nuke frame range and prompt frame |
 | `direction` | `forward`, `backward`, or `both` |
 | `points` | Prompts sampled on the key frame |
@@ -73,9 +77,10 @@ frame's original coordinates before the job succeeds.
 Outside an enabled Refine ROI, the coarse alpha is preserved in the refined result. The persisted
 trimap is black outside the ROI because those pixels were not sent to ViTMatte.
 
-API version 8 reports detailed Segment and Refine stages for host progress windows. It retains the
-API 7 persisted `trimap_output`. `GET /v1/jobs/{id}` returns `progress` (0.0-1.0) and
+API version 9 adds CPU-only `/v1/preview/trimap` and `/v1/preview/mask-postprocess` routes so host
+controls can update without rerunning a model. It retains detailed Segment and Refine progress
+stages and the API 7 persisted `trimap_output`. `GET /v1/jobs/{id}` returns `progress` (0.0-1.0) and
 `progress_message`. A video request may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
-returned masks to the original dimensions. The Nuke adapter uses versioned port `18771` to avoid
+returned masks to the original dimensions. The Nuke adapter uses versioned port `18772` to avoid
 connecting to stale API processes during development.

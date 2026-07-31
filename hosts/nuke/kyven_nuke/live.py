@@ -17,10 +17,6 @@ def affects_live_result(knob_name: str, kind: str) -> bool:
         return knob_name in {
             "model",
             "profile",
-            "mask_channel",
-            "generate_trimap",
-            "foreground_radius",
-            "background_radius",
             "roi_enabled",
             "processing_roi",
             "tile_size",
@@ -36,8 +32,6 @@ def affects_live_result(knob_name: str, kind: str) -> bool:
             "negative_enabled",
             "box_enabled",
             "prompt_box",
-            "fill_holes",
-            "max_hole_area",
         }
     )
 
@@ -106,12 +100,21 @@ def update_live_nodes() -> None:
         knobs = node.knobs()
         if not {"live_mode", "kyven_live_frame", "kyven_busy"}.issubset(knobs):
             continue
+        kind = str(node["kyven_kind"].value()) if "kyven_kind" in knobs else "segment"
+        if (
+            kind == "refine"
+            and "kyven_trimap_preview_frame" in knobs
+            and int(node["kyven_trimap_preview_frame"].value()) != frame
+        ):
+            node["kyven_trimap_preview_frame"].setValue(frame)
+            from kyven_nuke.refine_node import request_trimap_preview
+
+            request_trimap_preview(node)
         if not bool(node["live_mode"].value()) or bool(node["kyven_busy"].value()):
             continue
         if int(node["kyven_live_frame"].value()) == frame:
             continue
         node["kyven_live_frame"].setValue(frame)
-        kind = str(node["kyven_kind"].value()) if "kyven_kind" in knobs else "segment"
         if kind == "refine":
             if node.input(0) is None or node.input(1) is None:
                 continue

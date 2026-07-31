@@ -103,25 +103,26 @@ class VideoSegmentRequestTests(unittest.TestCase):
     def test_video_outputs_receive_hole_postprocess(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            output = root / "matte.0001.png"
+            output = root / "matte.0003.png"
             mask = np.ones((5, 5), dtype=np.bool_)
             mask[2, 2] = False
             write_mask_png_atomic(output, mask)
             request = VideoSegmentRequest(
                 frames_dir=root,
                 output_pattern=root / "matte.%04d.png",
+                raw_output_pattern=root / "raw_matte.%04d.png",
                 first_frame=1,
-                last_frame=1,
-                key_frame=1,
+                last_frame=3,
+                key_frame=3,
                 direction=VideoDirection.FORWARD,
                 points=(PointPrompt(2, 2),),
                 max_hole_area=10,
             )
             result = VideoSegmentResult(
                 outputs=(output,),
-                first_frame=1,
-                last_frame=1,
-                key_frame=1,
+                first_frame=3,
+                last_frame=3,
+                key_frame=3,
                 direction=VideoDirection.FORWARD,
                 metadata={},
             )
@@ -134,6 +135,8 @@ class VideoSegmentRequestTests(unittest.TestCase):
 
             with Image.open(output) as image:
                 self.assertEqual(image.getpixel((2, 2)), 255)
+            with Image.open(root / "raw_matte.0003.png") as raw_image:
+                self.assertEqual(raw_image.getpixel((2, 2)), 0)
             self.assertEqual(processed.metadata["postprocess"]["filled_holes"], 1)
 
     def test_key_index_and_output_mapping_preserve_nuke_frames(self) -> None:
