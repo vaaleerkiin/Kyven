@@ -1,7 +1,10 @@
-# Kyven Server
+# Kyven Tools Server
 
-Kyven Server isolates PyTorch, CUDA, model loading, and inference from Nuke, Fusion, and Resolve.
-It binds only to `127.0.0.1` and requires a random bearer token on every endpoint.
+Kyven Server is the shared execution layer for the Kyven Tools toolkit. It isolates PyTorch, CUDA,
+model loading, and task-specific inference from Nuke, Fusion, and Resolve. Segment and Refine are
+the implemented APIs; planned tools such as Depth and Inpaint must extend the provider/job system
+instead of placing inference inside a host adapter. The server binds only to `127.0.0.1` and
+requires a random bearer token on every endpoint.
 
 ```text
 kyven serve \

@@ -1,7 +1,9 @@
-# Kyven for Nuke
+# Kyven Tools for Nuke
 
-The Nuke adapter is a Group node that exports frames to the local Kyven Server and reads cached
-PNG mattes back into the graph. Nuke remains responsive while server inference runs.
+The Nuke adapter exposes independent Kyven Tools operations as native-looking Group nodes. The
+current Segment and Refine nodes export frames to the local Kyven Server and read cached PNG mattes
+back into the graph. Future Depth and Inpaint nodes will reuse the same host/server boundary and
+per-node cache conventions. Nuke remains responsive while server inference runs.
 
 ## Portable install
 

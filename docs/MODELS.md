@@ -1,4 +1,4 @@
-# Model selection and safety
+# Kyven Tools model selection and safety
 
 Kyven treats model implementations and model sizes as selectable providers. A node stores a
 stable `model_id`, not a hard-coded Python class or checkpoint path.
@@ -42,3 +42,15 @@ Refine unloads a resident SAM model before loading ViTMatte, which keeps the 4â€
 ```text
 kyven models download vitmatte-small-composition-1k --models-dir models
 ```
+
+## Planned provider families
+
+Depth and Inpaint are roadmap items and are not yet part of the catalog or installer. Planned Depth
+work currently favors commercially safe Small variants for interactive and temporal processing;
+non-commercial Base/Large checkpoints must not appear as safe defaults. Inpaint has no selected
+provider until its commercial terms, hardware behavior, temporal quality, and output contract are
+audited.
+
+See [Kyven Tools vision and roadmap](ROADMAP.md) for candidate models and proposed controls. Adding
+a name to that roadmap does not make a checkpoint approved: catalog inclusion still requires a
+pinned source, license metadata, byte size, SHA-256, commercial-use status, and hardware guidance.

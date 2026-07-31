@@ -1,12 +1,15 @@
-# Kyven Project Bible
+# Kyven Tools Project Bible
 
 ## 1. Product identity
 
-### Working name
+### Product name
 
-**Kyven**
+**Kyven Tools**
 
-Possible ecosystem naming:
+Technical identifiers remain `kyven` and `Kyven` to preserve package, CLI, API, and node
+compatibility. Product and documentation branding should use Kyven Tools.
+
+Ecosystem naming:
 
 - Kyven Utils
 - Kyven Segment
@@ -19,15 +22,15 @@ Possible ecosystem naming:
 
 ### One-sentence definition
 
-Kyven is a local, modular and hardware-accessible AI masking framework that behaves like a native part of a professional node-based compositing pipeline.
+Kyven Tools is a local, modular, and hardware-accessible AI toolkit whose independent operations behave like native parts of a professional node-based compositing pipeline.
 
 ### Product promise
 
-An artist must be able to generate a useful mask, interrupt the AI pipeline, correct the result with ordinary compositing tools, and resume AI refinement without being forced into a proprietary object manager or a closed workflow.
+An artist must be able to run one useful AI-assisted operation, inspect or correct its result with ordinary compositing tools, and continue through the graph without being forced into a proprietary object manager or a closed workflow.
 
 ### Product category
 
-Kyven is not only an autorotoscoping plug-in. It is a reusable inference and image-processing framework for compositing hosts.
+Kyven Tools is not only an autorotoscoping or masking plug-in. It is a reusable inference and image-processing toolkit for compositing hosts. Segment and Refine are its first tools; Depth, Inpaint, and later utilities use the same engine while remaining separate nodes.
 
 ---
 
@@ -47,7 +50,7 @@ Every AI stage must be:
 - replaceable
 - interruptible by native host nodes
 
-A valid workflow must be:
+Valid workflows include:
 
 ```text
 Source
@@ -59,13 +62,18 @@ Roto / Erode / Blur / Merge / Expression
 Kyven Refine
   ↓
 Final matte
+
+Source -> Kyven Depth -> Grade / ZDefocus / Merge
+
+Source + removal mask -> Kyven Inpaint -> Paint / Merge
 ```
 
 The user must never be forced to keep all processing inside one opaque node.
 
-### 2.2 One node, one object
+### 2.2 One node, one focused operation
 
-The public node workflow should use one object per node.
+Each public tool should expose one focused operation per node. Segment additionally uses one object
+per node.
 
 This avoids:
 
@@ -86,7 +94,7 @@ Kyven must officially support a baseline machine with:
 - modern x86-64 CPU
 - SSD strongly recommended
 
-This does not mean identical speed or maximum resolution. It means the user can complete the core segmentation and refinement workflow without crashes or manual source-code changes.
+This does not mean identical speed or maximum resolution. It means every core tool must provide a documented baseline provider or fallback that can complete useful work without crashes or manual source-code changes.
 
 Low-memory support is a product requirement, not a later optimization.
 
@@ -123,6 +131,8 @@ Correct abstraction:
 SegmentationProvider
 RefinementProvider
 PropagationProvider
+DepthProvider
+InpaintProvider
 ```
 
 Incorrect abstraction:
@@ -139,6 +149,9 @@ Initial providers may use SAM-family segmentation and ViTMatte-style refinement,
 If segmentation is disabled, the segmentation model must not consume VRAM.
 
 If refinement is disabled, the refinement model must not consume VRAM.
+
+The same rule applies to Depth, Inpaint, and every future provider. A tool that is not processing
+must not keep a heavy model resident unless the artist explicitly enables a keep-loaded option.
 
 The user must be able to:
 
@@ -172,7 +185,7 @@ Need a documented backend API and model adapter system that can be integrated in
 
 ## 4. Product scope
 
-### Version 1 scope
+### Current foundation scope
 
 - Nuke integration
 - segmentation from point and box prompts
@@ -180,7 +193,6 @@ Need a documented backend API and model adapter system that can be integrated in
 - single-object node workflow
 - segmentation-only mode
 - refinement-only mode
-- combined pipeline mode
 - refinement from any input mask
 - automatic trimap generation
 - optional external trimap input later
@@ -193,10 +205,21 @@ Need a documented backend API and model adapter system that can be integrated in
 - model unload controls
 - diagnostic report
 
-### Explicitly outside Version 1
+### Planned product expansion
 
-- depth estimation
-- generative fill
+- depth estimation for stills and temporally consistent video
+- inpainting and generative cleanup, after provider and license evaluation
+- paint-oriented cleanup utilities
+- task-specific post-processing nodes
+- Fusion integration
+- DaVinci Resolve integration through Fusion
+
+These are planned directions, not promises that a particular model or implementation will ship.
+Every new tool must pass the same commercial-license, local-first, host-independent, caching, and
+4 GB fallback review as Segment and Refine. See `docs/ROADMAP.md` for the active plan.
+
+### Explicitly outside the current plan
+
 - relighting
 - multi-user collaboration server
 - cloud processing
@@ -205,12 +228,10 @@ Need a documented backend API and model adapter system that can be integrated in
 - a complex multi-object manager
 - training or fine-tuning UI
 
-### Future scope
+### Longer-term platform scope
 
 - temporal propagation
 - optical-flow-assisted cleanup
-- Fusion integration
-- DaVinci Resolve integration through Fusion
 - remote studio workers
 - command-line batch renderer
 - OpenFX integration where technically and legally appropriate
@@ -865,6 +886,28 @@ Advanced information may be available in diagnostics.
 - propagation provider
 - confidence and correction workflow
 - temporal cleanup
+
+### Phase 8: Kyven Depth
+
+- `Kyven Depth` as an independent node and provider contract
+- fast single-frame Live mode
+- temporally consistent video range mode
+- independent-frame fallback with optional stabilization
+- scene-cut detection and shot-consistent normalization
+- Depth, Inverse Depth, Source + Depth Alpha, and bypass outputs
+- FP16, reduced working resolution, model unloading, and CPU fallback
+- commercial-license audit and 4 GB / 8 GB benchmarks before default installation
+
+### Phase 9: Kyven Inpaint discovery
+
+- define Source + Mask graph contract and cache identity
+- evaluate still-image and video-consistent providers
+- audit code, checkpoint, training-data, and commercial-use terms
+- establish 4 GB fallback or clearly mark the tool as optional high-memory functionality
+- prototype current-frame processing before range or temporal modes
+
+Detailed options and current model candidates are maintained in `docs/ROADMAP.md` so this document
+can remain focused on long-lived product principles.
 
 ---
 

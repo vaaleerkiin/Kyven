@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kyven"
 version = "0.1.0.dev0"
-description = "Local, modular AI masking for node-based compositing"
+description = "Local, modular AI tools for node-based compositing"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
