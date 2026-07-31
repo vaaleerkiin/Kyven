@@ -39,37 +39,27 @@ coordinates, processes it, and pastes the result back into the original full-siz
 For video, animate Manual ROI only when necessary. Auto ROI follows the mask independently on every
 frame, which is convenient but may vary the context seen by a frame-independent model.
 
-## Removing halos and patch edges
-
-The model mask and final blend mask are deliberately separate:
+## Model mask and compositing
 
 | Control | Default | Purpose |
 | --- | ---: | --- |
+| **Threshold** | 0.5 | Converts soft gray input pixels into the binary mask required by LaMa |
 | **Model Mask Grow** | 12 px | Removes the old antialiased object edge from model input |
-| **Blend Mask Grow** | 8 px | Covers the old fringe in the final composite |
-| **Blend Feather** | 4 px | Softens the generated-to-source transition |
 | **Edge Color Match** | 1.0 | Aligns the patch RGB to clean pixels around the mask |
 
-If a bright outline remains, first confirm that the incoming mask covers the complete object, then
-increase Model Mask Grow and Blend Mask Grow slightly. Increase Feather only after the old fringe is
-fully covered; excessive feather can mix the unwanted object edge back into the result.
+Threshold affects only gray pixels. A mask containing only pure black and white looks identical at
+every threshold between those two values. Lower Threshold includes more gray pixels; higher
+Threshold includes fewer. Model Mask Grow then expands or erodes that binary area.
 
-Pixels outside the blend mask remain identical to Source. Two mutually exclusive checkboxes beside
-the preprocessing toggle temporarily override the node output. **Preview Model Mask** shows the
-exact binary mask sent to LaMa and reacts to Threshold and Model Grow. **Preview Blend Mask** shows
-the soft composite mask and reacts to Threshold, Blend Grow, and Feather. Both update on the CPU
-without running LaMa. **Difference** displays all RGB modifications after processing.
+**Preview Model Mask** temporarily overrides the node output with the exact binary mask sent to
+LaMa. It is opt-in: when neither the checkbox nor the matching Output mode is active, Kyven performs
+no preview export or server request. This keeps mask preview work out of normal Inpaint renders.
 
-`Preprocess Input Mask` is enabled by default. In this mode Invert, Threshold, Model Mask Grow,
-Blend Mask Grow, and Blend Feather prepare the input. Disable it to bypass all five operations:
-Kyven preserves the clean soft input mask for compositing and performs only the mandatory 0.5
-binary conversion required by LaMa internally. The irrelevant controls are hidden while bypassed.
-Changing these controls updates both mask previews on the CPU and never runs LaMa or opens a
-progress window.
-
-The blend mask is intentionally separate from the model mask. LaMa needs a hard area to replace,
-while compositing needs a controllable soft edge; using the hard model mask for both commonly leaves
-a visible seam or bright fringe.
+`Preprocess Input Mask` is enabled by default. In this mode Invert, Threshold, and Model Mask Grow
+prepare the model input. The clean soft input mask is always used for the default Result composite.
+Disable preprocessing to bypass Invert, Threshold, and Grow; only LaMa's mandatory 0.5 binary
+conversion remains. For custom edge treatment, select **Generated Patch** and combine it with Source using
+ordinary Nuke mask-processing nodes and Merge.
 
 ## Processing modes
 
@@ -86,17 +76,18 @@ stabilization in the current node.
 
 | Output | Result |
 | --- | --- |
-| **Result** | Reconstructed RGB with Source alpha; default |
-| **Patch** | Reconstructed RGB premultiplied by Blend Mask |
+| **Result** | Final reconstructed RGB with opaque alpha |
+| **Result + Source Alpha** | Final RGB carrying Source alpha; default |
+| **Result Premult** | Result + Source Alpha after Premult |
+| **Generated Patch** | Full-format uncomposited model RGB; use with an external mask and Merge |
 | **Model Mask Preview** | CPU-only binary mask sent to LaMa |
-| **Blend Mask** | Exact soft mask used for the final composite |
 | **Difference** | Absolute change between Result and Source |
 | **Source** | Unchanged bypass |
 
 ## Cache
 
-Every Inpaint node stores exported inputs, `inpaint_result.%04d.png`, and
-`inpaint_processed_mask.%04d.png` under its UUID folder.
+Every Inpaint node stores exported inputs, `inpaint_result.%04d.png`, the full-format
+`inpaint_patch.%04d.png`, and its clean composite mask under its UUID folder.
 
 - **Create Result Read** creates a normal Nuke Read for the cached frame or sequence.
 - **Delete Node Cache** removes only this Inpaint node's generated files.

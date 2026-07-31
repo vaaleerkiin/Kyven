@@ -54,13 +54,13 @@ Use Stop followed by Start after updating Kyven or when a stale worker remains i
 For a focused control-by-control guide, see [Kyven Inpaint](INPAINT.md).
 
 Connect Source to input 0 and a removal mask to input 1. Choose Alpha or Red for the mask channel.
-`Auto` Crop Mode finds the thresholded mask bounds and adds Context Padding; `Manual` exposes an
+`Auto` Crop Mode finds the model-mask bounds and adds Context Padding; `Manual` exposes an
 animatable ROI; `Full` sends the complete frame. Grow gives the model enough area to replace object
-edges. `Model Mask Grow` affects what LaMa replaces; `Blend Mask Grow` and `Blend Feather` are a
-separate, usually tighter final composite mask. This separation prevents generated edge colors
-from creating a bright halo. Negative values erode. Threshold and Invert normalize different mask
-conventions. Only the processed blend mask is pasted over
-Source, so pixels outside it are preserved. LaMa ONNX works on CPU and does not consume the 4 GB GPU
+edges. `Model Mask Grow` affects what LaMa replaces; negative values erode. Threshold converts soft
+gray input pixels into LaMa's binary model mask. Pure black/white masks do not visibly change when
+Threshold moves. The clean soft input mask composites the default Result. Use the uncomposited
+Generated Patch output with external mask processing and Merge when custom edge treatment is needed. LaMa
+ONNX works on CPU and does not consume the 4 GB GPU
 budget. Its fixed 512-square input uses aspect-preserving letterboxing, so a tight ROI improves
 effective detail without stretching the shot. Big-LaMa Native instead preserves ROI resolution and
 is preferable when the fixed input loses texture detail. New nodes combine Source RGB and Mask alpha into one
@@ -207,18 +207,17 @@ Typical files include exported source frames, displayed `matte.%04d.png`, CPU-pr
 `raw_tracked_matte.%04d.png`. Refine nodes add fast lossless `refine_source.%04d.tif`,
 `refine_mask.%04d.png`, `refined_matte.%04d.png`, exact processed trimaps, and lightweight
 `trimap_preview` files under their own UUID folder. Inpaint adds source, mask, and full-format
-`inpaint_result.%04d.png` and exact `inpaint_processed_mask.%04d.png` files. Inpaint outputs include
-Result, premultiplied Patch, CPU-only Model Mask Preview, Blend Mask, Difference, and Source.
+`inpaint_result.%04d.png`, `inpaint_patch.%04d.png`, and the clean composite-mask files. Inpaint
+outputs include opaque Result, default Result + Source Alpha, Result Premult, uncomposited Generated
+Patch, CPU-only Model Mask Preview, Difference, and Source.
 Disable **Preprocess Input Mask** to use the untouched soft input for compositing; the preview still
-shows the unavoidable binary mask supplied to LaMa. **Preview Model Mask** and **Preview Blend
-Mask**, placed beside the preprocessing toggle, are mutually exclusive live output overrides. Model
-preview reacts to Threshold/Model Grow; blend preview reacts to Threshold/Blend Grow/Feather.
+shows the unavoidable binary mask supplied to LaMa. **Preview Model Mask** is the only live mask
+override and reacts to Threshold and Model Grow without running LaMa.
 
 Inpaint offers two model choices. `LaMa ONNX Fast` is CPU-friendly and uses a fixed 512 model input,
 so it is the better Live option. `Big-LaMa Native` processes the selected ROI at native detail
 (internally padded only to a multiple of 8), which is slower but normally produces cleaner large
-repairs. The default Model Grow 12 / Blend Grow 8 / Feather 4 combination removes antialiased
-object fringes instead of leaving a bright outline. `Edge Color Match` aligns the patch with nearby
+repairs. The default Model Grow 12 removes antialiased object edges from the model input. `Edge Color Match` aligns the patch with nearby
 clean RGB; lower it only when deliberate brightness changes inside the repaired area are desired.
 
 - `Create Matte Read` creates a normal Nuke Read pointing to the current cached matte or sequence.
@@ -229,7 +228,7 @@ clean RGB; lower it only when deliberate brightness changes inside the repaired 
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18780` and requires API 17. A
+The adapter starts an external hidden Python process on `127.0.0.1:18781` and requires API 18. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

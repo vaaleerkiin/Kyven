@@ -31,10 +31,8 @@ def prepare_inpaint_masks(
     invert: bool,
     threshold: float,
     model_grow: int,
-    blend_grow: int,
-    blend_feather: float,
 ) -> tuple[NDArray[np.uint8], NDArray[np.uint8]]:
-    """Return the binary model mask and final soft composite mask."""
+    """Return the binary model mask and clean soft input mask for compositing."""
 
     source = np.asarray(mask, dtype=np.uint8)
     if not preprocess:
@@ -42,12 +40,4 @@ def prepare_inpaint_masks(
     interpreted = 255 - source if invert else source
     binary = np.where(interpreted >= round(float(threshold) * 255.0), 255, 0).astype(np.uint8)
     model_mask = grow_mask(binary, int(model_grow))
-    blend_mask = grow_mask(binary, int(blend_grow))
-    if blend_feather:
-        blend_mask = np.asarray(
-            Image.fromarray(blend_mask, mode="L").filter(
-                ImageFilter.GaussianBlur(float(blend_feather))
-            ),
-            dtype=np.uint8,
-        )
-    return model_mask, blend_mask
+    return model_mask, interpreted.copy()

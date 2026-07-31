@@ -101,9 +101,9 @@ class NukePayloadTests(unittest.TestCase):
 
     def test_listener_pid_parser_uses_only_exact_listening_port(self) -> None:
         output = """
-          TCP    127.0.0.1:18780    0.0.0.0:0    LISTENING    17020
+          TCP    127.0.0.1:18781    0.0.0.0:0    LISTENING    17020
           TCP    127.0.0.1:18777    0.0.0.0:0    LISTENING    999
-          TCP    127.0.0.1:18780    127.0.0.1:50000    TIME_WAIT    0
+          TCP    127.0.0.1:18781    127.0.0.1:50000    TIME_WAIT    0
         """
 
         self.assertEqual(_listener_pids(output), (17020,))
@@ -261,9 +261,10 @@ class NukePayloadTests(unittest.TestCase):
             INPAINT_OUTPUT_MODES,
             (
                 "Result",
-                "Patch",
+                "Result + Source Alpha",
+                "Result Premult",
+                "Generated Patch",
                 "Model Mask Preview",
-                "Blend Mask",
                 "Difference",
                 "Source",
             ),
@@ -272,17 +273,20 @@ class NukePayloadTests(unittest.TestCase):
     def test_inpaint_payload_includes_processed_mask_controls(self) -> None:
         payload = inpaint_payload(
             source="D:/source.tif", mask="D:/mask.png", output="D:/result.png",
-            mask_output="D:/processed.png", model_index=0, profile="balanced",
+            mask_output="D:/processed.png", patch_output="D:/patch.png",
+            model_index=0, profile="balanced",
             image_width=1920, image_height=1080, crop_mode="manual",
             roi=(10, 20, 300, 400), context_padding=96, mask_grow=-2,
-            blend_grow=1, mask_feather=3.5, edge_color_match=0.75, mask_threshold=0.25,
+            edge_color_match=0.75, mask_threshold=0.25,
             invert_mask=True, mask_channel="alpha", processing_size=0,
         )
         self.assertEqual(payload["model_id"], "lama-2025jan-onnx")
         self.assertEqual(payload["mask_output"], "D:/processed.png")
+        self.assertEqual(payload["patch_output"], "D:/patch.png")
         self.assertEqual(payload["roi"]["y0"], 680.0)
         self.assertEqual(payload["mask_grow"], -2)
-        self.assertEqual(payload["blend_grow"], 1)
+        self.assertNotIn("blend_grow", payload)
+        self.assertNotIn("mask_feather", payload)
         self.assertEqual(payload["edge_color_match"], 0.75)
         self.assertEqual(payload["mask_channel"], "alpha")
         self.assertTrue(payload["invert_mask"])

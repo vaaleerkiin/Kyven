@@ -303,21 +303,22 @@ class JobManager:
         output = Path(str(payload["output"]))
         mask_output_value = payload.get("mask_output")
         mask_output = Path(str(mask_output_value)) if mask_output_value else None
-        if not source.is_absolute() or not mask.is_absolute() or not output.is_absolute() or (mask_output is not None and not mask_output.is_absolute()):
+        patch_output_value = payload.get("patch_output")
+        patch_output = Path(str(patch_output_value)) if patch_output_value else None
+        if not source.is_absolute() or not mask.is_absolute() or not output.is_absolute() or (mask_output is not None and not mask_output.is_absolute()) or (patch_output is not None and not patch_output.is_absolute()):
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Inpaint job paths must be absolute.")
         return InpaintRequest(
             source=source,
             mask=mask,
             output=output,
             mask_output=mask_output,
+            patch_output=patch_output,
             provider_id=str(payload.get("model_id", "lama-2025jan-onnx")),
             profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
             crop_mode=str(payload.get("crop_mode", "auto")),
             roi=JobManager._box_from_payload(payload, "roi"),
             context_padding=int(payload.get("context_padding", 128)),
             mask_grow=int(payload.get("mask_grow", 12)),
-            blend_grow=int(payload.get("blend_grow", 8)),
-            mask_feather=float(payload.get("mask_feather", 4.0)),
             edge_color_match=float(payload.get("edge_color_match", 1.0)),
             mask_threshold=float(payload.get("mask_threshold", 0.5)),
             invert_mask=bool(payload.get("invert_mask", False)),
@@ -500,6 +501,9 @@ class JobManager:
                     "output": str(result.output),
                     "mask_output": (
                         str(result.mask_output) if result.mask_output is not None else None
+                    ),
+                    "patch_output": (
+                        str(result.patch_output) if result.patch_output is not None else None
                     ),
                     "cache_key": result.cache_key,
                     "metadata": result.metadata,

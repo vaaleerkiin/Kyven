@@ -36,13 +36,15 @@ class InpaintServiceTests(unittest.TestCase):
 
     def test_auto_roi_and_masked_merge_preserve_outside(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory); source = root / "source.png"; mask = root / "mask.png"; output = root / "output.png"
+            root = Path(directory); source = root / "source.png"; mask = root / "mask.png"; output = root / "output.png"; patch = root / "patch.png"
             Image.fromarray(np.full((20, 30, 3), 50, dtype=np.uint8)).save(source)
             pixels = np.zeros((20, 30), dtype=np.uint8); pixels[8:12, 13:17] = 255; Image.fromarray(pixels).save(mask)
             provider = FakeInpaintProvider()
-            result = InpaintService(self._registry(provider)).run(InpaintRequest(source, mask, output, provider_id="fake", context_padding=2, mask_grow=0, blend_grow=0, mask_feather=0, edge_color_match=0))
+            result = InpaintService(self._registry(provider)).run(InpaintRequest(source, mask, output, patch_output=patch, provider_id="fake", context_padding=2, mask_grow=0, edge_color_match=0))
             rendered = np.asarray(Image.open(output).convert("RGB"))
+            rendered_patch = np.asarray(Image.open(patch).convert("RGB"))
             self.assertTrue(np.all(rendered[0, 0] == 50)); self.assertTrue(np.all(rendered[9, 14] == (255, 0, 0)))
+            self.assertTrue(np.all(rendered_patch[0, 0] == 50)); self.assertTrue(np.all(rendered_patch[7, 12] == (255, 0, 0)))
             self.assertEqual(result.metadata["processing_roi"]["width"], 8)
             self.assertEqual(Image.open(provider.requests[0].source).size if provider.requests[0].source.exists() else (8, 8), (8, 8))
 
@@ -63,7 +65,7 @@ class InpaintServiceTests(unittest.TestCase):
             result = InpaintService(self._registry(provider)).run(InpaintRequest(source, mask, output, provider_id="fake", crop_mode="manual", roi=BoxPrompt(0, 0, 5, 5)))
             self.assertTrue(result.metadata["empty_mask"]); self.assertFalse(provider.requests)
 
-    def test_invert_erode_and_processed_mask_output(self) -> None:
+    def test_invert_keeps_clean_soft_composite_mask(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); source = root / "source.png"; mask = root / "mask.png"
             output = root / "output.png"; processed = root / "processed.png"
@@ -72,12 +74,11 @@ class InpaintServiceTests(unittest.TestCase):
             Image.fromarray(pixels).save(mask); provider = FakeInpaintProvider()
             result = InpaintService(self._registry(provider)).run(InpaintRequest(
                 source, mask, output, mask_output=processed, provider_id="fake",
-                invert_mask=True, mask_grow=-1, blend_grow=-1,
-                mask_feather=0, context_padding=0,
+                invert_mask=True, mask_grow=-1, context_padding=0,
             ))
             processed_pixels = np.asarray(Image.open(processed))
             self.assertEqual(result.mask_output, processed)
-            self.assertEqual(int(np.count_nonzero(processed_pixels)), 36)
+            self.assertEqual(int(np.count_nonzero(processed_pixels)), 64)
 
     def test_rgba_source_can_supply_mask_alpha_in_one_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -90,7 +91,6 @@ class InpaintServiceTests(unittest.TestCase):
             InpaintService(self._registry(provider)).run(InpaintRequest(
                 combined, combined, output, mask_output=processed, provider_id="fake",
                 mask_channel="alpha", context_padding=0, mask_grow=0,
-                blend_grow=0, mask_feather=0,
             ))
             self.assertEqual(int(np.count_nonzero(np.asarray(Image.open(processed)))), 16)
             self.assertEqual(len(provider.requests), 1)
@@ -105,7 +105,7 @@ class InpaintServiceTests(unittest.TestCase):
             provider = FakeInpaintProvider()
             result = InpaintService(self._registry(provider)).run(InpaintRequest(
                 source, mask, output, provider_id="fake", context_padding=8,
-                mask_grow=0, blend_grow=0, mask_feather=0, edge_color_match=1,
+                mask_grow=0, edge_color_match=1,
             ))
             rendered = np.asarray(Image.open(output).convert("RGB"))
             np.testing.assert_array_equal(rendered[0, 0], (50, 50, 50))
@@ -137,8 +137,6 @@ class InpaintServiceTests(unittest.TestCase):
                     preprocess_mask=False,
                     invert_mask=True,
                     mask_grow=40,
-                    blend_grow=40,
-                    mask_feather=20,
                     edge_color_match=0,
                 )
             )

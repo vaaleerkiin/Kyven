@@ -99,15 +99,15 @@ class InpaintService:
             invert=request.invert_mask,
             threshold=request.mask_threshold,
             model_grow=request.mask_grow,
-            blend_grow=request.blend_grow,
-            blend_feather=request.mask_feather,
         )
         if not np.any(inference_full):
             _write_rgb_atomic(request.output, source_pixels)
+            if request.patch_output is not None:
+                _write_rgb_atomic(request.patch_output, source_pixels)
             if request.mask_output is not None:
                 write_mask_png_atomic(request.mask_output, np.zeros_like(mask_pixels))
             token.report_progress(1.0, "Mask is empty; Source copied unchanged")
-            return InpaintResult(request.output, request.mask_output, "empty-mask", {"empty_mask": True})
+            return InpaintResult(request.output, request.mask_output, request.patch_output, "empty-mask", {"empty_mask": True})
 
         if request.crop_mode == "manual":
             region = resolve_region(request.roi, source.width, source.height)  # type: ignore[arg-type]
@@ -132,14 +132,14 @@ class InpaintService:
             invert=request.invert_mask,
             threshold=request.mask_threshold,
             model_grow=request.mask_grow,
-            blend_grow=request.blend_grow,
-            blend_feather=request.mask_feather,
         )
         if not np.any(inference_mask):
             _write_rgb_atomic(request.output, source_pixels)
+            if request.patch_output is not None:
+                _write_rgb_atomic(request.patch_output, source_pixels)
             if request.mask_output is not None:
                 write_mask_png_atomic(request.mask_output, np.zeros_like(mask_pixels))
-            return InpaintResult(request.output, request.mask_output, "empty-roi-mask", {"empty_mask": True})
+            return InpaintResult(request.output, request.mask_output, request.patch_output, "empty-roi-mask", {"empty_mask": True})
 
         provider = self._registry.activate(request.provider_id)
         capabilities = provider.capabilities
@@ -172,6 +172,10 @@ class InpaintService:
         full_merge_mask[region.y0 : region.y1, region.x0 : region.x1] = np.asarray(merge_mask)
         if request.mask_output is not None:
             write_mask_png_atomic(request.mask_output, full_merge_mask)
+        full_patch = source_pixels.copy()
+        full_patch[region.y0 : region.y1, region.x0 : region.x1] = predicted
+        if request.patch_output is not None:
+            _write_rgb_atomic(request.patch_output, full_patch)
         merged_crop = np.clip(original_crop * (1.0 - alpha) + predicted * alpha, 0, 255).astype(np.uint8)
         output = source_pixels.copy()
         output[region.y0 : region.y1, region.x0 : region.x1] = merged_crop
@@ -187,6 +191,7 @@ class InpaintService:
         return InpaintResult(
             request.output,
             request.mask_output,
+            request.patch_output,
             request.cache_key(capabilities.provider_version, capabilities.model_checksum),
             metadata,
         )
