@@ -19,6 +19,9 @@ MODEL_LABELS = (
     "SAM 2.1 Large (12 GB+)",
 )
 
+REFINE_MODEL_IDS = ("vitmatte-small-composition-1k",)
+REFINE_MODEL_LABELS = ("ViTMatte Small (4 GB+, recommended for 8 GB)",)
+
 
 def point(x: float, nuke_y: float, image_height: int, label: str) -> dict[str, Any]:
     """Convert Nuke's bottom-left Y coordinate to image top-left coordinates."""
@@ -30,10 +33,25 @@ def point(x: float, nuke_y: float, image_height: int, label: str) -> dict[str, A
     }
 
 
+def roi_box(
+    box: tuple[float, float, float, float], image_height: int
+) -> dict[str, float]:
+    """Convert a Nuke bottom-left BBox into a top-left Processing ROI."""
+
+    x0, y0, x1, y1 = box
+    return {
+        "x0": float(x0),
+        "y0": float(image_height) - float(y1),
+        "x1": float(x1),
+        "y1": float(image_height) - float(y0),
+    }
+
+
 def segment_payload(
     *,
     source: str,
     output: str,
+    raw_output: str | None = None,
     model_index: int,
     profile: str,
     image_height: int,
@@ -48,16 +66,11 @@ def segment_payload(
     points.extend(point(*xy, image_height, "negative") for xy in negative_points)
     roi_payload = None
     if box_enabled:
-        x0, y0, x1, y1 = box
-        roi_payload = {
-            "x0": float(x0),
-            "y0": float(image_height) - float(y1),
-            "x1": float(x1),
-            "y1": float(image_height) - float(y0),
-        }
+        roi_payload = roi_box(box, image_height)
     return {
         "source": source,
         "output": output,
+        "raw_output": raw_output,
         "model_id": MODEL_IDS[model_index],
         "profile": profile,
         "points": points,
@@ -73,6 +86,7 @@ def segment_video_payload(
     *,
     frames_dir: str,
     output_pattern: str,
+    raw_output_pattern: str | None = None,
     model_index: int,
     profile: str,
     image_height: int,
@@ -86,10 +100,12 @@ def segment_video_payload(
     direction: str,
     fill_holes: bool = True,
     max_hole_area: int = 2_048,
+    animated_rois: Sequence[tuple[int, tuple[float, float, float, float]]] = (),
 ) -> dict[str, Any]:
     image_payload = segment_payload(
         source="unused",
         output="unused",
+        raw_output=None,
         model_index=model_index,
         profile=profile,
         image_height=image_height,
@@ -103,11 +119,16 @@ def segment_video_payload(
     return {
         "frames_dir": frames_dir,
         "output_pattern": output_pattern,
+        "raw_output_pattern": raw_output_pattern,
         "model_id": image_payload["model_id"],
         "profile": profile,
         "points": image_payload["points"],
         "box": None,
-        "roi": image_payload["roi"],
+        "roi": None if animated_rois else image_payload["roi"],
+        "rois": [
+            {"frame": int(frame), **roi_box(frame_box, image_height)}
+            for frame, frame_box in animated_rois
+        ],
         "first_frame": int(first_frame),
         "last_frame": int(last_frame),
         "key_frame": int(key_frame),
@@ -116,4 +137,46 @@ def segment_video_payload(
         "offload_state_to_cpu": True,
         "fill_holes": image_payload["fill_holes"],
         "max_hole_area": image_payload["max_hole_area"],
+    }
+
+
+def refine_payload(
+    *,
+    source: str,
+    mask: str,
+    output: str,
+    trimap_output: str | None,
+    model_index: int,
+    profile: str,
+    image_height: int,
+    roi_enabled: bool,
+    roi: tuple[float, float, float, float],
+    generate_trimap: bool,
+    foreground_radius: int,
+    background_radius: int,
+    tile_size: int = 0,
+    tile_overlap: int = 64,
+) -> dict[str, Any]:
+    roi_payload = None
+    if roi_enabled:
+        x0, y0, x1, y1 = roi
+        roi_payload = {
+            "x0": float(x0),
+            "y0": float(image_height) - float(y1),
+            "x1": float(x1),
+            "y1": float(image_height) - float(y0),
+        }
+    return {
+        "source": source,
+        "mask": mask,
+        "output": output,
+        "trimap_output": trimap_output,
+        "model_id": REFINE_MODEL_IDS[model_index],
+        "profile": profile,
+        "roi": roi_payload,
+        "generate_trimap": bool(generate_trimap),
+        "foreground_radius": int(foreground_radius),
+        "background_radius": int(background_radius),
+        "tile_size": int(tile_size),
+        "tile_overlap": int(tile_overlap),
     }

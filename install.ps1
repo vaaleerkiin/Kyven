@@ -80,6 +80,7 @@ function Select-Models {
         [pscustomobject]@{ Number = "2"; Id = "sam2.1-small"; Label = "SAM 2.1 Small"; Guidance = "6 GB, recommended for 8 GB" },
         [pscustomobject]@{ Number = "3"; Id = "sam2.1-base-plus"; Label = "SAM 2.1 Base+"; Guidance = "8-12 GB VRAM" },
         [pscustomobject]@{ Number = "4"; Id = "sam2.1-large"; Label = "SAM 2.1 Large"; Guidance = "12+ GB VRAM" },
+        [pscustomobject]@{ Number = "5"; Id = "vitmatte-small-composition-1k"; Label = "ViTMatte Small"; Guidance = "4 GB+, refinement" },
         [pscustomobject]@{ Number = "0"; Id = "none"; Label = "No model"; Guidance = "install runtime only" }
     )
 
@@ -89,9 +90,9 @@ function Select-Models {
         Write-Host "  $($Choice.Number)) $($Choice.Label) - $($Choice.Guidance)"
     }
     Write-Host ""
-    $Answer = Read-Host "Enter numbers separated by commas [2]"
+    $Answer = Read-Host "Enter numbers separated by commas [2,5]"
     if ([string]::IsNullOrWhiteSpace($Answer)) {
-        $Answer = "2"
+        $Answer = "2,5"
     }
 
     $Selected = @()
@@ -101,7 +102,7 @@ function Select-Models {
         }
         $Match = $Choices | Where-Object Number -eq $Part
         if (-not $Match) {
-            throw "Unknown model choice '$Part'. Run the installer again and enter 0-4."
+            throw "Unknown model choice '$Part'. Run the installer again and enter 0-5."
         }
         if ($Match.Id -eq "none") {
             $AnswerParts = @($Answer -split "[,; ]+" | Where-Object { $_ })
@@ -118,7 +119,13 @@ function Select-Models {
 }
 
 function Resolve-RequestedModels([string[]]$RequestedModels) {
-    $Allowed = @("sam2.1-tiny", "sam2.1-small", "sam2.1-base-plus", "sam2.1-large")
+    $Allowed = @(
+        "sam2.1-tiny",
+        "sam2.1-small",
+        "sam2.1-base-plus",
+        "sam2.1-large",
+        "vitmatte-small-composition-1k"
+    )
     if (-not $RequestedModels -or $RequestedModels.Count -eq 0) {
         return @(Select-Models)
     }

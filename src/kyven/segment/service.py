@@ -33,12 +33,16 @@ class SegmentService:
         request.validate()
         token = cancellation or CancellationToken()
         token.raise_if_cancelled()
+        token.report_progress(0.05, "Preparing segmentation")
         provider = self._registry.activate(request.provider_id)
         capabilities = provider.capabilities
         prediction = self._predict(provider, request, token)
         token.raise_if_cancelled()
+        token.report_progress(0.90, "Post-processing matte")
 
         mask = np.asarray(prediction.mask)
+        if request.raw_output is not None:
+            write_mask_png_atomic(request.raw_output, mask)
         metadata = dict(prediction.metadata)
         if request.fill_holes:
             filled = fill_enclosed_holes(mask, request.max_hole_area)
@@ -50,6 +54,7 @@ class SegmentService:
                 "filled_pixels": filled.filled_pixels,
             }
         write_mask_png_atomic(request.output, mask)
+        token.report_progress(1.0, "Segmentation complete")
 
         cache_key = request.cache_key(
             provider_version=capabilities.provider_version,

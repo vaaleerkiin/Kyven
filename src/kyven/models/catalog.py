@@ -89,6 +89,7 @@ class ModelCatalog:
         )
 
     def registry(self, models_dir: Path, device: str) -> ProviderRegistry:
+        from kyven.refine.providers.vitmatte import VitMatteProvider
         from kyven.segment.providers.sam2 import Sam2Provider
 
         registry = ProviderRegistry()
@@ -98,6 +99,20 @@ class ModelCatalog:
                 lambda spec=spec: Sam2Provider(
                     checkpoint=str(spec.path(models_dir)),
                     model_config=spec.config,
+                    device=device,
+                    expected_checksum=spec.sha256,
+                    provider_id=spec.model_id,
+                    display_name=spec.display_name,
+                ),
+            )
+        resources = Path(__file__).parents[1] / "resources" / "models"
+        for spec in self.list("refine"):
+            registry.register(
+                spec.model_id,
+                lambda spec=spec: VitMatteProvider(
+                    checkpoint=str(spec.path(models_dir)),
+                    config=str(resources / spec.config),
+                    preprocessor_config=str(resources / "vitmatte-preprocessor.json"),
                     device=device,
                     expected_checksum=spec.sha256,
                     provider_id=spec.model_id,

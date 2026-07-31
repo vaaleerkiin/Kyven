@@ -24,6 +24,11 @@ sam2 = [
   "torch>=2.5.1",
   "torchvision>=0.20.1",
 ]
+vitmatte = [
+  "torch>=2.5.1",
+  "transformers==4.53.2",
+  "safetensors>=0.4.5,<1",
+]
 
 [project.scripts]
 kyven = "kyven.cli:main"

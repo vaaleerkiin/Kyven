@@ -45,7 +45,7 @@ def write_mask_png_atomic(output: Path, mask: np.ndarray) -> None:
             temporary_path.unlink(missing_ok=True)
         raise KyvenError(
             code=ErrorCode.OUTPUT_FAILED,
-            message=f"Could not write segmentation output: {output}",
+            message=f"Could not write mask output: {output}",
             technical_detail=str(exc),
             recoverable=True,
             suggested_action="Check the output path and available disk space.",

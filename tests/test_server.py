@@ -10,6 +10,9 @@ from PIL import Image
 from kyven.cancellation import CancellationToken
 from kyven.client import KyvenClient, KyvenClientError
 from kyven.models.catalog import ModelCatalog
+from kyven.refine.models import RefinementCapabilities, RefinePrediction, RefineRequest
+from kyven.refine.providers.base import RefinementProvider
+from kyven.refine.service import RefineService
 from kyven.segment.models import (
     ExecutionProfile,
     ProviderCapabilities,
@@ -67,19 +70,49 @@ class ServerSyntheticProvider(SegmentationProvider):
         )
 
 
+class ServerRefineProvider(RefinementProvider):
+    @property
+    def capabilities(self) -> RefinementCapabilities:
+        return RefinementCapabilities(
+            provider_id="vitmatte-small-composition-1k",
+            display_name="Synthetic Refine",
+            provider_version="1",
+            model_checksum="fixture",
+            license_name="CC0-1.0",
+            license_url="https://creativecommons.org/publicdomain/zero/1.0/",
+            supports_cpu=True,
+            supports_tiling=True,
+            minimum_vram_mb=0,
+        )
+
+    def predict(self, request: RefineRequest, cancellation: CancellationToken) -> RefinePrediction:
+        with Image.open(request.source) as image:
+            height, width = image.height, image.width
+        return RefinePrediction(np.full((height, width), 0.5, dtype=np.float32))
+
+    def unload(self) -> None:
+        return
+
+
 class ServerTests(unittest.TestCase):
     def test_authenticated_http_job_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source.png"
             output = root / "matte.png"
+            raw_output = root / "raw_matte.png"
             Image.new("RGB", (4, 4), "white").save(source)
             registry = ProviderRegistry()
             registry.register("sam2.1-small", ServerSyntheticProvider)
+            registry.register("vitmatte-small-composition-1k", ServerRefineProvider)
             token = "x" * 32
             server = KyvenServer(
                 ServerConfig(token=token, models_dir=root, port=0, available_vram_mb=8192),
-                JobManager(SegmentService(registry), VideoSegmentService(registry)),
+                JobManager(
+                    SegmentService(registry),
+                    VideoSegmentService(registry),
+                    RefineService(registry),
+                ),
                 registry,
                 ModelCatalog.builtin(),
             )
@@ -87,12 +120,13 @@ class ServerTests(unittest.TestCase):
             try:
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
                 self.assertEqual(client.health()["status"], "ok")
-                self.assertEqual(client.health()["api_version"], 4)
-                self.assertEqual(len(client.models()), 4)
+                self.assertEqual(client.health()["api_version"], 9)
+                self.assertEqual(len(client.models()), 5)
                 job_id = client.submit_segment(
                     {
                         "source": str(source.resolve()),
                         "output": str(output.resolve()),
+                        "raw_output": str(raw_output.resolve()),
                         "model_id": "sam2.1-small",
                         "points": [{"x": 2, "y": 2, "label": "positive"}],
                         "roi": {"x0": 1, "y0": 1, "x1": 3, "y1": 3},
@@ -100,7 +134,10 @@ class ServerTests(unittest.TestCase):
                 )
                 result = client.wait(job_id, timeout_seconds=5)
                 self.assertEqual(result["status"], "succeeded")
+                self.assertEqual(result["progress"], 1.0)
+                self.assertEqual(result["progress_message"], "Segmentation complete")
                 self.assertTrue(output.is_file())
+                self.assertTrue(raw_output.is_file())
                 with Image.open(output) as image_mask:
                     self.assertEqual(image_mask.size, (4, 4))
                     self.assertEqual(image_mask.getpixel((0, 0)), 0)
@@ -124,12 +161,70 @@ class ServerTests(unittest.TestCase):
                 )
                 video_result = client.wait(video_job_id, timeout_seconds=5)
                 self.assertEqual(video_result["status"], "succeeded")
+                self.assertEqual(video_result["progress"], 1.0)
+                self.assertEqual(video_result["progress_message"], "Propagation complete")
                 self.assertEqual(video_result["result"]["output_count"], 2)
                 self.assertTrue((root / "video_matte.0002.png").is_file())
                 with Image.open(root / "video_matte.0002.png") as video_mask:
                     self.assertEqual(video_mask.size, (4, 4))
                     self.assertEqual(video_mask.getpixel((0, 0)), 0)
                     self.assertEqual(video_mask.getpixel((1, 1)), 255)
+                preview_mask = np.ones((5, 5), dtype=np.uint8) * 255
+                preview_mask[2, 2] = 0
+                preview_source = root / "preview_raw.png"
+                preview_output = root / "preview_processed.png"
+                Image.fromarray(preview_mask, mode="L").save(preview_source)
+                postprocess = client.preview_mask_postprocess(
+                    {
+                        "source": str(preview_source.resolve()),
+                        "output": str(preview_output.resolve()),
+                        "fill_holes": True,
+                        "max_hole_area": 1,
+                    }
+                )
+                self.assertEqual(postprocess["filled_holes"], 1)
+                with Image.open(preview_output) as processed:
+                    self.assertEqual(processed.getpixel((2, 2)), 255)
+                trimap_mask = root / "trimap_mask.png"
+                trimap_preview = root / "trimap_preview.png"
+                mask_pixels = np.zeros((7, 7), dtype=np.uint8)
+                mask_pixels[2:5, 2:5] = 255
+                Image.fromarray(mask_pixels, mode="L").save(trimap_mask)
+                trimap_result = client.preview_trimap(
+                    {
+                        "mask": str(trimap_mask.resolve()),
+                        "output": str(trimap_preview.resolve()),
+                        "generate_trimap": True,
+                        "foreground_radius": 1,
+                        "background_radius": 1,
+                    }
+                )
+                self.assertTrue(trimap_result["generated"])
+                with Image.open(trimap_preview) as preview:
+                    self.assertEqual(preview.getpixel((3, 3)), 255)
+                    self.assertEqual(preview.getpixel((1, 3)), 128)
+                refine_output = root / "refined.png"
+                trimap_output = root / "trimap.png"
+                refine_job_id = client.submit_refine(
+                    {
+                        "source": str(source.resolve()),
+                        "mask": str(output.resolve()),
+                        "output": str(refine_output.resolve()),
+                        "trimap_output": str(trimap_output.resolve()),
+                        "model_id": "vitmatte-small-composition-1k",
+                        "generate_trimap": True,
+                        "foreground_radius": 1,
+                        "background_radius": 1,
+                        "tile_size": 0,
+                    }
+                )
+                refine_result = client.wait(refine_job_id, timeout_seconds=5)
+                self.assertEqual(refine_result["status"], "succeeded")
+                self.assertEqual(refine_result["progress"], 1.0)
+                self.assertEqual(refine_result["progress_message"], "Refinement complete")
+                self.assertTrue(refine_output.is_file())
+                self.assertEqual(refine_result["result"]["trimap_output"], str(trimap_output))
+                self.assertTrue(trimap_output.is_file())
                 with self.assertRaises(KyvenClientError):
                     KyvenClient(f"http://127.0.0.1:{server.port}", "y" * 32).health()
             finally:

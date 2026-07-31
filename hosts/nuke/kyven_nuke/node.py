@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,10 @@ MAX_PROMPT_POINTS = 32
 OUTPUT_MODES = ("Matte", "Source + Alpha", "Cutout", "Source (Bypass)")
 _range_cancellations: set[str] = set()
 _range_cancel_lock = threading.RLock()
+_progress_tasks: dict[str, Any] = {}
+_progress_lock = threading.RLock()
+_postprocess_lock = threading.RLock()
+_postprocess_revisions: dict[str, int] = {}
 
 
 def _nuke() -> Any:
@@ -55,10 +60,74 @@ def _point_count(node: Any, kind: str) -> int:
     return int(node[f"{kind}_point_count"].value())
 
 
-def _collect_points(node: Any, kind: str) -> list[tuple[float, float]]:
-    if not bool(node[f"{kind}_enabled"].value()):
+def _knob_value_at(knob: Any, frame: int, dimensions: int = 1) -> Any:
+    """Read an animated knob without changing Nuke's current frame."""
+
+    if dimensions == 1:
+        try:
+            return knob.valueAt(frame)
+        except (AttributeError, TypeError):
+            return knob.value()
+    values = []
+    for index in range(dimensions):
+        try:
+            values.append(float(knob.valueAt(frame, index)))
+        except (AttributeError, TypeError):
+            current = knob.value()
+            return tuple(float(value) for value in current[:dimensions])
+    return tuple(values)
+
+
+def _collect_points(node: Any, kind: str, frame: int | None = None) -> list[tuple[float, float]]:
+    enabled_knob = node[f"{kind}_enabled"]
+    enabled = enabled_knob.value() if frame is None else _knob_value_at(enabled_knob, frame)
+    if not bool(enabled):
         return []
-    return [tuple(node[name].value()) for name in _point_knob_names(kind, _point_count(node, kind))]
+    return [
+        tuple(node[name].value())
+        if frame is None
+        else _knob_value_at(node[name], frame, dimensions=2)
+        for name in _point_knob_names(kind, _point_count(node, kind))
+    ]
+
+
+def _bbox_at(node: Any, frame: int) -> tuple[float, float, float, float]:
+    return _knob_value_at(node["prompt_box"], frame, dimensions=4)
+
+
+def _start_progress(node_name: str, title: str, message: str) -> None:
+    task = _nuke().ProgressTask(title)
+    task.setMessage(message)
+    task.setProgress(0)
+    with _progress_lock:
+        _progress_tasks[node_name] = task
+
+
+def _update_progress(node_name: str, percent: int, message: str) -> None:
+    with _progress_lock:
+        task = _progress_tasks.get(node_name)
+    if task is not None:
+        task.setMessage(message)
+        task.setProgress(max(0, min(100, int(percent))))
+
+
+def _progress_cancelled(node_name: str) -> bool:
+    with _progress_lock:
+        task = _progress_tasks.get(node_name)
+    return bool(task is not None and task.isCancelled())
+
+
+def _finish_progress(node_name: str) -> None:
+    with _progress_lock:
+        _progress_tasks.pop(node_name, None)
+
+
+def _format_eta(elapsed: float, progress: float) -> str:
+    if progress <= 0.01:
+        return "calculating..."
+    remaining = max(0, round(elapsed * (1.0 - progress) / progress))
+    minutes, seconds = divmod(remaining, 60)
+    return f"{minutes}m {seconds:02d}s" if minutes else f"{seconds}s"
 
 
 def sync_prompt_visibility(node: Any | None = None) -> None:
@@ -87,13 +156,139 @@ def sync_prompt_visibility(node: Any | None = None) -> None:
 
 def prompt_knob_changed() -> None:
     nuke = _nuke()
-    if nuke.thisKnob().name() in {
+    knob_name = nuke.thisKnob().name()
+    if knob_name in {
         "positive_enabled",
         "negative_enabled",
         "box_enabled",
         "fill_holes",
     }:
         sync_prompt_visibility(nuke.thisNode())
+    node = nuke.thisNode()
+    if knob_name in {"fill_holes", "max_hole_area"}:
+        request_mask_postprocess(node)
+    from kyven_nuke.live import affects_live_result, request_live_update
+
+    if "kyven_live_frame" in node.knobs() and affects_live_result(knob_name, "segment"):
+        node["kyven_live_frame"].setValue(-2147483647)
+        request_live_update(node)
+
+
+def request_mask_postprocess(node: Any, delay_seconds: float = 0.18) -> None:
+    """Debounce post-process controls without submitting another SAM job."""
+
+    node_name = str(node.fullName())
+    with _postprocess_lock:
+        revision = _postprocess_revisions.get(node_name, 0) + 1
+        _postprocess_revisions[node_name] = revision
+    timer = threading.Timer(
+        delay_seconds,
+        _dispatch_mask_postprocess,
+        args=(node_name, revision),
+    )
+    timer.daemon = True
+    timer.start()
+
+
+def _dispatch_mask_postprocess(node_name: str, revision: int) -> None:
+    _nuke().executeInMainThread(_start_mask_postprocess, args=(node_name, revision))
+
+
+def _start_mask_postprocess(node_name: str, revision: int) -> None:
+    nuke = _nuke()
+    with _postprocess_lock:
+        if _postprocess_revisions.get(node_name) != revision:
+            return
+    node = nuke.toNode(node_name)
+    if node is None:
+        return
+    if nuke.executing() or bool(node["kyven_busy"].value()):
+        timer = threading.Timer(0.2, _dispatch_mask_postprocess, args=(node_name, revision))
+        timer.daemon = True
+        timer.start()
+        return
+    frame = int(nuke.frame())
+    _source_path, raw_matte_path, matte_path = _cache_paths(node, frame)
+    if not raw_matte_path.is_file():
+        tracked_raw = _cache_root(node) / f"raw_tracked_matte.{frame:04d}.png"
+        tracked_matte = _cache_root(node) / f"tracked_matte.{frame:04d}.png"
+        if tracked_raw.is_file():
+            raw_matte_path = tracked_raw
+            matte_path = tracked_matte
+    if not raw_matte_path.is_file():
+        node["kyven_status"].setValue(
+            "Mask post-process is ready after SAM has created this frame once."
+        )
+        return
+    preview_path = matte_path.with_name(f"postprocess_preview.{frame:04d}.{revision}.png")
+    payload = {
+        "source": str(raw_matte_path.resolve()),
+        "output": str(preview_path.resolve()),
+        "fill_holes": bool(node["fill_holes"].value()),
+        "max_hole_area": int(node["max_hole_area"].value()),
+    }
+    threading.Thread(
+        target=_mask_postprocess_worker,
+        args=(node_name, revision, preview_path, matte_path, payload),
+        name="kyven-mask-postprocess",
+        daemon=True,
+    ).start()
+
+
+def _mask_postprocess_worker(
+    node_name: str,
+    revision: int,
+    preview_path: Path,
+    matte_path: Path,
+    payload: dict[str, Any],
+) -> None:
+    try:
+        result = ensure_server().preview_mask_postprocess(payload)
+        _nuke().executeInMainThread(
+            _apply_mask_postprocess,
+            args=(node_name, revision, preview_path, matte_path, result),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _nuke().executeInMainThread(
+            _set_status,
+            args=(node_name, f"Mask post-process preview failed: {exc}"),
+        )
+
+
+def _apply_mask_postprocess(
+    node_name: str,
+    revision: int,
+    preview_path: Path,
+    matte_path: Path,
+    result: dict[str, Any],
+) -> None:
+    with _postprocess_lock:
+        current = _postprocess_revisions.get(node_name)
+    if current != revision:
+        preview_path.unlink(missing_ok=True)
+        return
+    node = _nuke().toNode(node_name)
+    if node is None or not preview_path.is_file():
+        preview_path.unlink(missing_ok=True)
+        return
+    preview_path.replace(matte_path)
+    node.begin()
+    try:
+        matte = _nuke().toNode("KyvenMatteRead")
+        if matte is not None and "reload" in matte.knobs():
+            matte["reload"].execute()
+    finally:
+        node.end()
+    filled = int(result.get("filled_holes", 0))
+    node["kyven_status"].setValue(
+        f"Mask post-process updated instantly | filled {filled} hole(s)"
+    )
+
+
+def _set_busy(node_name: str, busy: bool) -> None:
+    node = _nuke().toNode(node_name)
+    if node is not None and "kyven_busy" in node.knobs():
+        node["kyven_busy"].setValue(busy)
 
 
 def add_point(kind: str) -> None:
@@ -161,6 +356,9 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
     node = nuke.toNode(node_name)
     if node is None:
         return
+    if job["status"] == "cancelled":
+        node["kyven_status"].setValue("Segmentation cancelled.")
+        return
     if job["status"] != "succeeded":
         error = job.get("error") or {}
         node["kyven_status"].setValue(f"Failed: {error.get('message', job['status'])}")
@@ -227,10 +425,14 @@ def _submit_and_wait(node_name: str, payload: dict[str, Any]) -> None:
         nuke.executeInMainThread(_apply_result, args=(node_name, job))
     except Exception as exc:  # noqa: BLE001 - background boundary must report to the host UI
         nuke.executeInMainThread(_set_status, args=(node_name, f"Failed: {exc}"))
+    finally:
+        nuke.executeInMainThread(_set_busy, args=(node_name, False))
 
 
 def _submit_video_and_wait(node_name: str, payload: dict[str, Any]) -> None:
     nuke = _nuke()
+    started = time.monotonic()
+    cancellation_sent = False
     try:
         client = ensure_server()
         job_id = client.submit_video(payload)
@@ -239,10 +441,37 @@ def _submit_video_and_wait(node_name: str, payload: dict[str, Any]) -> None:
             _set_status,
             args=(node_name, "SAM 2 is propagating the key-frame mask..."),
         )
-        job = client.wait(job_id, timeout_seconds=3600.0)
+        while True:
+            job = client.job(job_id)
+            server_progress = float(job.get("progress", 0.0))
+            message = str(job.get("progress_message") or "SAM 2 video tracking")
+            eta = _format_eta(time.monotonic() - started, server_progress)
+            nuke.executeInMainThread(
+                _update_progress,
+                args=(node_name, 25 + round(server_progress * 74), f"{message} | ETA {eta}"),
+            )
+            cancelled = nuke.executeInMainThreadWithResult(
+                _progress_cancelled,
+                args=(node_name,),
+            )
+            if cancelled and not cancellation_sent:
+                client.cancel(job_id)
+                cancellation_sent = True
+                nuke.executeInMainThread(
+                    _set_status,
+                    args=(node_name, "Cancelling SAM 2 propagation..."),
+                )
+            if job["status"] in ("succeeded", "failed", "cancelled"):
+                break
+            if time.monotonic() - started > 3600.0:
+                raise RuntimeError(f"Timed out waiting for Kyven job {job_id}.")
+            time.sleep(0.2)
         nuke.executeInMainThread(_apply_video_result, args=(node_name, job))
     except Exception as exc:  # noqa: BLE001 - background boundary must report to the host UI
         nuke.executeInMainThread(_set_status, args=(node_name, f"Propagation failed: {exc}"))
+    finally:
+        nuke.executeInMainThread(_finish_progress, args=(node_name,))
+        nuke.executeInMainThread(_set_busy, args=(node_name, False))
 
 
 def _range_cancelled(node_name: str) -> bool:
@@ -259,6 +488,7 @@ def _submit_range_and_wait(
 ) -> None:
     nuke = _nuke()
     scores: list[float] = []
+    started = time.monotonic()
     try:
         client = ensure_server()
         total = len(payloads)
@@ -275,7 +505,38 @@ def _submit_range_and_wait(
                 _set_status,
                 args=(node_name, f"Segmenting frame {frame} ({position}/{total})..."),
             )
-            job = client.wait(job_id)
+            cancellation_sent = False
+            while True:
+                job = client.job(job_id)
+                job_progress = float(job.get("progress", 0.0))
+                overall = (position - 1 + job_progress) / total
+                eta = _format_eta(time.monotonic() - started, overall)
+                nuke.executeInMainThread(
+                    _update_progress,
+                    args=(
+                        node_name,
+                        20 + round(overall * 79),
+                        f"Frame {frame} ({position}/{total}) | Segmenting | ETA {eta}",
+                    ),
+                )
+                cancelled = nuke.executeInMainThreadWithResult(
+                    _progress_cancelled,
+                    args=(node_name,),
+                )
+                if cancelled and not cancellation_sent:
+                    with _range_cancel_lock:
+                        _range_cancellations.add(node_name)
+                    client.cancel(job_id)
+                    cancellation_sent = True
+                if job["status"] in ("succeeded", "failed", "cancelled"):
+                    break
+                time.sleep(0.2)
+            if job["status"] == "cancelled":
+                nuke.executeInMainThread(
+                    _set_status,
+                    args=(node_name, f"Range cancelled at frame {frame}."),
+                )
+                return
             if job["status"] != "succeeded":
                 error = job.get("error") or {}
                 message = error.get("message", job["status"])
@@ -285,6 +546,14 @@ def _submit_range_and_wait(
                 )
                 return
             scores.append(float(job["result"]["score"]))
+            nuke.executeInMainThread(
+                _update_progress,
+                args=(
+                    node_name,
+                    20 + round(position / total * 79),
+                    f"Completed frame {frame} ({position}/{total})",
+                ),
+            )
         average_score = sum(scores) / len(scores)
         nuke.executeInMainThread(
             _apply_range_result,
@@ -295,6 +564,8 @@ def _submit_range_and_wait(
     finally:
         with _range_cancel_lock:
             _range_cancellations.discard(node_name)
+        nuke.executeInMainThread(_finish_progress, args=(node_name,))
+        nuke.executeInMainThread(_set_busy, args=(node_name, False))
 
 
 def _set_job_id(node_name: str, job_id: str) -> None:
@@ -429,25 +700,38 @@ def delete_all_cache() -> None:
     nuke.message(f"Kyven cache deleted. Updated {affected} Segment node(s).")
 
 
-def _cache_paths(node: Any, frame: int) -> tuple[Path, Path]:
+def _cache_paths(node: Any, frame: int) -> tuple[Path, Path, Path]:
     root = _cache_root(node)
-    return root / f"source.{frame:04d}.png", root / f"matte.{frame:04d}.png"
+    return (
+        root / f"source.{frame:04d}.png",
+        root / f"raw_matte.{frame:04d}.png",
+        root / f"matte.{frame:04d}.png",
+    )
 
 
-def _cache_patterns(node: Any) -> tuple[Path, Path]:
+def _cache_patterns(node: Any) -> tuple[Path, Path, Path]:
     root = _cache_root(node)
-    return root / "source.%04d.png", root / "matte.%04d.png"
+    return (
+        root / "source.%04d.png",
+        root / "raw_matte.%04d.png",
+        root / "matte.%04d.png",
+    )
 
 
-def _video_cache_paths(node: Any, first: int, last: int) -> tuple[Path, Path, Path]:
+def _video_cache_paths(
+    node: Any,
+    first: int,
+    last: int,
+) -> tuple[Path, Path, Path, Path]:
     root = _cache_root(node)
     frames_dir = root / f"sam2_video_{first}_{last}"
     frames_dir.mkdir(parents=True, exist_ok=True)
     for stale in frames_dir.glob("*.jpg"):
         stale.unlink(missing_ok=True)
     source_pattern = frames_dir / "%05d.jpg"
+    raw_output_pattern = root / "raw_tracked_matte.%04d.png"
     output_pattern = root / "tracked_matte.%04d.png"
-    return frames_dir, source_pattern, output_pattern
+    return frames_dir, source_pattern, raw_output_pattern, output_pattern
 
 
 def _path_for_frame(pattern: Path, frame: int) -> Path:
@@ -458,10 +742,17 @@ def _has_prompts(node: Any) -> bool:
     return bool(node["positive_enabled"].value() or node["negative_enabled"].value())
 
 
-def _payload_for_paths(node: Any, source: Any, source_path: Path, matte_path: Path) -> dict[str, Any]:
+def _payload_for_paths(
+    node: Any,
+    source: Any,
+    source_path: Path,
+    raw_matte_path: Path,
+    matte_path: Path,
+) -> dict[str, Any]:
     return segment_payload(
         source=str(source_path.resolve()),
         output=str(matte_path.resolve()),
+        raw_output=str(raw_matte_path.resolve()),
         model_index=int(node["model"].getValue()),
         profile=str(node["profile"].value()),
         image_height=int(source.height()),
@@ -500,20 +791,25 @@ def reset_prompts_to_input() -> None:
         nuke.message("Connect the Kyven Segment Source input first.")
 
 
-def process_current_frame() -> None:
+def process_current_frame(node: Any | None = None, live: bool = False) -> None:
     nuke = _nuke()
-    node = nuke.thisNode()
+    node = node or nuke.thisNode()
     source = node.input(0)
     if source is None:
-        nuke.message("Kyven Segment requires a Source input.")
+        if not live:
+            nuke.message("Kyven Segment requires a Source input.")
         return
     if not _has_prompts(node):
-        nuke.message("Enable at least one positive or negative point.")
+        if not live:
+            nuke.message("Enable at least one positive or negative point.")
+        return
+
+    if "kyven_busy" in node.knobs() and bool(node["kyven_busy"].value()):
         return
 
     frame = int(nuke.frame())
-    source_path, matte_path = _cache_paths(node, frame)
-    payload = _payload_for_paths(node, source, source_path, matte_path)
+    source_path, raw_matte_path, matte_path = _cache_paths(node, frame)
+    payload = _payload_for_paths(node, source, source_path, raw_matte_path, matte_path)
 
     writer = _inside(node, "KyvenSourceWrite")
     writer["file"].setValue(_nuke_file_path(source_path))
@@ -528,6 +824,10 @@ def process_current_frame() -> None:
         node["kyven_status"].setValue("Source export failed: PNG was not created.")
         return
     node["kyven_status"].setValue("Starting Kyven server...")
+    if "kyven_busy" in node.knobs():
+        node["kyven_busy"].setValue(True)
+    if "kyven_live_frame" in node.knobs():
+        node["kyven_live_frame"].setValue(frame)
     threading.Thread(
         target=_submit_and_wait,
         args=(node.fullName(), payload),
@@ -546,20 +846,39 @@ def process_frame_range() -> None:
     if not _has_prompts(node):
         nuke.message("Enable at least one positive or negative point.")
         return
+    if "kyven_busy" in node.knobs() and bool(node["kyven_busy"].value()):
+        return
     first = int(node["range_first"].value())
     last = int(node["range_last"].value())
     if last < first:
         nuke.message("Kyven frame range requires Last to be greater than or equal to First.")
         return
 
-    source_pattern, matte_pattern = _cache_patterns(node)
+    source_pattern, raw_matte_pattern, matte_pattern = _cache_patterns(node)
     writer = _inside(node, "KyvenSourceWrite")
     writer["file"].setValue(_nuke_file_path(source_pattern))
     total = last - first + 1
+    node_name = node.fullName()
+    _start_progress(node_name, "Kyven Segment Frame Range", "Preparing source export")
+    if "kyven_busy" in node.knobs():
+        node["kyven_busy"].setValue(True)
     node["kyven_status"].setValue(f"Exporting {total} source frames...")
     try:
-        nuke.execute(writer, first, last)
+        for position, frame in enumerate(range(first, last + 1), start=1):
+            if _progress_cancelled(node_name):
+                node["kyven_status"].setValue(f"Range cancelled before frame {frame}.")
+                _finish_progress(node_name)
+                node["kyven_busy"].setValue(False)
+                return
+            _update_progress(
+                node_name,
+                round(20 * (position - 1) / total),
+                f"Exporting frame {frame} ({position}/{total})",
+            )
+            nuke.execute(writer, frame, frame)
     except Exception as exc:  # noqa: BLE001 - host boundary must report useful context
+        _finish_progress(node_name)
+        node["kyven_busy"].setValue(False)
         node["kyven_status"].setValue(f"Range export failed: {exc}")
         nuke.message(f"Kyven range export failed:\n{exc}")
         return
@@ -568,12 +887,19 @@ def process_frame_range() -> None:
     for frame in range(first, last + 1):
         source_path = _path_for_frame(source_pattern, frame)
         if not source_path.is_file():
+            _finish_progress(node_name)
+            node["kyven_busy"].setValue(False)
             node["kyven_status"].setValue(f"Range export failed: frame {frame} was not created.")
             return
         matte_path = _path_for_frame(matte_pattern, frame)
-        payloads.append((frame, _payload_for_paths(node, source, source_path, matte_path)))
+        raw_matte_path = _path_for_frame(raw_matte_pattern, frame)
+        payloads.append(
+            (
+                frame,
+                _payload_for_paths(node, source, source_path, raw_matte_path, matte_path),
+            )
+        )
 
-    node_name = node.fullName()
     with _range_cancel_lock:
         _range_cancellations.discard(node_name)
     node["kyven_status"].setValue(f"Starting range {first}-{last}...")
@@ -603,6 +929,8 @@ def propagate_video(direction: str) -> None:
     if not _has_prompts(node):
         nuke.message("Enable at least one point on the key frame.")
         return
+    if "kyven_busy" in node.knobs() and bool(node["kyven_busy"].value()):
+        return
     if direction not in {"forward", "backward", "both"}:
         nuke.message(f"Unsupported SAM 2 propagation direction: {direction}")
         return
@@ -616,19 +944,53 @@ def propagate_video(direction: str) -> None:
         nuke.message("Key Frame must be inside Range First/Last.")
         return
 
-    frames_dir, source_pattern, output_pattern = _video_cache_paths(node, first, last)
+    positive_points = _collect_points(node, "positive", key_frame)
+    negative_points = _collect_points(node, "negative", key_frame)
+    if not positive_points and not negative_points:
+        nuke.message("Enable at least one point on the key frame.")
+        return
+    roi_enabled = bool(_knob_value_at(node["box_enabled"], key_frame))
+    key_roi = _bbox_at(node, key_frame)
+    animated_rois: list[tuple[int, tuple[float, float, float, float]]] = []
+    if roi_enabled:
+        roi_values = [(frame, _bbox_at(node, frame)) for frame in range(first, last + 1)]
+        if any(frame_roi != key_roi for _frame, frame_roi in roi_values):
+            animated_rois = roi_values
+
+    frames_dir, source_pattern, raw_output_pattern, output_pattern = _video_cache_paths(
+        node, first, last
+    )
     writer = _inside(node, "KyvenVideoWrite")
     writer["file"].setValue(_nuke_file_path(source_pattern))
     total = last - first + 1
+    node_name = node.fullName()
+    _start_progress(node_name, "Kyven SAM 2 Video Tracking", "Preparing frame export")
+    if "kyven_busy" in node.knobs():
+        node["kyven_busy"].setValue(True)
     node["kyven_status"].setValue(f"Exporting {total} tracking frames...")
     try:
-        nuke.execute(writer, first, last)
+        for position, frame in enumerate(range(first, last + 1), start=1):
+            if _progress_cancelled(node_name):
+                node["kyven_status"].setValue(f"Tracking cancelled before frame {frame}.")
+                _finish_progress(node_name)
+                node["kyven_busy"].setValue(False)
+                return
+            _update_progress(
+                node_name,
+                round(25 * (position - 1) / total),
+                f"Exporting frame {frame} ({position}/{total})",
+            )
+            nuke.execute(writer, frame, frame)
     except Exception as exc:  # noqa: BLE001 - host boundary must report useful context
+        _finish_progress(node_name)
+        node["kyven_busy"].setValue(False)
         node["kyven_status"].setValue(f"Tracking export failed: {exc}")
         nuke.message(f"Kyven tracking export failed:\n{exc}")
         return
     exported = list(frames_dir.glob("*.jpg"))
     if len(exported) != total:
+        _finish_progress(node_name)
+        node["kyven_busy"].setValue(False)
         node["kyven_status"].setValue(
             f"Tracking export failed: expected {total} JPEGs, found {len(exported)}."
         )
@@ -637,13 +999,14 @@ def propagate_video(direction: str) -> None:
     payload = segment_video_payload(
         frames_dir=str(frames_dir.resolve()),
         output_pattern=str(output_pattern.resolve()),
+        raw_output_pattern=str(raw_output_pattern.resolve()),
         model_index=int(node["model"].getValue()),
         profile=str(node["profile"].value()),
         image_height=int(source.height()),
-        positive_points=_collect_points(node, "positive"),
-        negative_points=_collect_points(node, "negative"),
-        box_enabled=bool(node["box_enabled"].value()),
-        box=tuple(node["prompt_box"].value()),
+        positive_points=positive_points,
+        negative_points=negative_points,
+        box_enabled=roi_enabled,
+        box=key_roi,
         first_frame=first,
         last_frame=last,
         key_frame=key_frame,
@@ -652,11 +1015,12 @@ def propagate_video(direction: str) -> None:
         max_hole_area=(
             int(node["max_hole_area"].value()) if "max_hole_area" in node.knobs() else 2_048
         ),
+        animated_rois=animated_rois,
     )
     node["kyven_status"].setValue("Starting SAM 2 video predictor...")
     threading.Thread(
         target=_submit_video_and_wait,
-        args=(node.fullName(), payload),
+        args=(node_name, payload),
         name="kyven-sam2-video",
         daemon=True,
     ).start()
@@ -690,7 +1054,7 @@ def refresh_models() -> None:
 
     def refresh() -> None:
         try:
-            models = ensure_server().models()
+            models = [model for model in ensure_server().models() if model.get("task") == "segment"]
             labels = []
             for model in models:
                 suffix = "installed" if model["installed"] else "not installed"
@@ -800,7 +1164,7 @@ def _restyle_node_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 4</font>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 9</font>'
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
@@ -821,6 +1185,7 @@ def _ensure_output_controls(node: Any) -> None:
             node,
             nuke.Enumeration_Knob("output_mode", "Output", list(OUTPUT_MODES)),
         )
+        node["output_mode"].setValue(1)
         help_text = nuke.Text_Knob(
             "output_help",
             "",
@@ -917,26 +1282,59 @@ def _ensure_cache_controls(node: Any) -> None:
 def _ensure_postprocess_controls(node: Any) -> None:
     """Add safe mask cleanup controls to a Segment node."""
     nuke = _nuke()
-    if "fill_holes" in node.knobs():
-        return
-    _add_section(nuke, node, "postprocess_section", "MASK POST-PROCESS")
-    fill_holes = nuke.Boolean_Knob("fill_holes", "Fill Enclosed Holes")
-    fill_holes.setValue(True)
-    _add_knob(nuke, node, fill_holes)
-    max_area = nuke.Int_Knob("max_hole_area", "Max Hole Area (px)")
-    max_area.setRange(0, 10_000_000)
-    max_area.setValue(2_048)
-    _add_knob(nuke, node, max_area)
-    _add_knob(
-        nuke,
-        node,
-        nuke.Text_Knob(
-            "postprocess_help",
-            "",
-            "Fills only enclosed black islands; the outer silhouette is unchanged. "
-            "Set 0 to fill all enclosed holes.",
-        ),
-    )
+    if "fill_holes" not in node.knobs():
+        _add_section(nuke, node, "postprocess_section", "MASK POST-PROCESS")
+        fill_holes = nuke.Boolean_Knob("fill_holes", "Fill Enclosed Holes")
+        fill_holes.setValue(True)
+        _add_knob(nuke, node, fill_holes)
+        max_area = nuke.Int_Knob("max_hole_area", "Max Hole Area (px)")
+        max_area.setValue(2_048)
+        _add_knob(nuke, node, max_area)
+        _add_knob(
+            nuke,
+            node,
+            nuke.Text_Knob(
+                "postprocess_help",
+                "",
+                "Fills only enclosed black islands; the outer silhouette is unchanged. "
+                "Set 0 to fill all enclosed holes.",
+            ),
+        )
+    node["max_hole_area"].setRange(0, 100_000)
+    node["max_hole_area"].setFlag(nuke.STARTLINE)
+    if "postprocess_help" in node.knobs():
+        node["postprocess_help"].setValue(
+            "CPU-only live preview from the cached raw SAM mask; changing this slider does not "
+            "run SAM again. Set 0 to fill all enclosed holes."
+        )
+
+
+def _ensure_live_controls(node: Any, kind: str = "segment") -> None:
+    """Add Live state while keeping old nodes upgradeable."""
+    nuke = _nuke()
+    if "live_mode" not in node.knobs():
+        live = nuke.Boolean_Knob("live_mode", "Live Current Frame")
+        live.setValue(False)
+        _add_knob(nuke, node, live)
+    for name, value in (
+        ("kyven_kind", kind),
+        ("kyven_live_frame", "-2147483647"),
+        ("kyven_busy", "0"),
+    ):
+        if name in node.knobs():
+            continue
+        if name == "kyven_busy":
+            knob = nuke.Boolean_Knob(name, name)
+            knob.setValue(False)
+        elif name == "kyven_live_frame":
+            knob = nuke.Int_Knob(name, name)
+            knob.setValue(int(value))
+        else:
+            knob = nuke.String_Knob(name, name)
+            knob.setValue(value)
+        knob.setVisible(False)
+        knob.clearFlag(nuke.STARTLINE)
+        node.addKnob(knob)
 
 
 def _upgrade_roi_controls(node: Any) -> None:
@@ -963,6 +1361,7 @@ def upgrade_selected_segment_node() -> None:
         _ensure_output_controls(node)
         _ensure_cache_controls(node)
         _ensure_postprocess_controls(node)
+        _ensure_live_controls(node)
         _upgrade_roi_controls(node)
         _restyle_node_ui(node)
         sync_prompt_visibility(node)
@@ -970,7 +1369,9 @@ def upgrade_selected_segment_node() -> None:
         nuke.message(f"Could not upgrade the selected node:\n{exc}")
         return
     if "kyven_status" in node.knobs():
-        node["kyven_status"].setValue("Kyven node UI upgraded. Existing matte was preserved.")
+        node["kyven_status"].setValue(
+            "Kyven node upgraded. Process once to create a raw matte for instant post-process."
+        )
 
 
 def create_segment_node() -> Any:
@@ -988,7 +1389,7 @@ def create_segment_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 4</font>',
+            '<font color="#91a3b0">SAM 2 | Local inference | API 9</font>',
         ),
     )
 
@@ -1099,6 +1500,16 @@ def create_segment_node() -> Any:
     _ensure_postprocess_controls(node)
 
     _add_section(nuke, node, "processing_section", "INDEPENDENT FRAME PROCESSING")
+    _ensure_live_controls(node)
+    _add_knob(
+        nuke,
+        node,
+        nuke.Text_Knob(
+            "live_help",
+            "",
+            "When enabled, changing the timeline processes the current frame asynchronously.",
+        ),
+    )
     _add_knob(
         nuke,
         node,
@@ -1179,6 +1590,7 @@ def create_segment_node() -> Any:
         node,
         nuke.Enumeration_Knob("output_mode", "Output", list(OUTPUT_MODES)),
     )
+    node["output_mode"].setValue(1)
     _add_knob(
         nuke,
         node,

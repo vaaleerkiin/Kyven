@@ -1,4 +1,4 @@
-# Kyven Segment for Nuke
+# Kyven for Nuke
 
 The Nuke adapter is a Group node that exports frames to the local Kyven Server and reads cached
 PNG mattes back into the graph. Nuke remains responsive while server inference runs.
@@ -14,7 +14,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 All runtime files stay inside that repository. The installer does not require administrator access,
 does not alter `PATH`, and does not edit Nuke settings. It prints the exact plugin path when done.
-Its console menu allows one or several SAM 2 models to be selected according to available VRAM.
+Its console menu allows one or several SAM 2 models plus ViTMatte to be selected according to
+available VRAM.
 Choose the final repository location before installing; after moving it, rerun `install.ps1`.
 
 ## Connect Nuke manually
@@ -27,14 +28,28 @@ import nuke
 nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 ```
 
-Set `KYVEN_ROOT` before starting Nuke if the repository is not located at `D:/Kyven`. Restart Nuke
-and choose `Kyven > Segment` from the Nodes menu.
+The adapter discovers the repository from its own installed plugin path, so the folder may be placed
+anywhere. `KYVEN_ROOT` is only an optional override for custom deployments. Restart Nuke and choose
+`Kyven > Segment` or `Kyven > Refine` from the Nodes menu.
 
-After updating Kyven, select an existing Segment node and choose
-`Kyven > Upgrade Selected Segment Node`. This preserves its UUID, cached matte, prompts, and input.
-A newly created node always receives the latest control order and styling.
+After updating Kyven, select an existing node and use the matching command:
 
-## Controls
+- `Kyven > Upgrade Selected Segment Node` preserves its UUID, cached matte, prompts, and input;
+- `Kyven > Upgrade Selected Refine Node` preserves its refined matte and adds current trimap outputs.
+
+A newly created node always receives the latest controls and output graph.
+
+## Live mode
+
+Both Segment and Refine have `Live Current Frame`. When enabled, moving to another timeline frame
+exports and submits that frame automatically. Only one GPU job runs at a time; rapid scrubbing does
+not create concurrent model copies. Editing a Segment point or Processing ROI also invalidates and
+regenerates the visible frame after a short debounce. Refine ROI changes do the same when Live is
+enabled. Trimap radii and Segment mask post-process settings use separate CPU-only previews and
+never rerun SAM or ViTMatte. Output-only controls do not rerun inference. Disable Live before
+rendering a range.
+
+## Segment controls
 
 ### Model and performance
 
@@ -95,9 +110,20 @@ not appropriate.
 
 Nuke exports high-quality temporary JPEG frames. Kyven creates one fresh SAM 2 tracking state,
 offloads frames and state to system RAM, propagates from the key frame, and writes lossless full-size
-PNG mattes. Corrections from multiple key frames are not implemented yet.
+PNG mattes. Points are evaluated explicitly on the selected key frame. An animated Processing ROI is
+evaluated separately on every frame without moving the timeline or changing its keyframes; Kyven
+crops each frame, normalizes the crop to the key-frame ROI size for tracking, then restores the matte
+to that frame's original full-size coordinates. The native Nuke progress window shows export and
+model stages, percentage, an estimated remaining time, and a Cancel control. Corrections from
+multiple key frames are not implemented yet.
+
+Points are used only to initialize the key frame and are checked only against that frame's ROI.
+Animated ROIs on later frames may move away from the original point; they guide only the per-frame
+crop and do not require the key-frame point to remain inside them.
 
 ## Output modes
+
+New Segment nodes default to `Source + Alpha`.
 
 | Mode | Result |
 | --- | --- |
@@ -108,6 +134,21 @@ PNG mattes. Corrections from multiple key frames are not implemented yet.
 
 Changing output mode uses native Nuke nodes and never reruns SAM.
 
+Refine has its own output list:
+
+| Mode | Result |
+| --- | --- |
+| `Refined Matte` | ViTMatte alpha in RGB and alpha |
+| `Source + Refined Alpha` | Original RGB with refined alpha; default |
+| `Refined Cutout` | Source premultiplied by refined alpha |
+| `Trimap` | Exact black / gray / white ViTMatte guidance in RGB and alpha |
+| `Source + Trimap Alpha` | Original RGB with the exact trimap in alpha |
+| `Trimap Cutout` | Source premultiplied by the trimap |
+| `Source (Bypass)` | Unchanged input |
+
+Trimap modes become exact after a Refine frame or range succeeds. Before the first result they show
+the selected input mask channel as a useful preview. Switching modes never reruns ViTMatte.
+
 ## Cache
 
 Each Segment node owns a UUID folder under:
@@ -116,8 +157,11 @@ Each Segment node owns a UUID folder under:
 D:/Kyven/.runtime/nuke_cache/<node-uuid>/
 ```
 
-Typical files include exported source frames, `matte.%04d.png`, video JPEGs, and
-`tracked_matte.%04d.png`.
+Typical files include exported source frames, displayed `matte.%04d.png`, CPU-preview source
+`raw_matte.%04d.png`, video JPEGs, `tracked_matte.%04d.png`, and
+`raw_tracked_matte.%04d.png`. Refine nodes add `refine_source.%04d.png`,
+`refine_mask.%04d.png`, `refined_matte.%04d.png`, exact processed trimaps, and lightweight
+`trimap_preview` files under their own UUID folder.
 
 - `Create Matte Read` creates a normal Nuke Read pointing to the current cached matte or sequence.
 - `Delete Node Cache` disconnects and removes only the current node's cache after confirmation.
@@ -126,7 +170,7 @@ Typical files include exported source frames, `matte.%04d.png`, video JPEGs, and
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:8768` and requires API 4. A
+The adapter starts an external hidden Python process on `127.0.0.1:18772` and requires API 9. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 
@@ -136,8 +180,9 @@ Server output for the latest launch is written to `.runtime/server.log`.
 
 - one object per Segment node;
 - no multi-key-frame tracking corrections yet;
-- range resumption and per-frame progress metadata are not complete;
-- Refine/ViTMatte is not implemented;
+- range resumption is not implemented yet;
+- Refine is frame-independent and has no temporal propagation yet;
 - the Nuke host adapter has been developed on Windows and still needs broader production testing.
 
-See [Troubleshooting](TROUBLESHOOTING.md) when the server does not start or a cached frame is missing.
+See [Installation](INSTALLATION.md), [Troubleshooting](TROUBLESHOOTING.md), and
+[Refine](REFINE.md) for the complete setup and trimap workflow.

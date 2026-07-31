@@ -77,6 +77,7 @@ class SegmentRequest:
     multimask_output: bool = True
     fill_holes: bool = True
     max_hole_area: int = 2_048
+    raw_output: Path | None = None
 
     def validate(self) -> None:
         if not self.source.is_file():

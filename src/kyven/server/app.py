@@ -14,11 +14,12 @@ from urllib.parse import urlparse
 
 from kyven.errors import ErrorCode, KyvenError
 from kyven.models.catalog import ModelCatalog
+from kyven.preview import postprocess_mask_preview, prepare_trimap_preview
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.server.jobs import JobManager
 
 MAX_REQUEST_BYTES = 1024 * 1024
-SERVER_API_VERSION = 4
+SERVER_API_VERSION = 9
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +160,22 @@ def _handler_type(
                     catalog.get(model_id)
                     job_id = manager.submit_video(payload)
                     self._send(HTTPStatus.ACCEPTED, {"job_id": job_id, "status": "queued"})
+                    return
+                if path == "/v1/jobs/refine":
+                    model_id = str(payload.get("model_id", "vitmatte-small-composition-1k"))
+                    if catalog.get(model_id).task != "refine":
+                        raise KyvenError(
+                            code=ErrorCode.INVALID_REQUEST,
+                            message="The selected model is not a refinement model.",
+                        )
+                    job_id = manager.submit_refine(payload)
+                    self._send(HTTPStatus.ACCEPTED, {"job_id": job_id, "status": "queued"})
+                    return
+                if path == "/v1/preview/trimap":
+                    self._send(HTTPStatus.OK, prepare_trimap_preview(payload))
+                    return
+                if path == "/v1/preview/mask-postprocess":
+                    self._send(HTTPStatus.OK, postprocess_mask_preview(payload))
                     return
                 if path.startswith("/v1/jobs/") and path.endswith("/cancel"):
                     job_id = path.removeprefix("/v1/jobs/").removesuffix("/cancel")

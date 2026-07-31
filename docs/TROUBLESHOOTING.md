@@ -14,9 +14,9 @@ installer. Internet access is required for the first dependency and model downlo
 
 Choose the final repository location before installation. A Windows virtual environment contains
 absolute paths, so after moving the Kyven folder, rerun `install.ps1` to rebuild or repair `.venv`.
-It is safe to rerun after pulling an update; verified model files are reused.
-If necessary, it stops only a `kyven.exe` launched from this repository's own `.venv` before
-updating the package. Restart Nuke after installation so it starts the newly installed server.
+It is safe to rerun after pulling an update; verified model files are reused. The installer targets
+only legacy `kyven.exe` launchers from this repository and never terminates unrelated Python jobs.
+Restart Nuke after installation so it starts the newly installed API revision.
 
 ## Server does not become ready
 
@@ -29,8 +29,28 @@ The Nuke adapter launches `python.exe -I -m kyven.server.bootstrap`. On Windows 
 the DLL directory inherited from Nuke before importing PyTorch; this prevents the common
 `c10.dll` / `WinError 1114` startup failure.
 
-Kyven API 4 uses port `8768`. Older development servers may remain on 8765-8767, but the adapter
-asks authenticated older servers to unload their models before starting API 4.
+Kyven API 9 uses port `18772`. Older development servers may remain on 8765-8769 or 18768-18771, but
+the adapter asks authenticated older servers to unload their models before starting API 9.
+
+## Refine fails or returns the coarse mask unchanged
+
+- Connect the original RGB image to input 0 and a mask/trimap to input 1.
+- Keep `Generate Trimap from Mask` enabled for a normal binary Segment or Roto matte.
+- Disable it only for a true three-state trimap: black background, gray unknown, white foreground.
+- Select Red as `Input 1 Channel` when the mask/trimap is stored in RGB instead of alpha.
+- Increase erosion/dilation to give ViTMatte a wider unknown edge region.
+- Use Low Memory (512 px tiles) when VRAM is limited.
+- After updating from an older API, restart Nuke so it launches the server on port 18772.
+
+## Trimap output is missing or shows only the input mask
+
+- Restart Nuke after updating, select the Refine node, and run
+  `Kyven > Upgrade Selected Refine Node`.
+- Connect Input 1. The CPU-only trimap preview should appear without processing a frame or loading
+  ViTMatte.
+- With Processing ROI enabled, black outside the ROI is expected: ViTMatte did not receive those
+  pixels. The refined-alpha output still preserves the coarse mask outside the ROI.
+- Confirm that `.runtime/nuke_cache/<node-uuid>/trimap_preview.<frame>.<revision>.png` exists.
 
 ## CUDA or model loading fails
 
@@ -51,6 +71,8 @@ Core segmentation and propagation still run, but that post-processing feature is
 
 - Keep every positive point inside the enabled ROI.
 - Reset the ROI if it no longer overlaps the input.
+- During video propagation, points are read on `Key Frame`; make sure they are inside the ROI on that
+  frame. The ROI itself may be animated and is sampled independently for every rendered frame.
 - Reprocess after changing ROI; old cached mattes are not transformed automatically.
 - Remember that Nuke Viewer Y coordinates are converted to top-left image coordinates by the host
   adapter.
@@ -76,7 +98,7 @@ after a frame, range, or tracking job succeeds. If files were deleted externally
 | --- | --- |
 | `.runtime/server.log` | Latest server startup and inference output |
 | `.runtime/server.token` | Local bearer token; do not share or commit it |
-| `.runtime/nuke_cache/` | Exported frames and generated mattes |
+| `.runtime/nuke_cache/` | Exported frames, generated/refined mattes, and exact trimaps |
 | `models/` | Verified model checkpoints |
 
 When reporting a failure, include the Status text, the latest `server.log`, Nuke version, selected

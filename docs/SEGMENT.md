@@ -61,7 +61,9 @@ the source dimensions. ROI participates in deterministic cache identity.
 
 After inference, optional enclosed-hole filling labels black connected components and fills only
 those that do not touch the frame border and fit under `max_hole_area`. This changes neither the
-outer silhouette nor model inference. Post-process settings are also part of cache identity.
+outer silhouette nor model inference. The Nuke adapter stores an additional raw SAM matte; changing
+the post-process checkbox or full-width area slider rebuilds the displayed matte immediately on CPU
+without running SAM again.
 
 On success the CLI prints structured JSON with the output path, selected-mask score,
 deterministic cache key, device, and provider metadata. On failure it prints a structured Kyven
@@ -69,7 +71,12 @@ error suitable for display by a host adapter.
 
 ## Implemented host workflow
 
-The Nuke adapter supports multiple Viewer points, Processing ROI, independent ranges, SAM 2 video
-tracking, four output modes, native Read creation, and cache cleanup. Remaining Segment work
+The Nuke adapter supports multiple Viewer points, static or animated Processing ROI, independent
+ranges, SAM 2 video tracking with progress/ETA/cancellation, four output modes, native Read creation,
+and cache cleanup. Video points are sampled on the key frame while the animated ROI is sampled for
+each frame and reconstructed into full-resolution coordinates. Remaining Segment work
 includes multi-key-frame corrections, resumable per-frame metadata, explicit out-of-memory retry
 profiles, broader host testing, and Fusion/Resolve adapters.
+
+New Segment nodes default to `Source + Alpha`. Updating an older Group through
+`Kyven > Upgrade Selected Segment Node` preserves its prompts, UUID, input, and cached matte.

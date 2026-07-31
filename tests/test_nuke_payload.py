@@ -8,6 +8,7 @@ from unittest import mock
 NUKE_ROOT = Path(__file__).parents[1] / "hosts" / "nuke"
 sys.path.insert(0, str(NUKE_ROOT))
 
+from kyven_nuke.live import affects_live_result
 from kyven_nuke.node import (
     OUTPUT_MODES,
     _cache_root_path,
@@ -17,11 +18,45 @@ from kyven_nuke.node import (
     _prompt_defaults,
     _section_markup,
 )
-from kyven_nuke.payload import segment_payload, segment_video_payload
+from kyven_nuke.payload import refine_payload, segment_payload, segment_video_payload
+from kyven_nuke.refine_node import REFINE_OUTPUT_MODES
 from kyven_nuke.runtime import _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_live_invalidation_tracks_prompts_roi_and_refine_controls(self) -> None:
+        self.assertTrue(affects_live_result("positive_point_3", "segment"))
+        self.assertTrue(affects_live_result("prompt_box", "segment"))
+        self.assertTrue(affects_live_result("processing_roi", "refine"))
+        self.assertFalse(affects_live_result("foreground_radius", "refine"))
+        self.assertFalse(affects_live_result("max_hole_area", "segment"))
+        self.assertFalse(affects_live_result("output_mode", "segment"))
+        self.assertFalse(affects_live_result("output_mode", "refine"))
+
+    def test_refine_payload_translates_roi_and_trimap_controls(self) -> None:
+        payload = refine_payload(
+            source="D:/source.png",
+            mask="D:/mask.png",
+            output="D:/alpha.png",
+            trimap_output="D:/trimap.png",
+            model_index=0,
+            profile="low_memory",
+            image_height=1080,
+            roi_enabled=True,
+            roi=(10, 20, 300, 400),
+            generate_trimap=True,
+            foreground_radius=8,
+            background_radius=12,
+            tile_size=512,
+            tile_overlap=64,
+        )
+        self.assertEqual(payload["model_id"], "vitmatte-small-composition-1k")
+        self.assertEqual(payload["roi"]["y0"], 680.0)
+        self.assertEqual(payload["foreground_radius"], 8)
+        self.assertTrue(payload["generate_trimap"])
+        self.assertEqual(payload["tile_size"], 512)
+        self.assertEqual(payload["trimap_output"], "D:/trimap.png")
+
     def test_section_markup_adds_compact_spacing_and_title(self) -> None:
         markup = _section_markup("OUTPUT")
 
@@ -53,11 +88,24 @@ class NukePayloadTests(unittest.TestCase):
             OUTPUT_MODES,
             ("Matte", "Source + Alpha", "Cutout", "Source (Bypass)"),
         )
+        self.assertEqual(
+            REFINE_OUTPUT_MODES,
+            (
+                "Refined Matte",
+                "Source + Refined Alpha",
+                "Refined Cutout",
+                "Trimap",
+                "Source + Trimap Alpha",
+                "Trimap Cutout",
+                "Source (Bypass)",
+            ),
+        )
 
     def test_video_payload_uses_key_frame_and_cpu_offload(self) -> None:
         payload = segment_video_payload(
             frames_dir="D:/cache/frames",
             output_pattern="D:/cache/matte.%04d.png",
+            raw_output_pattern="D:/cache/raw_matte.%04d.png",
             model_index=1,
             profile="low_memory",
             image_height=1080,
@@ -73,12 +121,44 @@ class NukePayloadTests(unittest.TestCase):
 
         self.assertEqual(payload["key_frame"], 50)
         self.assertEqual(payload["direction"], "both")
+        self.assertEqual(payload["raw_output_pattern"], "D:/cache/raw_matte.%04d.png")
         self.assertTrue(payload["offload_video_to_cpu"])
         self.assertEqual(payload["points"][0]["y"], 880.0)
         self.assertIsNone(payload["box"])
         self.assertIsNone(payload["roi"])
         self.assertTrue(payload["fill_holes"])
         self.assertEqual(payload["max_hole_area"], 2_048)
+        self.assertEqual(payload["rois"], [])
+
+    def test_video_payload_serializes_animated_roi_per_frame(self) -> None:
+        payload = segment_video_payload(
+            frames_dir="D:/cache/frames",
+            output_pattern="D:/cache/matte.%04d.png",
+            model_index=1,
+            profile="balanced",
+            image_height=100,
+            positive_points=[(25, 40)],
+            negative_points=[],
+            box_enabled=True,
+            box=(10, 20, 50, 60),
+            first_frame=10,
+            last_frame=11,
+            key_frame=10,
+            direction="forward",
+            animated_rois=[
+                (10, (10, 20, 50, 60)),
+                (11, (20, 25, 70, 65)),
+            ],
+        )
+
+        self.assertIsNone(payload["roi"])
+        self.assertEqual(
+            payload["rois"],
+            [
+                {"frame": 10, "x0": 10.0, "y0": 40.0, "x1": 50.0, "y1": 80.0},
+                {"frame": 11, "x0": 20.0, "y0": 35.0, "x1": 70.0, "y1": 75.0},
+            ],
+        )
 
     def test_prompt_defaults_use_input_dimensions(self) -> None:
         center, box = _prompt_defaults(2048.0, 858.0)
@@ -101,6 +181,7 @@ class NukePayloadTests(unittest.TestCase):
         environment = _server_environment(
             {
                 "PATH": "C:/Program Files/Nuke16.0v4;keep",
+                "Path": "duplicate-that-must-not-survive",
                 "SystemRoot": "C:/Windows",
                 "PYTHONHOME": "Nuke",
                 "PYTHONPATH": "Nuke/python",
@@ -118,6 +199,7 @@ class NukePayloadTests(unittest.TestCase):
         self.assertNotIn("PYTHONPATH", environment)
         self.assertNotIn("QT_PLUGIN_PATH", environment)
         self.assertNotIn("TCL_LIBRARY", environment)
+        self.assertNotIn("Path", environment)
         self.assertEqual(environment["PYTHONNOUSERSITE"], "1")
 
     def test_nuke_file_paths_use_forward_slashes(self) -> None:

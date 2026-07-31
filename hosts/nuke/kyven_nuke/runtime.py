@@ -11,9 +11,9 @@ from pathlib import Path
 from kyven_nuke import config
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 
-PORT = 8768
-REQUIRED_API_VERSION = 4
-LEGACY_PORTS = (8765, 8766, 8767)
+PORT = 18772
+REQUIRED_API_VERSION = 9
+LEGACY_PORTS = (8765, 8766, 8767, 8768, 8769, 18768, 18769, 18770, 18771)
 
 
 def _check_health(current: NukeKyvenClient) -> None:
@@ -30,7 +30,9 @@ def _server_environment(
     executable_dir: Path | None = None,
 ) -> dict[str, str]:
     """Build a clean process environment isolated from Nuke's DLL and Python runtime."""
-    environment = dict(os.environ if source is None else source)
+    environment = {
+        str(key).upper(): value for key, value in (os.environ if source is None else source).items()
+    }
     for key in (
         "PYTHONHOME",
         "PYTHONPATH",
@@ -41,7 +43,7 @@ def _server_environment(
         "TK_LIBRARY",
     ):
         environment.pop(key, None)
-    system_root = environment.get("SystemRoot") or environment.get("WINDIR") or r"C:\Windows"
+    system_root = environment.get("SYSTEMROOT") or environment.get("WINDIR") or r"C:\Windows"
     scripts_dir = executable_dir or config.executable().parent
     environment["PATH"] = os.pathsep.join(
         (str(scripts_dir), str(Path(system_root) / "System32"), system_root)
@@ -128,4 +130,6 @@ def ensure_server(timeout_seconds: float = 30.0) -> NukeKyvenClient:
             return current
         except (OSError, NukeKyvenClientError):
             time.sleep(0.2)
-    raise RuntimeError(f"Kyven server did not become ready within 30 seconds. See {log_path}")
+    raise RuntimeError(
+        f"Kyven server did not become ready within {timeout_seconds:g} seconds. See {log_path}"
+    )

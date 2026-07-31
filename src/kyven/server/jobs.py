@@ -13,6 +13,8 @@ from typing import Any
 
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
+from kyven.refine.models import RefineRequest
+from kyven.refine.service import RefineService
 from kyven.segment.models import (
     BoxPrompt,
     ExecutionProfile,
@@ -40,7 +42,7 @@ class JobStatus(str, Enum):
 @dataclass(slots=True)
 class JobRecord:
     job_id: str
-    request: SegmentRequest | VideoSegmentRequest
+    request: SegmentRequest | VideoSegmentRequest | RefineRequest
     cancellation: CancellationToken = field(default_factory=CancellationToken)
     status: JobStatus = JobStatus.QUEUED
     created_at: float = field(default_factory=time.time)
@@ -50,6 +52,7 @@ class JobRecord:
     error: dict[str, Any] | None = None
 
     def snapshot(self) -> dict[str, Any]:
+        progress, progress_message = self.cancellation.progress_snapshot()
         return {
             "job_id": self.job_id,
             "status": self.status.value,
@@ -58,6 +61,8 @@ class JobRecord:
             "finished_at": self.finished_at,
             "result": self.result,
             "error": self.error,
+            "progress": progress,
+            "progress_message": progress_message,
         }
 
 
@@ -68,9 +73,11 @@ class JobManager:
         self,
         service: SegmentService,
         video_service: VideoSegmentService | None = None,
+        refine_service: RefineService | None = None,
     ) -> None:
         self._service = service
         self._video_service = video_service
+        self._refine_service = refine_service
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kyven-gpu")
         self._jobs: dict[str, JobRecord] = {}
         self._lock = threading.RLock()
@@ -91,7 +98,13 @@ class JobManager:
     def request_from_payload(payload: dict[str, Any]) -> SegmentRequest:
         source = Path(str(payload["source"]))
         output = Path(str(payload["output"]))
-        if not source.is_absolute() or not output.is_absolute():
+        raw_output_value = payload.get("raw_output")
+        raw_output = Path(str(raw_output_value)) if raw_output_value else None
+        if (
+            not source.is_absolute()
+            or not output.is_absolute()
+            or (raw_output is not None and not raw_output.is_absolute())
+        ):
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
                 message="Server job paths must be absolute.",
@@ -110,6 +123,7 @@ class JobManager:
         return SegmentRequest(
             source=source,
             output=output,
+            raw_output=raw_output,
             points=points,
             box=box,
             roi=roi,
@@ -141,7 +155,15 @@ class JobManager:
     def video_request_from_payload(payload: dict[str, Any]) -> VideoSegmentRequest:
         frames_dir = Path(str(payload["frames_dir"]))
         output_pattern = Path(str(payload["output_pattern"]))
-        if not frames_dir.is_absolute() or not output_pattern.is_absolute():
+        raw_output_pattern_value = payload.get("raw_output_pattern")
+        raw_output_pattern = (
+            Path(str(raw_output_pattern_value)) if raw_output_pattern_value else None
+        )
+        if (
+            not frames_dir.is_absolute()
+            or not output_pattern.is_absolute()
+            or (raw_output_pattern is not None and not raw_output_pattern.is_absolute())
+        ):
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
                 message="Video job paths must be absolute.",
@@ -156,6 +178,18 @@ class JobManager:
         )
         box = JobManager._box_from_payload(payload, "box")
         roi = JobManager._box_from_payload(payload, "roi")
+        rois = tuple(
+            (
+                int(item["frame"]),
+                BoxPrompt(
+                    float(item["x0"]),
+                    float(item["y0"]),
+                    float(item["x1"]),
+                    float(item["y1"]),
+                ),
+            )
+            for item in payload.get("rois", [])
+        )
         return VideoSegmentRequest(
             frames_dir=frames_dir,
             output_pattern=output_pattern,
@@ -166,12 +200,14 @@ class JobManager:
             points=points,
             box=box,
             roi=roi,
+            rois=rois,
             provider_id=str(payload.get("model_id", "sam2.1-small")),
             profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
             offload_video_to_cpu=bool(payload.get("offload_video_to_cpu", True)),
             offload_state_to_cpu=bool(payload.get("offload_state_to_cpu", True)),
             fill_holes=bool(payload.get("fill_holes", True)),
             max_hole_area=int(payload.get("max_hole_area", 2_048)),
+            raw_output_pattern=raw_output_pattern,
         )
 
     def submit_video(self, payload: dict[str, Any]) -> str:
@@ -195,6 +231,66 @@ class JobManager:
         self._executor.submit(self._run_video, record)
         return record.job_id
 
+    @staticmethod
+    def refine_request_from_payload(payload: dict[str, Any]) -> RefineRequest:
+        source = Path(str(payload["source"]))
+        mask = Path(str(payload["mask"]))
+        output = Path(str(payload["output"]))
+        trimap_output_value = payload.get("trimap_output")
+        trimap_output = Path(str(trimap_output_value)) if trimap_output_value else None
+        if (
+            not source.is_absolute()
+            or not mask.is_absolute()
+            or not output.is_absolute()
+            or (trimap_output is not None and not trimap_output.is_absolute())
+        ):
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="Refinement job paths must be absolute.",
+            )
+        roi = JobManager._box_from_payload(payload, "roi")
+        profile = ExecutionProfile(str(payload.get("profile", "balanced")))
+        default_tile = {
+            ExecutionProfile.LOW_MEMORY: 512,
+            ExecutionProfile.BALANCED: 1024,
+            ExecutionProfile.QUALITY: 0,
+        }[profile]
+        return RefineRequest(
+            source=source,
+            mask=mask,
+            output=output,
+            trimap_output=trimap_output,
+            provider_id=str(payload.get("model_id", "vitmatte-small-composition-1k")),
+            profile=profile,
+            roi=roi,
+            generate_trimap=bool(payload.get("generate_trimap", True)),
+            foreground_radius=int(payload.get("foreground_radius", 10)),
+            background_radius=int(payload.get("background_radius", 15)),
+            tile_size=int(payload.get("tile_size", default_tile)),
+            tile_overlap=int(payload.get("tile_overlap", 64)),
+        )
+
+    def submit_refine(self, payload: dict[str, Any]) -> str:
+        if self._refine_service is None:
+            raise KyvenError(
+                code=ErrorCode.PROVIDER_UNAVAILABLE,
+                message="Refinement service is unavailable.",
+            )
+        try:
+            request = self.refine_request_from_payload(payload)
+            request.validate()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="The refinement job payload is invalid.",
+                technical_detail=str(exc),
+            ) from exc
+        record = JobRecord(job_id=uuid.uuid4().hex, request=request)
+        with self._lock:
+            self._jobs[record.job_id] = record
+        self._executor.submit(self._run_refine, record)
+        return record.job_id
+
     def _run(self, record: JobRecord) -> None:
         with self._lock:
             if record.cancellation.is_cancelled:
@@ -214,6 +310,11 @@ class JobManager:
                 record.status = JobStatus.SUCCEEDED
                 record.result = {
                     "output": str(result.output),
+                    "raw_output": (
+                        str(record.request.raw_output)
+                        if record.request.raw_output is not None
+                        else None
+                    ),
                     "score": result.score,
                     "cache_key": result.cache_key,
                     "metadata": result.metadata,
@@ -279,6 +380,51 @@ class JobManager:
                     technical_detail=str(exc),
                     recoverable=True,
                     suggested_action="Inspect the server log and retry with a shorter range.",
+                ).to_dict()
+        finally:
+            with self._lock:
+                record.finished_at = time.time()
+
+    def _run_refine(self, record: JobRecord) -> None:
+        with self._lock:
+            if record.cancellation.is_cancelled:
+                record.status = JobStatus.CANCELLED
+                record.finished_at = time.time()
+                return
+            record.status = JobStatus.RUNNING
+            record.started_at = time.time()
+        try:
+            if self._refine_service is None or not isinstance(record.request, RefineRequest):
+                raise KyvenError(
+                    code=ErrorCode.PROVIDER_UNAVAILABLE,
+                    message="Refinement service is unavailable.",
+                )
+            result = self._refine_service.run(record.request, record.cancellation)
+            with self._lock:
+                record.status = JobStatus.SUCCEEDED
+                record.result = {
+                    "output": str(result.output),
+                    "trimap_output": (
+                        str(result.trimap_output) if result.trimap_output is not None else None
+                    ),
+                    "cache_key": result.cache_key,
+                    "metadata": result.metadata,
+                }
+        except KyvenError as exc:
+            with self._lock:
+                record.status = (
+                    JobStatus.CANCELLED if exc.code is ErrorCode.CANCELLED else JobStatus.FAILED
+                )
+                record.error = exc.to_dict()
+        except Exception as exc:  # noqa: BLE001
+            with self._lock:
+                record.status = JobStatus.FAILED
+                record.error = KyvenError(
+                    code=ErrorCode.SERVER_ERROR,
+                    message="The Kyven refinement worker failed unexpectedly.",
+                    technical_detail=str(exc),
+                    recoverable=True,
+                    suggested_action="Inspect the server log and retry with Low Memory.",
                 ).to_dict()
         finally:
             with self._lock:

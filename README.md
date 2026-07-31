@@ -2,20 +2,25 @@
 
 Local, modular AI masking for node-based compositing.
 
-Kyven currently provides a working `Kyven Segment` node for Foundry Nuke. It runs SAM 2 in a
-separate authenticated local process, keeps PyTorch and CUDA outside Nuke, and writes reusable
-matte files to a per-node cache. Fusion and DaVinci Resolve adapters are planned around the same
-host-independent server.
+Kyven currently provides working `Kyven Segment` and `Kyven Refine` nodes for Foundry Nuke. SAM 2
+and ViTMatte run in a separate authenticated local process, keeping PyTorch and CUDA outside Nuke
+and writing reusable matte files to per-node caches. Fusion and DaVinci Resolve adapters are planned
+around the same host-independent server.
 
 ## Current features
 
 - SAM 2.1 Tiny, Small, Base+, and Large model selection;
+- ViTMatte Small refinement from any connected mask or artist trimap;
+- automatic trimap generation with foreground erosion and background dilation;
+- exact cached trimap outputs: matte, Source + Trimap Alpha, and trimap cutout;
+- Live current-frame processing in Segment and Refine;
 - positive and negative Viewer points;
 - optional Processing ROI that crops inference and restores a full-frame matte;
 - dependency-free enclosed-hole filling with a configurable maximum area;
 - current-frame and independent frame-range segmentation;
-- SAM 2 video propagation forward, backward, or in both directions;
+- SAM 2 video propagation forward, backward, or in both directions, with animated ROI and progress;
 - Matte, Source + Alpha, Cutout, and Source (Bypass) outputs;
+- Source + Alpha as the default output for new Segment and Refine nodes;
 - per-node cache paths, native Read creation, and cache cleanup;
 - asynchronous jobs, cancellation, and automatic local-server startup;
 - API version checks, bearer-token authentication, and loopback-only networking.
@@ -27,7 +32,7 @@ Nuke Group node
       |
       | authenticated HTTP on 127.0.0.1
       v
-Kyven Server -> job queue -> provider registry -> SAM 2
+Kyven Server -> job queue -> provider registry -> SAM 2 / ViTMatte
       |
       v
 Atomic grayscale PNG matte cache
@@ -51,10 +56,9 @@ The script installs everything beside the repository and does not modify Nuke or
 - `models` contains verified checkpoints;
 - `.runtime` contains the pip cache, server files, and generated Nuke cache.
 
-SAM 2.1 Small is downloaded by default. Another model can be selected explicitly:
-
-The console asks which model or models to install. Enter one or several numbers,
-for example `1,2`. Press Enter to accept SAM 2.1 Small, the recommended default for an 8 GB GPU.
+The console asks which model or models to install. Enter one or several numbers such as `1,2,5`.
+Press Enter without typing anything to install SAM 2.1 Small and ViTMatte Small, the recommended
+complete setup for an 8 GB GPU.
 For unattended installation, models can also be selected explicitly:
 
 ```powershell
@@ -62,6 +66,7 @@ For unattended installation, models can also be selected explicitly:
 .\install.ps1 -Model sam2.1-tiny,sam2.1-small
 .\install.ps1 -Model sam2.1-base-plus
 .\install.ps1 -Model sam2.1-large
+.\install.ps1 -Model vitmatte-small-composition-1k
 .\install.ps1 -Model none
 ```
 
@@ -69,7 +74,7 @@ The installer is safe to run again after `git pull`. It reuses `.venv` and exist
 files. It does not require administrator access and does not add anything to the system `PATH`.
 Choose the repository's final location before installation. If it is moved later, run
 `install.ps1` again in the new location so the private Python environment is rebuilt correctly.
-During an update, the script stops a running Kyven server launched from that same repository.
+Restart Nuke after an update so it reloads the adapter and starts the required API revision.
 
 After installation, manually add the path printed by the script to the existing Nuke `init.py`:
 
@@ -79,9 +84,9 @@ import nuke
 nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 ```
 
-The script intentionally never edits `init.py`. Restart Nuke and choose `Kyven > Segment`.
-Existing nodes can be migrated with
-`Kyven > Upgrade Selected Segment Node`.
+The script intentionally never edits `init.py`. Restart Nuke and choose `Kyven > Segment` or
+`Kyven > Refine`. Existing nodes can be migrated with `Upgrade Selected Segment Node` or
+`Upgrade Selected Refine Node` in the same menu.
 
 ## Typical Nuke workflow
 
@@ -90,6 +95,12 @@ Existing nodes can be migrated with
 3. Optionally enable and draw a Processing ROI around the useful area.
 4. Run `Process Current Frame`, an independent range, or SAM 2 video tracking.
 5. Choose the required output mode or create a native Read from the cached matte.
+
+For refinement, connect the original image to Refine input 0 and a coarse mask (for example the
+Segment output) to input 1. Keep `Generate Trimap from Mask` enabled, then use Live, process one
+frame, or render a range. Disable the option only when input 1 is already a black/gray/white trimap.
+`Source + Refined Alpha` is the default; choose a trimap output to inspect the exact 0/128/255 image
+used by ViTMatte.
 
 See [Nuke workflow](docs/NUKE.md) for every control and [Troubleshooting](docs/TROUBLESHOOTING.md)
 for server, cache, CUDA, and logging help.
@@ -113,6 +124,8 @@ dependency licenses are recorded in [Third-party notices](THIRD_PARTY_NOTICES.md
 ## Documentation
 
 - [Nuke workflow and UI](docs/NUKE.md)
+- [Portable installation and updates](docs/INSTALLATION.md)
+- [Refine and trimap workflow](docs/REFINE.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Segment engine and CLI](docs/SEGMENT.md)
 - [Server API](docs/SERVER.md)
@@ -121,5 +134,5 @@ dependency licenses are recorded in [Third-party notices](THIRD_PARTY_NOTICES.md
 
 ## Project status
 
-Active pre-alpha implementation. The Nuke Segment vertical slice works; Refine/ViTMatte, Fusion,
+Active pre-alpha implementation. Segment and Refine/ViTMatte vertical slices work in Nuke; Fusion
 and DaVinci Resolve integrations are not implemented yet.

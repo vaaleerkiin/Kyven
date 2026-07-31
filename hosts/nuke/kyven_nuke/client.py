@@ -63,6 +63,15 @@ class NukeKyvenClient:
     def submit_video(self, payload):
         return str(self._request("POST", "/v1/jobs/segment-video", payload)["job_id"])
 
+    def submit_refine(self, payload):
+        return str(self._request("POST", "/v1/jobs/refine", payload)["job_id"])
+
+    def preview_trimap(self, payload):
+        return self._request("POST", "/v1/preview/trimap", payload)
+
+    def preview_mask_postprocess(self, payload):
+        return self._request("POST", "/v1/preview/mask-postprocess", payload)
+
     def job(self, job_id):
         return self._request("GET", f"/v1/jobs/{job_id}")
 
