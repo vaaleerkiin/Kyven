@@ -13,6 +13,7 @@ from kyven_nuke.live import affects_live_result
 from kyven_nuke.node import (
     OUTPUT_MODES,
     _cache_root_path,
+    _job_error_text,
     _nuke_file_path,
     _path_for_frame,
     _place_knob_after,
@@ -32,6 +33,19 @@ from kyven_nuke.runtime import _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_worker_error_includes_technical_detail(self) -> None:
+        message = _job_error_text(
+            {
+                "status": "failed",
+                "error": {
+                    "message": "The Kyven worker failed unexpectedly.",
+                    "technical_detail": "unexpected keyword argument 'license_url'",
+                },
+            }
+        )
+
+        self.assertIn("unexpected keyword argument", message)
+
     def test_invalid_or_inverted_roi_is_normalized_to_a_safe_rectangle(self) -> None:
         inverted = roi_box((900, 700, 100, 200), image_height=1080, image_width=1920)
         outside = roi_box((3000, 200, 4000, 800), image_height=1080, image_width=1920)

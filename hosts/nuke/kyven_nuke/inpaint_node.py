@@ -15,6 +15,7 @@ from kyven_nuke.node import (
     _ensure_live_controls,
     _finish_progress,
     _inside,
+    _job_error_text,
     _nuke,
     _nuke_file_path,
     _place_knob_after,
@@ -99,8 +100,7 @@ def _apply(node_name: str, job: dict[str, Any], output: Path, processed_mask: Pa
     if node is None: return
     _set_busy(node_name, False)
     if job["status"] != "succeeded":
-        error = job.get("error") or {}
-        _set_status(node_name, f"Inpaint failed: {error.get('message', job['status'])}")
+        _set_status(node_name, f"Inpaint failed: {_job_error_text(job)}")
         return
     _set_result(node, output)
     _set_processed_mask(node, processed_mask)

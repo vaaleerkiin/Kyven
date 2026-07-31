@@ -29,6 +29,17 @@ def _nuke() -> Any:
     return nuke
 
 
+def _job_error_text(job: dict[str, Any]) -> str:
+    """Expose unexpected technical detail instead of hiding it behind a generic worker error."""
+
+    error = job.get("error") or {}
+    message = str(error.get("message") or job.get("status") or "Unknown error")
+    detail = str(error.get("technical_detail") or "").strip()
+    if detail and detail not in message:
+        return f"{message} | {detail}"
+    return message
+
+
 def _inside(group: Any, name: str) -> Any:
     group.begin()
     try:
@@ -360,8 +371,7 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
         node["kyven_status"].setValue("Segmentation cancelled.")
         return
     if job["status"] != "succeeded":
-        error = job.get("error") or {}
-        node["kyven_status"].setValue(f"Failed: {error.get('message', job['status'])}")
+        node["kyven_status"].setValue(f"Failed: {_job_error_text(job)}")
         return
     output = _nuke_file_path(Path(job["result"]["output"]))
     _set_matte_read(node, output)
@@ -397,8 +407,7 @@ def _apply_video_result(node_name: str, job: dict[str, Any]) -> None:
     if node is None:
         return
     if job["status"] != "succeeded":
-        error = job.get("error") or {}
-        node["kyven_status"].setValue(f"Propagation failed: {error.get('message', job['status'])}")
+        node["kyven_status"].setValue(f"Propagation failed: {_job_error_text(job)}")
         return
     result = job["result"]
     output_pattern = _nuke_file_path(Path(result["output_pattern"]))
@@ -538,8 +547,7 @@ def _submit_range_and_wait(
                 )
                 return
             if job["status"] != "succeeded":
-                error = job.get("error") or {}
-                message = error.get("message", job["status"])
+                message = _job_error_text(job)
                 nuke.executeInMainThread(
                     _set_status,
                     args=(node_name, f"Frame {frame} failed: {message}"),

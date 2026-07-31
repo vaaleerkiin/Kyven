@@ -17,6 +17,7 @@ from kyven_nuke.node import (
     _finish_progress,
     _format_eta,
     _inside,
+    _job_error_text,
     _nuke,
     _nuke_file_path,
     _path_for_frame,
@@ -142,8 +143,7 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
         node["kyven_status"].setValue("Refinement cancelled.")
         return
     if job["status"] != "succeeded":
-        error = job.get("error") or {}
-        node["kyven_status"].setValue(f"Refine failed: {error.get('message', job['status'])}")
+        node["kyven_status"].setValue(f"Refine failed: {_job_error_text(job)}")
         return
     result = job["result"]
     _set_matte_read(node, _nuke_file_path(Path(result["output"])))

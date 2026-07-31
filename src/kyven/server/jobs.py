@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -373,6 +374,7 @@ class JobManager:
                 )
                 record.error = exc.to_dict()
         except Exception as exc:  # noqa: BLE001 - worker boundary converts failures to job state
+            traceback.print_exc()
             with self._lock:
                 record.status = JobStatus.FAILED
                 record.error = KyvenError(
@@ -419,6 +421,7 @@ class JobManager:
                 )
                 record.error = exc.to_dict()
         except Exception as exc:  # noqa: BLE001 - worker boundary converts failures to job state
+            traceback.print_exc()
             with self._lock:
                 record.status = JobStatus.FAILED
                 record.error = KyvenError(
@@ -464,6 +467,7 @@ class JobManager:
                 )
                 record.error = exc.to_dict()
         except Exception as exc:  # noqa: BLE001
+            traceback.print_exc()
             with self._lock:
                 record.status = JobStatus.FAILED
                 record.error = KyvenError(
@@ -506,6 +510,7 @@ class JobManager:
                 )
                 record.error = exc.to_dict()
         except Exception as exc:  # noqa: BLE001
+            traceback.print_exc()
             with self._lock:
                 record.status = JobStatus.FAILED
                 record.error = KyvenError(
