@@ -3,7 +3,8 @@
 Local, modular AI tools for node-based compositing.
 
 Kyven Tools is an expandable compositing toolkit, not a single masking plug-in. The first working
-tools are `Kyven Segment` and `Kyven Refine` for Foundry Nuke. SAM 2 and ViTMatte run in a separate
+tools are `Kyven Segment`, `Kyven Refine`, and `Kyven Inpaint` for Foundry Nuke. SAM 2, ViTMatte,
+and LaMa run in a separate
 authenticated local process, keeping PyTorch and CUDA outside Nuke and writing reusable results to
 per-node caches. Depth, inpainting, paint-oriented utilities, Fusion, and DaVinci Resolve support
 are planned around the same host-independent server.
@@ -15,6 +16,7 @@ prefix keep the short technical name `kyven` / `Kyven` for compatibility.
 
 - SAM 2.1 Tiny, Small, Base+, and Large model selection;
 - ViTMatte Small refinement from any connected mask or artist trimap;
+- LaMa object removal from Source + Mask, including CPU operation and automatic mask-bounds ROI;
 - automatic trimap generation with foreground erosion and background dilation;
 - exact cached trimap outputs: matte, Source + Trimap Alpha, and trimap cutout;
 - Live current-frame processing in Segment and Refine;
@@ -51,8 +53,8 @@ revision starts.
 - **Kyven Depth:** interactive single-frame depth, temporally consistent video depth, independent
   frame fallback, scene-cut handling, temporal stabilization, multiple output views, and a
   low-memory/CPU path.
-- **Kyven Inpaint:** under design. It will remain a separate graph node with explicit Source and
-  Mask inputs, current-frame and range workflows, cache controls, and a commercially safe provider.
+- **Kyven Inpaint quality mode:** PowerPaint is the planned optional guided-fill provider after its
+  large multi-file checkpoint and runtime receive a secure installer path.
 - **Kyven Utils:** future focused utilities such as paint/cleanup assistance and other compositing
   image operations. Each major operation remains an independent node.
 
@@ -85,6 +87,7 @@ For unattended installation, models can also be selected explicitly:
 .\install.ps1 -Model sam2.1-base-plus
 .\install.ps1 -Model sam2.1-large
 .\install.ps1 -Model vitmatte-small-composition-1k
+.\install.ps1 -Model lama-2025jan-onnx
 .\install.ps1 -Model none
 ```
 
@@ -102,8 +105,8 @@ import nuke
 nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 ```
 
-The script intentionally never edits `init.py`. Restart Nuke and choose `Kyven > Segment` or
-`Kyven > Refine`. Existing nodes can be migrated with `Upgrade Selected Segment Node` or
+The script intentionally never edits `init.py`. Restart Nuke and choose `Kyven > Segment`,
+`Kyven > Refine`, or `Kyven > Inpaint`. Existing nodes can be migrated with `Upgrade Selected Segment Node` or
 `Upgrade Selected Refine Node` in the same menu.
 
 ## Typical Nuke workflow
@@ -119,6 +122,10 @@ Segment output) to input 1. Keep `Generate Trimap from Mask` enabled, then use L
 frame, or render a range. Disable the option only when input 1 is already a black/gray/white trimap.
 `Source + Refined Alpha` is the default; choose a trimap output to inspect the exact 0/128/255 image
 used by ViTMatte.
+
+For cleanup, connect Source to Inpaint input 0 and a matte to input 1. `Auto` crops to the mask
+bounds plus Context Padding, runs LaMa only on that crop, then reconstructs the original format.
+Pixels outside the grown/feathered merge mask remain identical to Source.
 
 See [Nuke workflow](docs/NUKE.md) for every control and [Troubleshooting](docs/TROUBLESHOOTING.md)
 for server, cache, CUDA, and logging help.

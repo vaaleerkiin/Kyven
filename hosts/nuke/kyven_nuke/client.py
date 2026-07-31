@@ -67,6 +67,9 @@ class NukeKyvenClient:
     def submit_refine(self, payload):
         return str(self._request("POST", "/v1/jobs/refine", payload)["job_id"])
 
+    def submit_inpaint(self, payload):
+        return str(self._request("POST", "/v1/jobs/inpaint", payload)["job_id"])
+
     def preview_trimap(self, payload):
         return self._request("POST", "/v1/preview/trimap", payload, timeout_seconds=60.0)
 

@@ -45,11 +45,21 @@ kyven models download vitmatte-small-composition-1k --models-dir models
 
 ## Planned provider families
 
-Depth and Inpaint are roadmap items and are not yet part of the catalog or installer. Planned Depth
+## Inpaint catalog
+
+| Model ID | Display name | Download | Hardware guidance |
+| --- | --- | ---: | --- |
+| `lama-2025jan-onnx` | LaMa 2025-01 ONNX | 93 MB | CPU; no GPU VRAM required |
+
+LaMa is downloaded from a pinned OpenCV Hugging Face revision, verified by size and SHA-256, and
+runs through ONNX Runtime. Both model and runtime permit commercial use. PowerPaint remains a
+planned optional quality provider because its multi-file download is several gigabytes.
+
+## Planned provider families
+
+Depth is a roadmap item and is not yet part of the catalog or installer. Planned Depth
 work currently favors commercially safe Small variants for interactive and temporal processing;
-non-commercial Base/Large checkpoints must not appear as safe defaults. Inpaint has no selected
-provider until its commercial terms, hardware behavior, temporal quality, and output contract are
-audited.
+non-commercial Base/Large checkpoints must not appear as safe defaults.
 
 See [Kyven Tools vision and roadmap](ROADMAP.md) for candidate models and proposed controls. Adding
 a name to that roadmap does not make a checkpoint approved: catalog inclusion still requires a

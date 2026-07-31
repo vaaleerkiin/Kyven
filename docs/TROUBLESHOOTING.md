@@ -29,8 +29,8 @@ The Nuke adapter launches `python.exe -I -m kyven.server.bootstrap`. On Windows 
 the DLL directory inherited from Nuke before importing PyTorch; this prevents the common
 `c10.dll` / `WinError 1114` startup failure.
 
-Kyven API 10 uses port `18773`. Older development servers may remain on 8765-8769 or 18768-18772,
-but the adapter asks authenticated older servers to unload their models before starting API 10.
+Kyven API 11 uses port `18774`. Older development servers may remain on 8765-8769 or 18768-18773,
+but the adapter asks authenticated older servers to unload their models before starting API 11.
 
 ## Refine fails or returns the coarse mask unchanged
 
@@ -40,7 +40,7 @@ but the adapter asks authenticated older servers to unload their models before s
 - Select Red as `Input 1 Channel` when the mask/trimap is stored in RGB instead of alpha.
 - Increase erosion/dilation to give ViTMatte a wider unknown edge region.
 - Use Low Memory (512 px tiles) when VRAM is limited.
-- After updating from an older API, restart Nuke so it launches the server on port 18773.
+- After updating from an older API, restart Nuke so it launches the server on port 18774.
 
 ## Trimap output is missing or shows only the input mask
 

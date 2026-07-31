@@ -1,8 +1,8 @@
 # Kyven Tools for Nuke
 
 The Nuke adapter exposes independent Kyven Tools operations as native-looking Group nodes. The
-current Segment and Refine nodes export frames to the local Kyven Server and read cached PNG mattes
-back into the graph. Future Depth and Inpaint nodes will reuse the same host/server boundary and
+current Segment, Refine, and Inpaint nodes export frames to the local Kyven Server and read cached results
+back into the graph. Future Depth nodes will reuse the same host/server boundary and
 per-node cache conventions. Nuke remains responsive while server inference runs.
 
 ## Portable install
@@ -32,7 +32,17 @@ nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 
 The adapter discovers the repository from its own installed plugin path, so the folder may be placed
 anywhere. `KYVEN_ROOT` is only an optional override for custom deployments. Restart Nuke and choose
-`Kyven > Segment` or `Kyven > Refine` from the Nodes menu.
+`Kyven > Segment`, `Kyven > Refine`, or `Kyven > Inpaint` from the Nodes menu.
+
+## Inpaint workflow
+
+Connect Source to input 0 and a removal mask to input 1. Choose Alpha or Red for the mask channel.
+`Auto` Crop Mode finds the non-black mask bounds and adds Context Padding; `Manual` exposes an
+animatable ROI; `Full` sends the complete frame. Grow gives the model enough area to replace object
+edges, while Edge Feather controls the final merge. Only that grown/feathered mask is pasted over
+Source, so pixels outside it are preserved. LaMa works on CPU and does not consume the 4 GB GPU
+budget. Live processes changes to the current frame; range mode queues independent frames and may
+flicker on difficult footage because LaMa is not a temporal model.
 
 After updating Kyven, select an existing node and use the matching command:
 
@@ -166,7 +176,8 @@ Typical files include exported source frames, displayed `matte.%04d.png`, CPU-pr
 `raw_matte.%04d.png`, video JPEGs, `tracked_matte.%04d.png`, and
 `raw_tracked_matte.%04d.png`. Refine nodes add fast lossless `refine_source.%04d.tif`,
 `refine_mask.%04d.png`, `refined_matte.%04d.png`, exact processed trimaps, and lightweight
-`trimap_preview` files under their own UUID folder.
+`trimap_preview` files under their own UUID folder. Inpaint adds source, mask, and full-format
+`inpaint_result.%04d.png` files.
 
 - `Create Matte Read` creates a normal Nuke Read pointing to the current cached matte or sequence.
 - `Delete Node Cache` disconnects and removes only the current node's cache after confirmation.
@@ -175,7 +186,7 @@ Typical files include exported source frames, displayed `matte.%04d.png`, CPU-pr
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18773` and requires API 10. A
+The adapter starts an external hidden Python process on `127.0.0.1:18774` and requires API 11. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

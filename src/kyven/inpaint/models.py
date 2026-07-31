@@ -1,0 +1,98 @@
+"""Host-neutral models for image inpainting jobs."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+from numpy.typing import NDArray
+
+from kyven.errors import ErrorCode, KyvenError
+from kyven.segment.models import BoxPrompt, ExecutionProfile
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class InpaintRequest:
+    source: Path
+    mask: Path
+    output: Path
+    provider_id: str = "lama-2025jan-onnx"
+    profile: ExecutionProfile = ExecutionProfile.BALANCED
+    crop_mode: str = "auto"
+    roi: BoxPrompt | None = None
+    context_padding: int = 128
+    mask_grow: int = 8
+    mask_feather: float = 4.0
+    processing_size: int = 0
+
+    def validate(self) -> None:
+        for label, path in (("Source", self.source), ("Mask", self.mask)):
+            if not path.is_file():
+                raise KyvenError(ErrorCode.INVALID_REQUEST, f"{label} image does not exist: {path}")
+        if self.crop_mode not in {"auto", "manual", "full"}:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Inpaint crop mode must be auto, manual, or full.")
+        if self.crop_mode == "manual" and self.roi is None:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Manual inpaint crop mode requires an ROI.")
+        if self.context_padding < 0 or self.mask_grow < 0 or self.mask_feather < 0:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Padding, mask grow, and feather cannot be negative.")
+        if self.processing_size and self.processing_size < 128:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Processing size must be zero or at least 128 pixels.")
+
+    def canonical(self) -> dict[str, Any]:
+        return {
+            "provider_id": self.provider_id,
+            "profile": self.profile.value,
+            "crop_mode": self.crop_mode,
+            "roi": self.roi.canonical() if self.roi else None,
+            "context_padding": self.context_padding,
+            "mask_grow": self.mask_grow,
+            "mask_feather": self.mask_feather,
+            "processing_size": self.processing_size,
+        }
+
+    def cache_key(self, provider_version: str, model_checksum: str) -> str:
+        payload = {
+            "source_sha256": _sha256(self.source),
+            "mask_sha256": _sha256(self.mask),
+            "request": self.canonical(),
+            "provider_version": provider_version,
+            "model_checksum": model_checksum,
+        }
+        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class InpaintCapabilities:
+    provider_id: str
+    display_name: str
+    provider_version: str
+    model_checksum: str
+    license_name: str
+    license_url: str
+    supports_cpu: bool
+    minimum_vram_mb: int | None
+
+
+@dataclass(slots=True)
+class InpaintPrediction:
+    rgb: NDArray[np.uint8]
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class InpaintResult:
+    output: Path
+    cache_key: str
+    metadata: dict[str, Any]

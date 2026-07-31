@@ -1,8 +1,8 @@
 # Kyven Tools Server
 
 Kyven Server is the shared execution layer for the Kyven Tools toolkit. It isolates PyTorch, CUDA,
-model loading, and task-specific inference from Nuke, Fusion, and Resolve. Segment and Refine are
-the implemented APIs; planned tools such as Depth and Inpaint must extend the provider/job system
+model loading, and task-specific inference from Nuke, Fusion, and Resolve. Segment, Refine, and
+Inpaint are implemented APIs; planned tools such as Depth must extend the provider/job system
 instead of placing inference inside a host adapter. The server binds only to `127.0.0.1` and
 requires a random bearer token on every endpoint.
 
@@ -26,6 +26,7 @@ it must not be committed or logged.
 | `POST` | `/v1/jobs/segment` | Queue a segmentation job |
 | `POST` | `/v1/jobs/segment-video` | Queue SAM 2 temporal mask propagation |
 | `POST` | `/v1/jobs/refine` | Queue ViTMatte alpha refinement |
+| `POST` | `/v1/jobs/inpaint` | Queue LaMa Source + Mask object removal |
 | `POST` | `/v1/preview/trimap` | Build trimap on CPU without ViTMatte |
 | `POST` | `/v1/preview/mask-postprocess` | Rebuild matte from raw SAM output on CPU |
 | `GET` | `/v1/jobs/{id}` | Read status or result |
@@ -80,11 +81,18 @@ frame's original coordinates before the job succeeds.
 Outside an enabled Refine ROI, the coarse alpha is preserved in the refined result. The persisted
 trimap is black outside the ROI because those pixels were not sent to ViTMatte.
 
-API version 10 makes CPU-only previews single-flight and uses linear-time trimap morphology. It
+### Inpaint fields
+
+`source`, `mask`, and `output` are absolute paths. `crop_mode` is `auto`, `manual`, or `full`;
+manual mode uses `roi`, while auto mode uses `context_padding`. `mask_grow`, `mask_feather`, and
+`processing_size` control inference coverage, final merge softness, and optional downscaling.
+Empty masks return Source unchanged without loading a model.
+
+API version 11 adds Inpaint jobs and the LaMa provider. It retains CPU-only previews and linear-time trimap morphology. It
 retains `/v1/preview/trimap` and `/v1/preview/mask-postprocess`, so host controls update without
 rerunning a model. It also retains detailed Segment and Refine progress stages and the API 7
 persisted `trimap_output`. `GET /v1/jobs/{id}` returns `progress` (0.0-1.0) and
 `progress_message`. A video request may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
-returned masks to the original dimensions. The Nuke adapter uses versioned port `18773` to avoid
+returned masks to the original dimensions. The Nuke adapter uses versioned port `18774` to avoid
 connecting to stale API processes during development.

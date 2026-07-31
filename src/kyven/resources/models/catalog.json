@@ -73,6 +73,24 @@
       "redistribution": true
     },
     {
+      "model_id": "lama-2025jan-onnx",
+      "task": "inpaint",
+      "display_name": "LaMa 2025-01 ONNX",
+      "provider": "lama-onnx",
+      "config": "",
+      "filename": "inpainting_lama_2025jan.onnx",
+      "source": "https://huggingface.co/opencv/inpainting_lama/resolve/aee6d22f0a13e5e35af1c9a1c3afd62841fc6f3f/inpainting_lama_2025jan.onnx",
+      "sha256": "7df918ac3921d3daf0aae1d219776cf0dc4e4935f035af81841b40adcf74fdf2",
+      "size_bytes": 92591623,
+      "parameters_millions": 0.0,
+      "recommended_vram_mb": 0,
+      "supports_cpu": true,
+      "license": "Apache-2.0",
+      "license_url": "https://huggingface.co/opencv/inpainting_lama",
+      "commercial_use": true,
+      "redistribution": true
+    },
+    {
       "model_id": "vitmatte-small-composition-1k",
       "task": "refine",
       "display_name": "ViTMatte Small (Composition-1k)",

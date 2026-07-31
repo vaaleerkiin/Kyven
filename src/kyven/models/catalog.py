@@ -89,6 +89,7 @@ class ModelCatalog:
         )
 
     def registry(self, models_dir: Path, device: str) -> ProviderRegistry:
+        from kyven.inpaint.providers.lama import LamaOnnxProvider
         from kyven.refine.providers.vitmatte import VitMatteProvider
         from kyven.segment.providers.sam2 import Sam2Provider
 
@@ -117,6 +118,15 @@ class ModelCatalog:
                     expected_checksum=spec.sha256,
                     provider_id=spec.model_id,
                     display_name=spec.display_name,
+                ),
+            )
+        for spec in self.list("inpaint"):
+            registry.register(
+                spec.model_id,
+                lambda spec=spec: LamaOnnxProvider(
+                    checkpoint=str(spec.path(models_dir)),
+                    expected_checksum=spec.sha256,
+                    device=device,
                 ),
             )
         return registry

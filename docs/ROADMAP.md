@@ -14,7 +14,7 @@ Kyven Tools
 |-- Segment       available in Nuke
 |-- Refine        available in Nuke
 |-- Depth         planned next
-|-- Inpaint       discovery / model evaluation
+|-- Inpaint       LaMa available; PowerPaint quality provider planned
 |-- Utils         future focused image and paint utilities
 |-- Server        shared local inference and cache service
 |-- SDK           future provider and host APIs
@@ -129,13 +129,13 @@ The installer should eventually let the user select image-depth, video-depth, an
 models independently. Depth is not included in the installer until the provider implementation and
 checkpoint hashes are complete.
 
-## Planned: Kyven Inpaint
+## Kyven Inpaint
 
-Inpaint is intentionally in discovery rather than tied to a model today. The useful compositing
-contract must be designed first, then matched to commercially safe providers that can operate on
-real production footage and practical hardware.
+The first Inpaint provider is OpenCV's Apache-2.0 LaMa ONNX model. It provides fast object removal,
+works without GPU VRAM, and keeps the 4 GB project baseline intact. PowerPaint is planned as a
+separate optional quality/guided-fill provider after secure bundle installation is implemented.
 
-### Initial node contract
+### Current node contract
 
 - input 0: Source;
 - input 1: removal/fill Mask;
@@ -147,7 +147,7 @@ real production footage and practical hardware.
 - standard progress, cancel, cache, Create Read, and cleanup controls;
 - result, patch/mask diagnostics, and Source (Bypass) outputs.
 
-### Questions that must be answered before implementation
+### Quality-provider work still required
 
 1. Is the goal object removal, clean-plate generation, generative fill, or separate modes?
 2. Can the selected model and weights be used commercially and redistributed or downloaded safely?
@@ -156,9 +156,8 @@ real production footage and practical hardware.
 5. Should temporal inpainting be a later provider rather than post-stabilized still inpainting?
 6. Which cache format preserves source color, bit depth, and alpha correctly?
 
-No default Inpaint model should be named in the installer until these questions and third-party
-notices are resolved. Heavy providers may be optional, but they cannot silently redefine the
-project's 4 GB baseline.
+LaMa is selectable in the installer. Heavy providers remain optional and cannot silently redefine
+the project's 4 GB baseline.
 
 ## Future Kyven Utils
 

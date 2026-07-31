@@ -11,6 +11,8 @@ import tempfile
 from pathlib import Path
 
 from kyven.errors import ErrorCode, KyvenError
+from kyven.inpaint.models import InpaintRequest
+from kyven.inpaint.service import InpaintService
 from kyven.models.catalog import ModelCatalog
 from kyven.refine.models import RefineRequest
 from kyven.refine.service import RefineService
@@ -54,7 +56,7 @@ def _add_runtime_options(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     """Build the public CLI parser."""
 
-    parser = argparse.ArgumentParser(prog="kyven", description="Local AI masking engine")
+    parser = argparse.ArgumentParser(prog="kyven", description="Local AI tools for compositing")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     segment = subparsers.add_parser("segment", help="Create a matte from point or box prompts")
@@ -92,6 +94,20 @@ def build_parser() -> argparse.ArgumentParser:
     refine.add_argument("--roi", type=_box)
     refine.add_argument("--tile-size", default=0, type=int)
     refine.add_argument("--tile-overlap", default=64, type=int)
+
+    inpaint = subparsers.add_parser("inpaint", help="Remove masked content from an image")
+    inpaint.add_argument("--input", required=True, type=Path)
+    inpaint.add_argument("--mask", required=True, type=Path)
+    inpaint.add_argument("--output", required=True, type=Path)
+    inpaint.add_argument("--model", default="lama-2025jan-onnx", choices=_model_ids("inpaint"))
+    _add_runtime_options(inpaint)
+    inpaint.add_argument("--profile", default="balanced", choices=tuple(p.value for p in ExecutionProfile))
+    inpaint.add_argument("--crop-mode", default="auto", choices=("auto", "manual", "full"))
+    inpaint.add_argument("--roi", type=_box)
+    inpaint.add_argument("--context-padding", default=128, type=int)
+    inpaint.add_argument("--mask-grow", default=8, type=int)
+    inpaint.add_argument("--mask-feather", default=4.0, type=float)
+    inpaint.add_argument("--processing-size", default=0, type=int)
 
     serve = subparsers.add_parser("serve", help="Run the authenticated local inference server")
     _add_runtime_options(serve)
@@ -219,6 +235,7 @@ def main(argv: list[str] | None = None) -> int:
                     SegmentService(registry),
                     VideoSegmentService(registry),
                     RefineService(registry),
+                    InpaintService(registry),
                 ),
                 registry,
                 catalog,
@@ -230,6 +247,17 @@ def main(argv: list[str] | None = None) -> int:
                 pass
             finally:
                 server.close()
+            return 0
+        if args.command == "inpaint":
+            registry = catalog.registry(args.models_dir, args.device)
+            result = InpaintService(registry).run(InpaintRequest(
+                source=args.input, mask=args.mask, output=args.output,
+                provider_id=args.model, profile=ExecutionProfile(args.profile),
+                crop_mode=args.crop_mode, roi=args.roi, context_padding=args.context_padding,
+                mask_grow=args.mask_grow, mask_feather=args.mask_feather,
+                processing_size=args.processing_size,
+            ))
+            print(json.dumps({"output": str(result.output), "cache_key": result.cache_key, "metadata": result.metadata}, indent=2))
             return 0
         if args.command == "models" and args.model_command == "list":
             print(
