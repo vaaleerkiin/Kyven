@@ -11,7 +11,7 @@ from typing import Any
 
 from kyven_nuke import config
 from kyven_nuke.payload import MODEL_LABELS, segment_payload, segment_video_payload
-from kyven_nuke.runtime import ensure_server
+from kyven_nuke.runtime import ensure_server, stop_server
 
 MAX_PROMPT_POINTS = 32
 OUTPUT_MODES = ("Matte", "Source + Alpha", "Cutout", "Source (Bypass)")
@@ -1105,6 +1105,44 @@ def start_server() -> None:
     threading.Thread(target=start, name="kyven-server-start", daemon=True).start()
 
 
+def start_server_for_node() -> None:
+    """Start or validate Kyven Server and report through the calling node Status."""
+
+    nuke = _nuke()
+    node_name = nuke.thisNode().fullName()
+    _set_status(node_name, "Starting Kyven Server...")
+
+    def start() -> None:
+        try:
+            ensure_server()
+            nuke.executeInMainThread(_set_status, args=(node_name, "Kyven Server is ready."))
+        except Exception as exc:  # noqa: BLE001
+            nuke.executeInMainThread(_set_status, args=(node_name, f"Server start failed: {exc}"))
+
+    threading.Thread(target=start, name="kyven-node-server-start", daemon=True).start()
+
+
+def stop_server_for_node() -> None:
+    """Stop the authenticated Kyven Server after explicit artist confirmation."""
+
+    nuke = _nuke()
+    node = nuke.thisNode()
+    if not nuke.ask("Stop Kyven Server?\n\nActive processing may be interrupted."):
+        return
+    node_name = node.fullName()
+    _set_status(node_name, "Stopping Kyven Server...")
+
+    def stop() -> None:
+        try:
+            stopped = stop_server()
+            message = "Kyven Server stopped." if stopped else "Kyven Server is already stopped."
+            nuke.executeInMainThread(_set_status, args=(node_name, message))
+        except Exception as exc:  # noqa: BLE001
+            nuke.executeInMainThread(_set_status, args=(node_name, f"Server stop failed: {exc}"))
+
+    threading.Thread(target=stop, name="kyven-node-server-stop", daemon=True).start()
+
+
 def _add_knob(nuke: Any, node: Any, knob: Any, *, start_line: bool = True) -> Any:
     if start_line:
         knob.setFlag(nuke.STARTLINE)
@@ -1406,6 +1444,35 @@ def _ensure_model_manager_control(node: Any) -> None:
         )
 
 
+def _ensure_server_controls(node: Any) -> None:
+    """Add and position shared server lifecycle controls beside Status."""
+
+    nuke = _nuke()
+    if "start_server_control" not in node.knobs():
+        _add_knob(
+            nuke,
+            node,
+            nuke.PyScript_Knob(
+                "start_server_control",
+                "Start Server",
+                "kyven_nuke.node.start_server_for_node()",
+            ),
+        )
+    if "stop_server_control" not in node.knobs():
+        _add_knob(
+            nuke,
+            node,
+            nuke.PyScript_Knob(
+                "stop_server_control",
+                "Stop Server",
+                "kyven_nuke.node.stop_server_for_node()",
+            ),
+            start_line=False,
+        )
+    _place_knob_after(node, "start_server_control", "kyven_status")
+    _place_knob_after(node, "stop_server_control", "start_server_control")
+
+
 def _upgrade_roi_controls(node: Any) -> None:
     """Update legacy prompt-box labels to the Processing ROI terminology."""
     if "box_section" in node.knobs():
@@ -1432,6 +1499,7 @@ def upgrade_selected_segment_node() -> None:
         _ensure_postprocess_controls(node)
         _ensure_live_controls(node)
         _ensure_model_manager_control(node)
+        _ensure_server_controls(node)
         _upgrade_roi_controls(node)
         _restyle_node_ui(node)
         sync_prompt_visibility(node)
@@ -1694,6 +1762,7 @@ def create_segment_node() -> Any:
     status.setFlag(nuke.READ_ONLY)
     status.setValue("Ready")
     _add_knob(nuke, node, status)
+    _ensure_server_controls(node)
     job_id = nuke.String_Knob("kyven_job_id", "Job ID")
     job_id.setVisible(False)
     job_id.clearFlag(nuke.STARTLINE)

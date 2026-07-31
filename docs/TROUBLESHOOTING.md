@@ -32,6 +32,10 @@ the DLL directory inherited from Nuke before importing PyTorch; this prevents th
 Kyven API 15 uses port `18778`. Older development servers may remain on 8765-8769 or 18768-18777,
 but the adapter asks authenticated older servers to unload their models before starting API 15.
 
+Each Kyven node provides **Stop Server** and **Start Server** next to Status. Use them after updating
+the repository if Nuke is still connected to code loaded before the update. Stop affects only the
+authenticated Kyven service on port `18778`; it does not terminate Nuke or unrelated Python tools.
+
 ## Refine fails or returns the coarse mask unchanged
 
 - Connect the original RGB image to input 0 and a mask/trimap to input 1.

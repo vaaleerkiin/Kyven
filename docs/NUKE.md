@@ -38,6 +38,11 @@ Use `Kyven > Model Manager...` at any time to install or remove a trusted catalo
 same button appears in every Kyven node. Downloads show progress and become available only after
 exact size and SHA-256 verification; model removal does not delete rendered caches.
 
+Every node also has **Start Server** and **Stop Server** directly below its Status field. Start
+validates an existing server or launches a fresh one. Stop asks for confirmation, authenticates the
+service before touching it, and can terminate an older Kyven process that predates the shutdown API.
+Use Stop followed by Start after updating Kyven or when a stale worker remains in memory.
+
 ## Inpaint workflow
 
 For a focused control-by-control guide, see [Kyven Inpaint](INPAINT.md).

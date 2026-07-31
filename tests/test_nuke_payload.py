@@ -29,10 +29,19 @@ from kyven_nuke.payload import (
     segment_video_payload,
 )
 from kyven_nuke.refine_node import REFINE_OUTPUT_MODES, _trimap_preview_paths
-from kyven_nuke.runtime import _server_environment
+from kyven_nuke.runtime import _listener_pids, _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_listener_pid_parser_uses_only_exact_listening_port(self) -> None:
+        output = """
+          TCP    127.0.0.1:18778    0.0.0.0:0    LISTENING    17020
+          TCP    127.0.0.1:18777    0.0.0.0:0    LISTENING    999
+          TCP    127.0.0.1:18778    127.0.0.1:50000    TIME_WAIT    0
+        """
+
+        self.assertEqual(_listener_pids(output), (17020,))
+
     def test_worker_error_includes_technical_detail(self) -> None:
         message = _job_error_text(
             {

@@ -36,6 +36,7 @@ it must not be committed or logged.
 | `GET` | `/v1/jobs/{id}` | Read status or result |
 | `POST` | `/v1/jobs/{id}/cancel` | Request cooperative cancellation |
 | `POST` | `/v1/providers/unload-all` | Safely unload models after active work |
+| `POST` | `/v1/server/shutdown` | Gracefully stop the authenticated local server |
 
 GPU jobs execute in a single-worker queue. HTTP requests and host UIs remain responsive. Model
 unloading is queued behind active inference so it cannot race a running kernel. Model removal uses

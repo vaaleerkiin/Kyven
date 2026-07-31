@@ -129,6 +129,9 @@ class KyvenClient:
     def unload_all(self) -> dict[str, Any]:
         return self._request("POST", "/v1/providers/unload-all", {})
 
+    def shutdown_server(self) -> dict[str, Any]:
+        return self._request("POST", "/v1/server/shutdown", {})
+
     def wait(
         self,
         job_id: str,

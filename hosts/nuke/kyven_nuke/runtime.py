@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import time
 from collections.abc import Mapping
@@ -62,6 +63,62 @@ def _startup_failure(log_path: Path, return_code: int) -> RuntimeError:
 
 def client() -> NukeKyvenClient:
     return NukeKyvenClient.from_token_file(config.token_file(), port=PORT)
+
+
+def _listener_pids(netstat_output: str, port: int = PORT) -> tuple[int, ...]:
+    """Extract Windows listener PIDs for one exact TCP port."""
+
+    found: set[int] = set()
+    suffix = f":{port}"
+    for line in netstat_output.splitlines():
+        fields = line.split()
+        if len(fields) < 5 or fields[0].upper() != "TCP" or fields[3].upper() != "LISTENING":
+            continue
+        if fields[1].endswith(suffix) and fields[4].isdigit():
+            found.add(int(fields[4]))
+    return tuple(sorted(found))
+
+
+def _terminate_authenticated_listener() -> None:
+    """Windows fallback for an older authenticated Kyven server without shutdown API."""
+
+    if os.name != "nt":
+        raise RuntimeError("The running Kyven server does not support remote shutdown.")
+    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    output = subprocess.check_output(
+        ["netstat", "-ano"],
+        text=True,
+        errors="replace",
+        creationflags=creation_flags,
+    )
+    pids = _listener_pids(output)
+    if len(pids) != 1:
+        raise RuntimeError(f"Could not identify one Kyven listener on port {PORT}: {pids}")
+    os.kill(pids[0], signal.SIGTERM)
+
+
+def stop_server(timeout_seconds: float = 10.0) -> bool:
+    """Stop only the authenticated Kyven service on the configured port."""
+
+    try:
+        current = client()
+        health = current.health()
+    except (OSError, NukeKyvenClientError):
+        return False
+    if health.get("service") != "kyven":
+        raise RuntimeError(f"Port {PORT} is not owned by a Kyven service.")
+    try:
+        current.shutdown_server()
+    except (OSError, NukeKyvenClientError):
+        _terminate_authenticated_listener()
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            client().health()
+        except (OSError, NukeKyvenClientError):
+            return True
+        time.sleep(0.1)
+    raise RuntimeError("Kyven Server did not stop within 10 seconds.")
 
 
 def _unload_legacy_servers() -> None:

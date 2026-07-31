@@ -14,6 +14,7 @@ from kyven_nuke.node import (
     _cache_root,
     _ensure_cache_controls,
     _ensure_live_controls,
+    _ensure_server_controls,
     _finish_progress,
     _format_eta,
     _inside,
@@ -924,6 +925,7 @@ def upgrade_selected_refine_node() -> None:
                     "kyven_nuke.model_manager.show_model_manager()",
                 ),
             )
+        _ensure_server_controls(node)
         _restyle_refine_ui(node)
     except Exception as exc:  # noqa: BLE001
         nuke.message(f"Could not upgrade the selected Refine node:\n{exc}")
@@ -1082,6 +1084,7 @@ def create_refine_node() -> Any:
     status.setFlag(nuke.READ_ONLY)
     status.setValue("Ready")
     _add_knob(nuke, node, status)
+    _ensure_server_controls(node)
     job_id = nuke.String_Knob("kyven_job_id", "Job ID")
     job_id.setVisible(False)
     node.addKnob(job_id)

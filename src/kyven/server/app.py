@@ -213,6 +213,14 @@ def _handler_type(
                     manager.unload_all(registry)
                     self._send(HTTPStatus.OK, {"status": "unloaded"})
                     return
+                if path == "/v1/server/shutdown":
+                    self._send(HTTPStatus.ACCEPTED, {"status": "stopping"})
+                    threading.Thread(
+                        target=self.server.shutdown,
+                        name="kyven-http-shutdown",
+                        daemon=True,
+                    ).start()
+                    return
                 self._send(HTTPStatus.NOT_FOUND, {"error": {"message": "Not found."}})
             except KyvenError as exc:
                 self._error(exc)

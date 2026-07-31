@@ -13,6 +13,7 @@ from kyven_nuke.node import (
     _add_section,
     _cache_root,
     _ensure_live_controls,
+    _ensure_server_controls,
     _finish_progress,
     _inside,
     _job_error_text,
@@ -378,7 +379,7 @@ def create_inpaint_node() -> Any:
     _add_knob(nuke, node, nuke.PyScript_Knob("delete_node_cache", "Delete Node Cache", "kyven_nuke.inpaint_node.delete_this_node_cache()"), start_line=False)
     _add_knob(nuke, node, nuke.PyScript_Knob("delete_all_cache", "Delete All Kyven Cache", "kyven_nuke.node.delete_all_cache()"))
     job = nuke.String_Knob("kyven_job_id", "Job ID"); job.setVisible(False); node.addKnob(job)
-    _add_section(nuke, node, "status_section", "STATUS"); status = nuke.String_Knob("kyven_status", "Status"); status.setFlag(nuke.READ_ONLY); status.setValue("Ready"); _add_knob(nuke, node, status)
+    _add_section(nuke, node, "status_section", "STATUS"); status = nuke.String_Knob("kyven_status", "Status"); status.setFlag(nuke.READ_ONLY); status.setValue("Ready"); _add_knob(nuke, node, status); _ensure_server_controls(node)
     node["knobChanged"].setValue("kyven_nuke.inpaint_node.knob_changed()")
     node.begin()
     try:
@@ -462,6 +463,7 @@ def upgrade_selected_inpaint_node() -> None:
         )
         for knob in tail:
             node.addKnob(knob)
+    _ensure_server_controls(node)
     _restyle_inpaint_cache(node)
     if "kyven_status" in node.knobs():
         node["kyven_status"].setValue("Inpaint UI upgraded. Cached results were preserved.")
