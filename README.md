@@ -6,9 +6,9 @@ Kyven Tools adds independent AI nodes to Foundry Nuke while keeping PyTorch, CUD
 and long-running inference outside the Nuke process. Results are returned as ordinary cached image
 sequences that remain usable without a live model connection.
 
-> **Production-safe and commercially usable.** Inference stays local, source media is not uploaded,
-> the project code is Apache-2.0, and every model currently enabled in the trusted catalog is marked
-> for commercial use with pinned source and license metadata.
+> **Local-first and suitable for commercial work.** Kyven's code can be used commercially under
+> Apache-2.0. Inference stays local, source media is not uploaded, and every model currently enabled
+> in the trusted catalog is marked for commercial use with pinned source and license metadata.
 >
 > **Project status:** active pre-alpha. Segment, Refine, and Inpaint are working in Nuke on Windows.
 > Fusion and DaVinci Resolve adapters, Depth, and additional utilities are planned.
@@ -163,8 +163,9 @@ are reused. Existing Groups can then be updated without changing their UUID or c
 
 - Inference is local by default; the server binds only to `127.0.0.1`.
 - Model downloads are pinned and verified before activation.
-- Project code is licensed under Apache-2.0.
-- Built-in provider code and model metadata are selected for commercial use.
+- Project code may be used commercially under the Apache-2.0 license.
+- Every model in the built-in trusted catalog is marked for commercial use and includes source and
+  license metadata.
 - Model weights are downloaded during installation and are not committed to this repository.
 
 Review [Third-party notices](THIRD_PARTY_NOTICES.md) before distribution in a production pipeline.
