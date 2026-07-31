@@ -117,7 +117,7 @@ def _set_processed_mask(node: Any, path: Path, first: int | None = None, last: i
     finally: node.end()
 
 
-def _set_model_mask_preview(node: Any, path: Path) -> None:
+def _set_model_mask_preview(node: Any, path: Path, frame: int) -> None:
     nuke = _nuke()
     node.begin()
     try:
@@ -130,6 +130,9 @@ def _set_model_mask_preview(node: Any, path: Path) -> None:
             model_switch.setInput(1, read)
         else:
             read["file"].setValue(_nuke_file_path(path))
+        for name in ("first", "last", "origfirst", "origlast"):
+            if name in read.knobs():
+                read[name].setValue(frame)
         if "reload" in read.knobs():
             read["reload"].execute()
         model_switch["which"].setValue(1)
@@ -170,11 +173,15 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
             output_switch.setInput(3, processed_mask)
             output_switch.setInput(4, difference)
             output_switch.setInput(5, source)
-            selector = (
-                "parent.preview_processed_mask ? 3 : parent.output_mode"
-                if "preview_processed_mask" in node.knobs()
-                else "parent.output_mode"
-            )
+            if "preview_model_mask" in node.knobs() and "preview_blend_mask" in node.knobs():
+                selector = (
+                    "parent.preview_model_mask ? 2 : "
+                    "(parent.preview_blend_mask ? 3 : parent.output_mode)"
+                )
+            elif "preview_processed_mask" in node.knobs():
+                selector = "parent.preview_processed_mask ? 3 : parent.output_mode"
+            else:
+                selector = "parent.output_mode"
             output_switch["which"].setExpression(selector)
     finally:
         node.end()
@@ -322,7 +329,7 @@ def _finish_mask_preview(
     if error or not model_output_path.is_file() or not blend_output_path.is_file():
         _set_status(node_name, f"Mask preview failed: {error or 'output was not created'}")
         return
-    _set_model_mask_preview(node, model_output_path)
+    _set_model_mask_preview(node, model_output_path, frame)
     _set_processed_mask(node, blend_output_path, frame, frame)
     mode = "preprocessed" if result.get("preprocess_mask") else "clean input"
     _set_status(node_name, f"Live model and blend masks ready ({mode}).")
@@ -516,10 +523,25 @@ def knob_changed() -> None:
     for name in ("invert_mask", "mask_threshold", "mask_grow", "blend_grow", "mask_feather"):
         if name in node.knobs():
             node[name].setVisible(preprocess)
+    if (
+        knob_name == "preview_model_mask"
+        and bool(node["preview_model_mask"].value())
+        and "preview_blend_mask" in node.knobs()
+    ):
+        node["preview_blend_mask"].setValue(False)
+    elif (
+        knob_name == "preview_blend_mask"
+        and bool(node["preview_blend_mask"].value())
+        and "preview_model_mask" in node.knobs()
+    ):
+        node["preview_model_mask"].setValue(False)
     if knob_name in {
         "inputChange",
+        "output_mode",
         "mask_channel",
         "preprocess_mask",
+        "preview_model_mask",
+        "preview_blend_mask",
         "preview_processed_mask",
         "invert_mask",
         "mask_threshold",
@@ -572,13 +594,26 @@ def _ensure_inpaint_mask_sliders(node: Any) -> None:
         enabled = nuke.Boolean_Knob("preprocess_mask", "Preprocess Input Mask")
         enabled.setValue(True)
         _add_knob(nuke, node, enabled)
-    if "preview_processed_mask" not in node.knobs():
-        preview = nuke.Boolean_Knob("preview_processed_mask", "Preview Processed Mask")
-        preview.setValue(False)
-        _add_knob(nuke, node, preview, start_line=False)
+    previous_blend_preview = (
+        bool(node["preview_processed_mask"].value())
+        if "preview_processed_mask" in node.knobs()
+        else False
+    )
+    if "preview_model_mask" not in node.knobs():
+        preview_model = nuke.Boolean_Knob("preview_model_mask", "Preview Model Mask")
+        preview_model.setValue(False)
+        _add_knob(nuke, node, preview_model, start_line=False)
+    if "preview_blend_mask" not in node.knobs():
+        preview_blend = nuke.Boolean_Knob("preview_blend_mask", "Preview Blend Mask")
+        preview_blend.setValue(previous_blend_preview)
+        _add_knob(nuke, node, preview_blend, start_line=False)
+    if "preview_processed_mask" in node.knobs():
+        node["preview_processed_mask"].setVisible(False)
     _place_knob_after(node, "preprocess_mask", "mask_channel")
-    _place_knob_after(node, "preview_processed_mask", "preprocess_mask")
-    node["preview_processed_mask"].clearFlag(nuke.STARTLINE)
+    _place_knob_after(node, "preview_model_mask", "preprocess_mask")
+    _place_knob_after(node, "preview_blend_mask", "preview_model_mask")
+    node["preview_model_mask"].clearFlag(nuke.STARTLINE)
+    node["preview_blend_mask"].clearFlag(nuke.STARTLINE)
     _ensure_double_slider(node, "mask_threshold", "Threshold", 0, 1, 0.5)
     _ensure_double_slider(node, "mask_grow", "Model Mask Grow (px)", -128, 128, 12)
     _ensure_double_slider(node, "blend_grow", "Blend Mask Grow (px)", -128, 128, 8)
@@ -636,7 +671,7 @@ def create_inpaint_node() -> Any:
     preprocess = nuke.Boolean_Knob("preprocess_mask", "Preprocess Input Mask"); preprocess.setValue(True); _add_knob(nuke, node, preprocess)
     invert = nuke.Boolean_Knob("invert_mask", "Invert Input Mask"); _add_knob(nuke, node, invert)
     _ensure_inpaint_mask_sliders(node)
-    _add_knob(nuke, node, nuke.Text_Knob("mask_help", "", "Preview Processed Mask temporarily sends the live Blend Mask to the node output. Disable Preprocess Input Mask to use the clean soft input mask; only mandatory model binarization remains."))
+    _add_knob(nuke, node, nuke.Text_Knob("mask_help", "", "Preview Model Mask reacts to Threshold and Model Grow. Preview Blend Mask reacts to Threshold, Blend Grow, and Feather. Disable preprocessing to preview and use the clean input mask."))
     _add_section(nuke, node, "roi_section", "PROCESSING ROI / MODEL CROP")
     _add_knob(nuke, node, nuke.Enumeration_Knob("crop_mode", "Crop Mode", ["auto", "manual", "full"]))
     padding = nuke.Int_Knob("context_padding", "Context Padding (px)"); padding.setRange(0, 1024); padding.setValue(128); _add_knob(nuke, node, padding)
@@ -758,9 +793,9 @@ def upgrade_selected_inpaint_node() -> None:
         )
     if "mask_help" in node.knobs():
         node["mask_help"].setValue(
-            "Preview Processed Mask temporarily sends the live Blend Mask to the node output. "
-            "Disable Preprocess Input Mask to use the clean soft input mask; only mandatory "
-            "model binarization remains."
+            "Preview Model Mask reacts to Threshold and Model Grow. Preview Blend Mask reacts "
+            "to Threshold, Blend Grow, and Feather. Disable preprocessing to preview and use "
+            "the clean input mask."
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
