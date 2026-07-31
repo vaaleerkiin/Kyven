@@ -73,6 +73,9 @@ The ROI is an inference crop, not a SAM box prompt:
 4. SAM receives only the cropped pixels.
 5. Kyven places the returned mask on a full-size black canvas.
 
+Inverted ROI corners are normalized and coordinates are clamped to the input format. A zero-size or
+fully outside ROI falls back to the full frame instead of failing the job.
+
 The final matte always has the source dimensions. A positive point must be inside the ROI;
 negative points outside it are ignored. `Reset Points + ROI to Input` restores the ROI to the input
 format and returns active points near its center.
@@ -159,7 +162,7 @@ D:/Kyven/.runtime/nuke_cache/<node-uuid>/
 
 Typical files include exported source frames, displayed `matte.%04d.png`, CPU-preview source
 `raw_matte.%04d.png`, video JPEGs, `tracked_matte.%04d.png`, and
-`raw_tracked_matte.%04d.png`. Refine nodes add `refine_source.%04d.png`,
+`raw_tracked_matte.%04d.png`. Refine nodes add fast lossless `refine_source.%04d.tif`,
 `refine_mask.%04d.png`, `refined_matte.%04d.png`, exact processed trimaps, and lightweight
 `trimap_preview` files under their own UUID folder.
 

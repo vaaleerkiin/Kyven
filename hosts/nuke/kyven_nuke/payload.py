@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from typing import Any
 
@@ -34,16 +35,28 @@ def point(x: float, nuke_y: float, image_height: int, label: str) -> dict[str, A
 
 
 def roi_box(
-    box: tuple[float, float, float, float], image_height: int
+    box: tuple[float, float, float, float],
+    image_height: int,
+    image_width: int | None = None,
 ) -> dict[str, float]:
-    """Convert a Nuke bottom-left BBox into a top-left Processing ROI."""
+    """Normalize, clamp, and convert a Nuke BBox into a top-left Processing ROI."""
 
-    x0, y0, x1, y1 = box
+    left, right = sorted((float(box[0]), float(box[2])))
+    bottom, top = sorted((float(box[1]), float(box[3])))
+    if image_width is not None:
+        finite = all(math.isfinite(value) for value in (left, bottom, right, top))
+        left = max(0.0, min(float(image_width), left)) if finite else 0.0
+        right = max(0.0, min(float(image_width), right)) if finite else 0.0
+        bottom = max(0.0, min(float(image_height), bottom)) if finite else 0.0
+        top = max(0.0, min(float(image_height), top)) if finite else 0.0
+        if right <= left or top <= bottom:
+            left, bottom = 0.0, 0.0
+            right, top = float(image_width), float(image_height)
     return {
-        "x0": float(x0),
-        "y0": float(image_height) - float(y1),
-        "x1": float(x1),
-        "y1": float(image_height) - float(y0),
+        "x0": left,
+        "y0": float(image_height) - top,
+        "x1": right,
+        "y1": float(image_height) - bottom,
     }
 
 
@@ -54,6 +67,7 @@ def segment_payload(
     raw_output: str | None = None,
     model_index: int,
     profile: str,
+    image_width: int,
     image_height: int,
     positive_points: Sequence[tuple[float, float]],
     negative_points: Sequence[tuple[float, float]],
@@ -66,7 +80,7 @@ def segment_payload(
     points.extend(point(*xy, image_height, "negative") for xy in negative_points)
     roi_payload = None
     if box_enabled:
-        roi_payload = roi_box(box, image_height)
+        roi_payload = roi_box(box, image_height, image_width)
     return {
         "source": source,
         "output": output,
@@ -89,6 +103,7 @@ def segment_video_payload(
     raw_output_pattern: str | None = None,
     model_index: int,
     profile: str,
+    image_width: int,
     image_height: int,
     positive_points: Sequence[tuple[float, float]],
     negative_points: Sequence[tuple[float, float]],
@@ -108,6 +123,7 @@ def segment_video_payload(
         raw_output=None,
         model_index=model_index,
         profile=profile,
+        image_width=image_width,
         image_height=image_height,
         positive_points=positive_points,
         negative_points=negative_points,
@@ -126,7 +142,7 @@ def segment_video_payload(
         "box": None,
         "roi": None if animated_rois else image_payload["roi"],
         "rois": [
-            {"frame": int(frame), **roi_box(frame_box, image_height)}
+            {"frame": int(frame), **roi_box(frame_box, image_height, image_width)}
             for frame, frame_box in animated_rois
         ],
         "first_frame": int(first_frame),
@@ -148,6 +164,7 @@ def refine_payload(
     trimap_output: str | None,
     model_index: int,
     profile: str,
+    image_width: int,
     image_height: int,
     roi_enabled: bool,
     roi: tuple[float, float, float, float],
@@ -159,13 +176,7 @@ def refine_payload(
 ) -> dict[str, Any]:
     roi_payload = None
     if roi_enabled:
-        x0, y0, x1, y1 = roi
-        roi_payload = {
-            "x0": float(x0),
-            "y0": float(image_height) - float(y1),
-            "x1": float(x1),
-            "y1": float(image_height) - float(y0),
-        }
+        roi_payload = roi_box(roi, image_height, image_width)
     return {
         "source": source,
         "mask": mask,

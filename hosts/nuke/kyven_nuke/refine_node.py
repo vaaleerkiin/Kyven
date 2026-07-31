@@ -54,7 +54,7 @@ REFINE_OUTPUT_HELP = (
 def _cache_paths(node: Any, frame: int) -> tuple[Path, Path, Path, Path]:
     root = _cache_root(node)
     return (
-        root / f"refine_source.{frame:04d}.png",
+        root / f"refine_source.{frame:04d}.tif",
         root / f"refine_mask.{frame:04d}.png",
         root / f"refined_matte.{frame:04d}.png",
         root / f"trimap.{frame:04d}.png",
@@ -64,7 +64,7 @@ def _cache_paths(node: Any, frame: int) -> tuple[Path, Path, Path, Path]:
 def _cache_patterns(node: Any) -> tuple[Path, Path, Path, Path]:
     root = _cache_root(node)
     return (
-        root / "refine_source.%04d.png",
+        root / "refine_source.%04d.tif",
         root / "refine_mask.%04d.png",
         root / "refined_matte.%04d.png",
         root / "trimap.%04d.png",
@@ -85,6 +85,18 @@ def _tile_size(node: Any) -> int:
     return custom if custom else automatic
 
 
+def _configure_export_writers(source_writer: Any | None, mask_writer: Any) -> None:
+    """Use fast lossless formats for temporary inputs consumed only by Kyven."""
+
+    if source_writer is not None:
+        source_writer["file_type"].setValue("tiff")
+        if "compression" in source_writer.knobs():
+            source_writer["compression"].setValue(0)
+    mask_writer["file_type"].setValue("png")
+    if "compression" in mask_writer.knobs():
+        mask_writer["compression"].setValue(0)
+
+
 def _payload(
     node: Any,
     source: Any,
@@ -100,6 +112,7 @@ def _payload(
         trimap_output=str(trimap_output_path.resolve()),
         model_index=int(node["model"].getValue()),
         profile=str(node["profile"].value()),
+        image_width=int(source.width()),
         image_height=int(source.height()),
         roi_enabled=bool(node["roi_enabled"].value()),
         roi=tuple(node["processing_roi"].value()),
@@ -207,6 +220,7 @@ def _start_trimap_preview(node_name: str, revision: int) -> None:
     root = _cache_root(node)
     mask_path, output_path = _trimap_preview_paths(root, frame, revision)
     writer = _inside(node, "KyvenRefineMaskWrite")
+    _configure_export_writers(None, writer)
     writer["file"].setValue(_nuke_file_path(mask_path))
     try:
         nuke.execute(writer, frame, frame)
@@ -224,7 +238,15 @@ def _start_trimap_preview(node_name: str, revision: int) -> None:
         "foreground_radius": int(node["foreground_radius"].value()),
         "background_radius": int(node["background_radius"].value()),
         "roi": (
-            roi_box(tuple(node["processing_roi"].value()), image_height)
+            roi_box(
+                tuple(node["processing_roi"].value()),
+                image_height,
+                (
+                    int(node.input(0).width())
+                    if node.input(0) is not None
+                    else int(node.input(1).width())
+                ),
+            )
             if bool(node["roi_enabled"].value())
             else None
         ),
@@ -345,6 +367,7 @@ def _export(node: Any, frame: int, source_path: Path, mask_path: Path) -> bool:
     nuke = _nuke()
     source_writer = _inside(node, "KyvenRefineSourceWrite")
     mask_writer = _inside(node, "KyvenRefineMaskWrite")
+    _configure_export_writers(source_writer, mask_writer)
     source_writer["file"].setValue(_nuke_file_path(source_path))
     mask_writer["file"].setValue(_nuke_file_path(mask_path))
     try:
@@ -507,27 +530,24 @@ def process_frame_range() -> None:
     source_pattern, mask_pattern, output_pattern, trimap_output_pattern = _cache_patterns(node)
     source_writer = _inside(node, "KyvenRefineSourceWrite")
     mask_writer = _inside(node, "KyvenRefineMaskWrite")
+    _configure_export_writers(source_writer, mask_writer)
     source_writer["file"].setValue(_nuke_file_path(source_pattern))
     mask_writer["file"].setValue(_nuke_file_path(mask_pattern))
     node_name = node.fullName()
-    total = last - first + 1
     _start_progress(node_name, "Kyven ViTMatte Frame Range", "Preparing input export")
     node["kyven_busy"].setValue(True)
     node["kyven_status"].setValue(f"Exporting refine inputs {first}-{last}...")
     try:
-        for index, frame in enumerate(range(first, last + 1), start=1):
-            if _progress_cancelled(node_name):
-                node["kyven_status"].setValue(f"Refine range cancelled before frame {frame}.")
-                _finish_progress(node_name)
-                node["kyven_busy"].setValue(False)
-                return
-            _update_progress(
-                node_name,
-                round(20 * (index - 1) / total),
-                f"Exporting frame {frame} ({index}/{total})",
-            )
-            nuke.execute(source_writer, frame, frame)
-            nuke.execute(mask_writer, frame, frame)
+        _update_progress(node_name, 2, f"Batch exporting Source {first}-{last}")
+        nuke.execute(source_writer, first, last)
+        if _progress_cancelled(node_name):
+            node["kyven_status"].setValue("Refine range cancelled after Source export.")
+            _finish_progress(node_name)
+            node["kyven_busy"].setValue(False)
+            return
+        _update_progress(node_name, 12, f"Batch exporting Mask {first}-{last}")
+        nuke.execute(mask_writer, first, last)
+        _update_progress(node_name, 20, "Refine inputs exported")
     except Exception as exc:  # noqa: BLE001
         _finish_progress(node_name)
         node["kyven_busy"].setValue(False)
@@ -984,7 +1004,7 @@ def create_refine_node() -> Any:
         nuke.nodes.Output(name="Output")
         source_writer = nuke.nodes.Write(name="KyvenRefineSourceWrite")
         source_writer.setInput(0, source)
-        source_writer["file_type"].setValue("png")
+        source_writer["file_type"].setValue("tiff")
         source_writer["channels"].setValue("rgb")
         mask_writer = nuke.nodes.Write(name="KyvenRefineMaskWrite")
         mask_writer.setInput(0, mask_channel)
