@@ -75,20 +75,38 @@ class LamaOnnxProvider(InpaintProvider):
         inputs = session.get_inputs()
         model_height = inputs[0].shape[2]
         model_width = inputs[0].shape[3]
+        restore_box: tuple[int, int, int, int] | None = None
         if isinstance(model_width, int) and isinstance(model_height, int):
-            size = (model_width, model_height)
-            image = np.asarray(
+            scale = min(model_width / original_size[0], model_height / original_size[1])
+            resized_width = max(1, round(original_size[0] * scale))
+            resized_height = max(1, round(original_size[1] * scale))
+            resized_image = np.asarray(
                 Image.fromarray((image * 255).astype(np.uint8)).resize(
-                    size, Image.Resampling.LANCZOS
+                    (resized_width, resized_height), Image.Resampling.LANCZOS
                 ),
                 dtype=np.float32,
             ) / 255.0
-            mask = np.asarray(
+            resized_mask = np.asarray(
                 Image.fromarray((mask * 255).astype(np.uint8)).resize(
-                    size, Image.Resampling.NEAREST
+                    (resized_width, resized_height), Image.Resampling.NEAREST
                 ),
                 dtype=np.float32,
             ) / 255.0
+            left = (model_width - resized_width) // 2
+            top = (model_height - resized_height) // 2
+            right = model_width - resized_width - left
+            bottom = model_height - resized_height - top
+            image = np.pad(
+                resized_image,
+                ((top, bottom), (left, right), (0, 0)),
+                mode="edge",
+            )
+            mask = np.pad(
+                resized_mask,
+                ((top, bottom), (left, right)),
+                mode="constant",
+            )
+            restore_box = (left, top, left + resized_width, top + resized_height)
         elif request.processing_size:
             scale = min(1.0, float(request.processing_size) / max(original_size))
             if scale < 1.0:
@@ -108,9 +126,19 @@ class LamaOnnxProvider(InpaintProvider):
         if result.max(initial=0) <= 1.5:
             result = result * 255.0
         rgb = np.clip(result, 0, 255).astype(np.uint8)
+        if restore_box is not None:
+            left, top, right, bottom = restore_box
+            rgb = rgb[top:bottom, left:right]
         if (rgb.shape[1], rgb.shape[0]) != original_size:
             rgb = np.asarray(Image.fromarray(rgb).resize(original_size, Image.Resampling.LANCZOS))
-        return InpaintPrediction(rgb=rgb, metadata={"execution_providers": session.get_providers()})
+        return InpaintPrediction(
+            rgb=rgb,
+            metadata={
+                "execution_providers": session.get_providers(),
+                "model_input": [int(model_width), int(model_height)],
+                "aspect_preserved": restore_box is not None,
+            },
+        )
 
     def unload(self) -> None:
         self._session = None

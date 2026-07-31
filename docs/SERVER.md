@@ -83,16 +83,18 @@ trimap is black outside the ROI because those pixels were not sent to ViTMatte.
 
 ### Inpaint fields
 
-`source`, `mask`, and `output` are absolute paths. `crop_mode` is `auto`, `manual`, or `full`;
+`source`, `mask`, and `output` are absolute paths; `mask_output` optionally persists the exact
+processed merge mask. `crop_mode` is `auto`, `manual`, or `full`;
 manual mode uses `roi`, while auto mode uses `context_padding`. `mask_grow`, `mask_feather`, and
-`processing_size` control inference coverage, final merge softness, and optional downscaling.
+`mask_threshold`, `invert_mask`, and `processing_size` control mask interpretation and inference.
 Empty masks return Source unchanged without loading a model.
 
-API version 11 adds Inpaint jobs and the LaMa provider. It retains CPU-only previews and linear-time trimap morphology. It
+API version 12 adds persisted processed Inpaint masks, signed grow/erode, mask threshold/invert,
+aspect-preserving LaMa preprocessing, and diagnostic Nuke outputs. It retains CPU-only previews. It
 retains `/v1/preview/trimap` and `/v1/preview/mask-postprocess`, so host controls update without
 rerunning a model. It also retains detailed Segment and Refine progress stages and the API 7
 persisted `trimap_output`. `GET /v1/jobs/{id}` returns `progress` (0.0-1.0) and
 `progress_message`. A video request may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
-returned masks to the original dimensions. The Nuke adapter uses versioned port `18774` to avoid
+returned masks to the original dimensions. The Nuke adapter uses versioned port `18775` to avoid
 connecting to stale API processes during development.

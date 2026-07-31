@@ -22,6 +22,11 @@ def affects_live_result(knob_name: str, kind: str) -> bool:
             "tile_size",
             "tile_overlap",
         }
+    if kind == "inpaint":
+        return knob_name in {
+            "model", "profile", "mask_channel", "invert_mask", "mask_threshold",
+            "mask_grow", "mask_feather", "crop_mode", "processing_roi", "context_padding",
+        }
     return (
         knob_name.startswith(("positive_point", "negative_point"))
         or knob_name
@@ -77,6 +82,10 @@ def _run_requested_update(node_name: str, revision: int) -> None:
         if node.input(0) is None or node.input(1) is None:
             return
         from kyven_nuke.refine_node import process_current_frame
+    elif kind == "inpaint":
+        if node.input(0) is None or node.input(1) is None:
+            return
+        from kyven_nuke.inpaint_node import process_current_frame
     else:
         if node.input(0) is None:
             return
@@ -119,6 +128,10 @@ def update_live_nodes() -> None:
             if node.input(0) is None or node.input(1) is None:
                 continue
             from kyven_nuke.refine_node import process_current_frame
+        elif kind == "inpaint":
+            if node.input(0) is None or node.input(1) is None:
+                continue
+            from kyven_nuke.inpaint_node import process_current_frame
         else:
             if node.input(0) is None:
                 continue

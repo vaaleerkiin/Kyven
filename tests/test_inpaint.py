@@ -63,6 +63,21 @@ class InpaintServiceTests(unittest.TestCase):
             result = InpaintService(self._registry(provider)).run(InpaintRequest(source, mask, output, provider_id="fake", crop_mode="manual", roi=BoxPrompt(0, 0, 5, 5)))
             self.assertTrue(result.metadata["empty_mask"]); self.assertFalse(provider.requests)
 
+    def test_invert_erode_and_processed_mask_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); source = root / "source.png"; mask = root / "mask.png"
+            output = root / "output.png"; processed = root / "processed.png"
+            Image.fromarray(np.full((12, 12, 3), 25, dtype=np.uint8)).save(source)
+            pixels = np.full((12, 12), 255, dtype=np.uint8); pixels[2:10, 2:10] = 0
+            Image.fromarray(pixels).save(mask); provider = FakeInpaintProvider()
+            result = InpaintService(self._registry(provider)).run(InpaintRequest(
+                source, mask, output, mask_output=processed, provider_id="fake",
+                invert_mask=True, mask_grow=-1, mask_feather=0, context_padding=0,
+            ))
+            processed_pixels = np.asarray(Image.open(processed))
+            self.assertEqual(result.mask_output, processed)
+            self.assertEqual(int(np.count_nonzero(processed_pixels)), 36)
+
 
 if __name__ == "__main__":
     unittest.main()

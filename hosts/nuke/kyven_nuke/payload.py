@@ -196,15 +196,17 @@ def refine_payload(
 
 
 def inpaint_payload(
-    *, source: str, mask: str, output: str, model_index: int, profile: str,
+    *, source: str, mask: str, output: str, mask_output: str, model_index: int, profile: str,
     image_width: int, image_height: int, crop_mode: str,
     roi: tuple[float, float, float, float], context_padding: int,
-    mask_grow: int, mask_feather: float, processing_size: int,
+    mask_grow: int, mask_feather: float, mask_threshold: float, invert_mask: bool,
+    processing_size: int,
 ) -> dict[str, Any]:
     return {
         "source": source,
         "mask": mask,
         "output": output,
+        "mask_output": mask_output,
         "model_id": INPAINT_MODEL_IDS[model_index],
         "profile": profile,
         "crop_mode": crop_mode,
@@ -212,5 +214,7 @@ def inpaint_payload(
         "context_padding": int(context_padding),
         "mask_grow": int(mask_grow),
         "mask_feather": float(mask_feather),
+        "mask_threshold": float(mask_threshold),
+        "invert_mask": bool(invert_mask),
         "processing_size": int(processing_size),
     }

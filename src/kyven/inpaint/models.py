@@ -28,6 +28,7 @@ class InpaintRequest:
     source: Path
     mask: Path
     output: Path
+    mask_output: Path | None = None
     provider_id: str = "lama-2025jan-onnx"
     profile: ExecutionProfile = ExecutionProfile.BALANCED
     crop_mode: str = "auto"
@@ -35,6 +36,8 @@ class InpaintRequest:
     context_padding: int = 128
     mask_grow: int = 8
     mask_feather: float = 4.0
+    mask_threshold: float = 0.5
+    invert_mask: bool = False
     processing_size: int = 0
 
     def validate(self) -> None:
@@ -45,8 +48,12 @@ class InpaintRequest:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Inpaint crop mode must be auto, manual, or full.")
         if self.crop_mode == "manual" and self.roi is None:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Manual inpaint crop mode requires an ROI.")
-        if self.context_padding < 0 or self.mask_grow < 0 or self.mask_feather < 0:
-            raise KyvenError(ErrorCode.INVALID_REQUEST, "Padding, mask grow, and feather cannot be negative.")
+        if self.context_padding < 0 or self.mask_feather < 0:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Padding and feather cannot be negative.")
+        if not -128 <= self.mask_grow <= 128:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Mask grow must be between -128 and 128 pixels.")
+        if not 0.0 <= self.mask_threshold <= 1.0:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Mask threshold must be between 0 and 1.")
         if self.processing_size and self.processing_size < 128:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Processing size must be zero or at least 128 pixels.")
 
@@ -59,6 +66,8 @@ class InpaintRequest:
             "context_padding": self.context_padding,
             "mask_grow": self.mask_grow,
             "mask_feather": self.mask_feather,
+            "mask_threshold": self.mask_threshold,
+            "invert_mask": self.invert_mask,
             "processing_size": self.processing_size,
         }
 
@@ -94,5 +103,6 @@ class InpaintPrediction:
 @dataclass(frozen=True, slots=True)
 class InpaintResult:
     output: Path
+    mask_output: Path | None
     cache_key: str
     metadata: dict[str, Any]

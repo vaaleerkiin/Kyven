@@ -37,11 +37,13 @@ anywhere. `KYVEN_ROOT` is only an optional override for custom deployments. Rest
 ## Inpaint workflow
 
 Connect Source to input 0 and a removal mask to input 1. Choose Alpha or Red for the mask channel.
-`Auto` Crop Mode finds the non-black mask bounds and adds Context Padding; `Manual` exposes an
+`Auto` Crop Mode finds the thresholded mask bounds and adds Context Padding; `Manual` exposes an
 animatable ROI; `Full` sends the complete frame. Grow gives the model enough area to replace object
-edges, while Edge Feather controls the final merge. Only that grown/feathered mask is pasted over
+edges; negative Grow erodes. Threshold and Invert normalize different mask conventions, while Edge
+Feather controls the final merge. Only that processed mask is pasted over
 Source, so pixels outside it are preserved. LaMa works on CPU and does not consume the 4 GB GPU
-budget. Live processes changes to the current frame; range mode queues independent frames and may
+budget. Its fixed 512-square input uses aspect-preserving letterboxing, so a tight ROI improves
+effective detail without stretching the shot. Live follows timeline and control changes; range mode queues independent frames and may
 flicker on difficult footage because LaMa is not a temporal model.
 
 After updating Kyven, select an existing node and use the matching command:
@@ -177,7 +179,8 @@ Typical files include exported source frames, displayed `matte.%04d.png`, CPU-pr
 `raw_tracked_matte.%04d.png`. Refine nodes add fast lossless `refine_source.%04d.tif`,
 `refine_mask.%04d.png`, `refined_matte.%04d.png`, exact processed trimaps, and lightweight
 `trimap_preview` files under their own UUID folder. Inpaint adds source, mask, and full-format
-`inpaint_result.%04d.png` files.
+`inpaint_result.%04d.png` and exact `inpaint_processed_mask.%04d.png` files. Inpaint outputs include
+Result, premultiplied Patch, Processed Mask, Difference, and Source.
 
 - `Create Matte Read` creates a normal Nuke Read pointing to the current cached matte or sequence.
 - `Delete Node Cache` disconnects and removes only the current node's cache after confirmation.
@@ -186,7 +189,7 @@ Typical files include exported source frames, displayed `matte.%04d.png`, CPU-pr
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18774` and requires API 11. A
+The adapter starts an external hidden Python process on `127.0.0.1:18775` and requires API 12. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

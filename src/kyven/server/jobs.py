@@ -300,12 +300,15 @@ class JobManager:
         source = Path(str(payload["source"]))
         mask = Path(str(payload["mask"]))
         output = Path(str(payload["output"]))
-        if not source.is_absolute() or not mask.is_absolute() or not output.is_absolute():
+        mask_output_value = payload.get("mask_output")
+        mask_output = Path(str(mask_output_value)) if mask_output_value else None
+        if not source.is_absolute() or not mask.is_absolute() or not output.is_absolute() or (mask_output is not None and not mask_output.is_absolute()):
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Inpaint job paths must be absolute.")
         return InpaintRequest(
             source=source,
             mask=mask,
             output=output,
+            mask_output=mask_output,
             provider_id=str(payload.get("model_id", "lama-2025jan-onnx")),
             profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
             crop_mode=str(payload.get("crop_mode", "auto")),
@@ -313,6 +316,8 @@ class JobManager:
             context_padding=int(payload.get("context_padding", 128)),
             mask_grow=int(payload.get("mask_grow", 8)),
             mask_feather=float(payload.get("mask_feather", 4.0)),
+            mask_threshold=float(payload.get("mask_threshold", 0.5)),
+            invert_mask=bool(payload.get("invert_mask", False)),
             processing_size=int(payload.get("processing_size", 0)),
         )
 
@@ -485,6 +490,9 @@ class JobManager:
                 record.status = JobStatus.SUCCEEDED
                 record.result = {
                     "output": str(result.output),
+                    "mask_output": (
+                        str(result.mask_output) if result.mask_output is not None else None
+                    ),
                     "cache_key": result.cache_key,
                     "metadata": result.metadata,
                 }

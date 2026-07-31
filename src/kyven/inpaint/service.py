@@ -13,6 +13,7 @@ from PIL import Image, ImageFilter
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
 from kyven.inpaint.models import InpaintRequest, InpaintResult
+from kyven.segment.output import write_mask_png_atomic
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.segment.roi import ResolvedRegion, resolve_region
 
@@ -67,27 +68,42 @@ class InpaintService:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Source and inpaint mask dimensions must match.")
         source_pixels = np.asarray(source, dtype=np.uint8)
         mask_pixels = np.asarray(mask, dtype=np.uint8)
-        if not np.any(mask_pixels >= 128):
+        if request.invert_mask:
+            mask_pixels = 255 - mask_pixels
+        threshold = round(request.mask_threshold * 255.0)
+        binary_mask = np.where(mask_pixels >= threshold, 255, 0).astype(np.uint8)
+        if not np.any(binary_mask):
             _write_rgb_atomic(request.output, source_pixels)
+            if request.mask_output is not None:
+                write_mask_png_atomic(request.mask_output, binary_mask)
             token.report_progress(1.0, "Mask is empty; Source copied unchanged")
-            return InpaintResult(request.output, "empty-mask", {"empty_mask": True})
+            return InpaintResult(request.output, request.mask_output, "empty-mask", {"empty_mask": True})
 
         if request.crop_mode == "manual":
             region = resolve_region(request.roi, source.width, source.height)  # type: ignore[arg-type]
         elif request.crop_mode == "full":
             region = ResolvedRegion(0, 0, source.width, source.height, source.width, source.height)
         else:
-            region = _auto_region(mask_pixels, request.context_padding)
+            safe_padding = (
+                request.context_padding
+                + abs(request.mask_grow)
+                + round(request.mask_feather * 3)
+            )
+            region = _auto_region(binary_mask, safe_padding)
             assert region is not None
         crop_box = (region.x0, region.y0, region.x1, region.y1)
         source_crop = source.crop(crop_box)
-        mask_crop = mask.crop(crop_box)
-        if request.mask_grow:
+        mask_crop = Image.fromarray(binary_mask, mode="L").crop(crop_box)
+        if request.mask_grow > 0:
             mask_crop = mask_crop.filter(ImageFilter.MaxFilter(_mask_filter_size(request.mask_grow)))
-        inference_mask = np.where(np.asarray(mask_crop) >= 128, 255, 0).astype(np.uint8)
+        elif request.mask_grow < 0:
+            mask_crop = mask_crop.filter(ImageFilter.MinFilter(_mask_filter_size(abs(request.mask_grow))))
+        inference_mask = np.asarray(mask_crop, dtype=np.uint8)
         if not np.any(inference_mask):
             _write_rgb_atomic(request.output, source_pixels)
-            return InpaintResult(request.output, "empty-roi-mask", {"empty_mask": True})
+            if request.mask_output is not None:
+                write_mask_png_atomic(request.mask_output, np.zeros_like(binary_mask))
+            return InpaintResult(request.output, request.mask_output, "empty-roi-mask", {"empty_mask": True})
 
         provider = self._registry.activate(request.provider_id)
         capabilities = provider.capabilities
@@ -111,6 +127,10 @@ class InpaintService:
         if request.mask_feather:
             merge_mask = merge_mask.filter(ImageFilter.GaussianBlur(float(request.mask_feather)))
         alpha = np.asarray(merge_mask, dtype=np.float32)[..., None] / 255.0
+        full_merge_mask = np.zeros_like(binary_mask)
+        full_merge_mask[region.y0 : region.y1, region.x0 : region.x1] = np.asarray(merge_mask)
+        if request.mask_output is not None:
+            write_mask_png_atomic(request.mask_output, full_merge_mask)
         original_crop = source_pixels[region.y0 : region.y1, region.x0 : region.x1]
         merged_crop = np.clip(original_crop * (1.0 - alpha) + predicted * alpha, 0, 255).astype(np.uint8)
         output = source_pixels.copy()
@@ -122,6 +142,7 @@ class InpaintService:
         metadata.update({"processing_roi": region.metadata(), "crop_mode": request.crop_mode})
         return InpaintResult(
             request.output,
+            request.mask_output,
             request.cache_key(capabilities.provider_version, capabilities.model_checksum),
             metadata,
         )
