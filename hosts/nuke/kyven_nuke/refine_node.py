@@ -699,7 +699,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 12</font>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 13</font>'
         )
     created_selector = "output_mode" not in node.knobs()
     previous_label = str(node["output_mode"].value()) if not created_selector else None
@@ -887,7 +887,7 @@ def _restyle_refine_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 12</font>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 13</font>'
         )
     if "trimap_help" in node.knobs():
         node["trimap_help"].setValue(REFINE_TRIMAP_HELP)
@@ -930,7 +930,7 @@ def create_refine_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 12</font>',
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 13</font>',
         ),
     )
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")

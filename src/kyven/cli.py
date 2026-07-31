@@ -106,6 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     inpaint.add_argument("--roi", type=_box)
     inpaint.add_argument("--context-padding", default=128, type=int)
     inpaint.add_argument("--mask-grow", default=8, type=int)
+    inpaint.add_argument("--blend-grow", default=2, type=int)
     inpaint.add_argument("--mask-feather", default=4.0, type=float)
     inpaint.add_argument("--mask-threshold", default=0.5, type=float)
     inpaint.add_argument("--invert-mask", action="store_true")
@@ -259,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
                 provider_id=args.model, profile=ExecutionProfile(args.profile),
                 crop_mode=args.crop_mode, roi=args.roi, context_padding=args.context_padding,
                 mask_grow=args.mask_grow, mask_feather=args.mask_feather,
+                blend_grow=args.blend_grow,
                 mask_threshold=args.mask_threshold, invert_mask=args.invert_mask,
                 processing_size=args.processing_size,
             ))

@@ -40,7 +40,7 @@ class InpaintServiceTests(unittest.TestCase):
             Image.fromarray(np.full((20, 30, 3), 50, dtype=np.uint8)).save(source)
             pixels = np.zeros((20, 30), dtype=np.uint8); pixels[8:12, 13:17] = 255; Image.fromarray(pixels).save(mask)
             provider = FakeInpaintProvider()
-            result = InpaintService(self._registry(provider)).run(InpaintRequest(source, mask, output, provider_id="fake", context_padding=2, mask_grow=0, mask_feather=0))
+            result = InpaintService(self._registry(provider)).run(InpaintRequest(source, mask, output, provider_id="fake", context_padding=2, mask_grow=0, blend_grow=0, mask_feather=0))
             rendered = np.asarray(Image.open(output).convert("RGB"))
             self.assertTrue(np.all(rendered[0, 0] == 50)); self.assertTrue(np.all(rendered[9, 14] == (255, 0, 0)))
             self.assertEqual(result.metadata["processing_roi"]["width"], 8)
@@ -72,11 +72,28 @@ class InpaintServiceTests(unittest.TestCase):
             Image.fromarray(pixels).save(mask); provider = FakeInpaintProvider()
             result = InpaintService(self._registry(provider)).run(InpaintRequest(
                 source, mask, output, mask_output=processed, provider_id="fake",
-                invert_mask=True, mask_grow=-1, mask_feather=0, context_padding=0,
+                invert_mask=True, mask_grow=-1, blend_grow=-1,
+                mask_feather=0, context_padding=0,
             ))
             processed_pixels = np.asarray(Image.open(processed))
             self.assertEqual(result.mask_output, processed)
             self.assertEqual(int(np.count_nonzero(processed_pixels)), 36)
+
+    def test_rgba_source_can_supply_mask_alpha_in_one_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); combined = root / "combined.tif"
+            output = root / "output.png"; processed = root / "processed.png"
+            pixels = np.full((10, 14, 4), 40, dtype=np.uint8)
+            pixels[..., 3] = 0; pixels[3:7, 5:9, 3] = 255
+            Image.fromarray(pixels, mode="RGBA").save(combined)
+            provider = FakeInpaintProvider()
+            InpaintService(self._registry(provider)).run(InpaintRequest(
+                combined, combined, output, mask_output=processed, provider_id="fake",
+                mask_channel="alpha", context_padding=0, mask_grow=0,
+                blend_grow=0, mask_feather=0,
+            ))
+            self.assertEqual(int(np.count_nonzero(np.asarray(Image.open(processed)))), 16)
+            self.assertEqual(len(provider.requests), 1)
 
 
 if __name__ == "__main__":

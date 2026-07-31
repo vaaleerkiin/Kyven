@@ -40,15 +40,16 @@ def _paths(node: Any, frame: int) -> tuple[Path, Path, Path, Path]:
     )
 
 
-def _payload(node: Any, source: Any, source_path: Path, mask_path: Path, output_path: Path, processed_mask_path: Path) -> dict[str, Any]:
+def _payload(node: Any, source: Any, source_path: Path, mask_path: Path, output_path: Path, processed_mask_path: Path, mask_channel: str) -> dict[str, Any]:
     return inpaint_payload(
         source=str(source_path.resolve()), mask=str(mask_path.resolve()), output=str(output_path.resolve()), mask_output=str(processed_mask_path.resolve()),
         model_index=int(node["model"].getValue()), profile=str(node["profile"].value()),
         image_width=int(source.width()), image_height=int(source.height()),
         crop_mode=str(node["crop_mode"].value()), roi=tuple(node["processing_roi"].value()),
         context_padding=int(node["context_padding"].value()), mask_grow=int(node["mask_grow"].value()),
+        blend_grow=int(node["blend_grow"].value()) if "blend_grow" in node.knobs() else 2,
         mask_feather=float(node["mask_feather"].value()), mask_threshold=float(node["mask_threshold"].value()),
-        invert_mask=bool(node["invert_mask"].value()), processing_size=0,
+        invert_mask=bool(node["invert_mask"].value()), mask_channel=mask_channel, processing_size=0,
     )
 
 
@@ -111,16 +112,23 @@ def process_current_frame_for_node(node: Any) -> None:
     frame = int(nuke.frame())
     source_path, mask_path, output_path, processed_mask_path = _paths(node, frame)
     source_path.parent.mkdir(parents=True, exist_ok=True)
-    source_writer, mask_writer = _inside(node, "KyvenInpaintSourceWrite"), _inside(node, "KyvenInpaintMaskWrite")
-    source_writer["file"].setValue(_nuke_file_path(source_path)); mask_writer["file"].setValue(_nuke_file_path(mask_path))
+    source_writer = _inside(node, "KyvenInpaintSourceWrite")
+    combined = _inside(node, "KyvenInpaintCombined") is not None
+    mask_writer = None if combined else _inside(node, "KyvenInpaintMaskWrite")
+    source_writer["file"].setValue(_nuke_file_path(source_path))
+    if combined:
+        mask_path = source_path
+    else:
+        mask_writer["file"].setValue(_nuke_file_path(mask_path))
     _set_status(node.fullName(), "Exporting inpaint inputs...")
     node_name = str(node.fullName())
     _start_progress(node_name, "Kyven Inpaint", f"Exporting frame {frame}")
     try:
-        nuke.execute(source_writer, frame, frame); nuke.execute(mask_writer, frame, frame)
+        nuke.execute(source_writer, frame, frame)
+        if mask_writer is not None: nuke.execute(mask_writer, frame, frame)
     except Exception as exc:  # noqa: BLE001
         _finish_progress(node_name); nuke.message(f"Inpaint export failed: {exc}"); return
-    payload = _payload(node, source, source_path, mask_path, output_path, processed_mask_path)
+    payload = _payload(node, source, source_path, mask_path, output_path, processed_mask_path, "alpha" if combined else "luminance")
     _set_busy(node_name, True)
 
     def work() -> None:
@@ -154,15 +162,22 @@ def process_frame_range() -> None:
     if source is None or mask is None: nuke.message("Connect Source and Mask first."); return
     if last < first: nuke.message("Range Last must be equal to or greater than Range First."); return
     root = _cache_root(node); source_pattern = root / "inpaint_source.%04d.tif"; mask_pattern = root / "inpaint_mask.%04d.png"; output_pattern = root / "inpaint_result.%04d.png"; processed_mask_pattern = root / "inpaint_processed_mask.%04d.png"
-    source_writer, mask_writer = _inside(node, "KyvenInpaintSourceWrite"), _inside(node, "KyvenInpaintMaskWrite")
-    source_writer["file"].setValue(_nuke_file_path(source_pattern)); mask_writer["file"].setValue(_nuke_file_path(mask_pattern))
+    source_writer = _inside(node, "KyvenInpaintSourceWrite")
+    combined = _inside(node, "KyvenInpaintCombined") is not None
+    mask_writer = None if combined else _inside(node, "KyvenInpaintMaskWrite")
+    source_writer["file"].setValue(_nuke_file_path(source_pattern))
+    if combined:
+        mask_pattern = source_pattern
+    else:
+        mask_writer["file"].setValue(_nuke_file_path(mask_pattern))
     node_name = str(node.fullName()); _start_progress(node_name, "Kyven Inpaint", f"Exporting frames {first}-{last}")
     try:
-        nuke.execute(source_writer, first, last); nuke.execute(mask_writer, first, last)
+        nuke.execute(source_writer, first, last)
+        if mask_writer is not None: nuke.execute(mask_writer, first, last)
     except Exception as exc:  # noqa: BLE001
         _finish_progress(node_name); nuke.message(f"Inpaint export failed: {exc}"); return
     payloads = [
-        _payload(node, source, Path(str(source_pattern) % frame), Path(str(mask_pattern) % frame), Path(str(output_pattern) % frame), Path(str(processed_mask_pattern) % frame))
+        _payload(node, source, Path(str(source_pattern) % frame), Path(str(mask_pattern) % frame), Path(str(output_pattern) % frame), Path(str(processed_mask_pattern) % frame), "alpha" if combined else "luminance")
         for frame in range(first, last + 1)
     ]
     _set_busy(node_name, True)
@@ -228,7 +243,7 @@ def create_inpaint_node() -> Any:
     nuke = _nuke(); selected = nuke.selectedNodes(); source = selected[0] if selected else None; mask = selected[1] if len(selected) > 1 else None
     node = nuke.nodes.Group(name="KyvenInpaint"); node.setInput(0, source); node.setInput(1, mask)
     node["label"].setValue("[value kyven_status]"); node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint"))
-    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa 512 | Source + Mask | API 12</font>'))
+    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa 512 | Source + Mask | API 13</font>'))
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
     _add_knob(nuke, node, nuke.Enumeration_Knob("profile", "Memory Profile", ["low_memory", "balanced", "quality"])); node["profile"].setValue(1)
@@ -238,8 +253,10 @@ def create_inpaint_node() -> Any:
     _add_knob(nuke, node, nuke.Enumeration_Knob("mask_channel", "Input 1 Channel", ["Alpha", "Red"]))
     invert = nuke.Boolean_Knob("invert_mask", "Invert Input Mask"); _add_knob(nuke, node, invert)
     threshold = nuke.Double_Knob("mask_threshold", "Threshold"); threshold.setRange(0, 1); threshold.setValue(0.5); _add_knob(nuke, node, threshold)
-    grow = nuke.Int_Knob("mask_grow", "Grow / Erode (px)"); grow.setRange(-128, 128); grow.setValue(8); _add_knob(nuke, node, grow)
-    feather = nuke.Double_Knob("mask_feather", "Edge Feather (px)"); feather.setRange(0, 64); feather.setValue(4); _add_knob(nuke, node, feather)
+    grow = nuke.Int_Knob("mask_grow", "Model Mask Grow (px)"); grow.setRange(-128, 128); grow.setValue(12); _add_knob(nuke, node, grow)
+    blend_grow = nuke.Int_Knob("blend_grow", "Blend Mask Grow (px)"); blend_grow.setRange(-128, 128); blend_grow.setValue(2); _add_knob(nuke, node, blend_grow)
+    feather = nuke.Double_Knob("mask_feather", "Blend Feather (px)"); feather.setRange(0, 64); feather.setValue(1); _add_knob(nuke, node, feather)
+    _add_knob(nuke, node, nuke.Text_Knob("mask_help", "", "Model Grow gives LaMa clean pixels around the object. Blend Grow/Feather control only the final composite and help avoid bright halos."))
     _add_section(nuke, node, "roi_section", "PROCESSING ROI / MODEL CROP")
     _add_knob(nuke, node, nuke.Enumeration_Knob("crop_mode", "Crop Mode", ["auto", "manual", "full"]))
     padding = nuke.Int_Knob("context_padding", "Context Padding (px)"); padding.setRange(0, 1024); padding.setValue(128); _add_knob(nuke, node, padding)
@@ -283,7 +300,10 @@ def create_inpaint_node() -> Any:
             if channel in alpha.knobs(): alpha[channel].setValue("alpha")
             if channel in red.knobs(): red[channel].setValue("red")
         channel_switch = nuke.nodes.Switch(name="KyvenInpaintMaskChannel"); channel_switch.setInput(0, alpha); channel_switch.setInput(1, red); channel_switch["which"].setExpression("parent.mask_channel")
-        mw = nuke.nodes.Write(name="KyvenInpaintMaskWrite"); mw.setInput(0, channel_switch); mw["file_type"].setValue("png"); mw["channels"].setValue("rgb")
+        combined = nuke.nodes.Copy(name="KyvenInpaintCombined"); combined.setInput(0, src); combined.setInput(1, channel_switch); combined["from0"].setValue("rgba.red"); combined["to0"].setValue("rgba.alpha")
+        sw.setInput(0, combined); sw["channels"].setValue("rgba")
+        if "compression" in sw.knobs(): sw["compression"].setValue(0)
+        if "datatype" in sw.knobs(): sw["datatype"].setValue("8 bit")
     finally: node.end()
     reset = source
     if reset is not None: node["processing_roi"].setValue([0, 0, float(reset.width()), float(reset.height())])

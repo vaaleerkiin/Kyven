@@ -25,7 +25,7 @@ def affects_live_result(knob_name: str, kind: str) -> bool:
     if kind == "inpaint":
         return knob_name in {
             "model", "profile", "mask_channel", "invert_mask", "mask_threshold",
-            "mask_grow", "mask_feather", "crop_mode", "processing_roi", "context_padding",
+            "mask_grow", "blend_grow", "mask_feather", "crop_mode", "processing_roi", "context_padding",
         }
     return (
         knob_name.startswith(("positive_point", "negative_point"))

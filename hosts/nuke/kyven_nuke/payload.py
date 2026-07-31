@@ -199,7 +199,8 @@ def inpaint_payload(
     *, source: str, mask: str, output: str, mask_output: str, model_index: int, profile: str,
     image_width: int, image_height: int, crop_mode: str,
     roi: tuple[float, float, float, float], context_padding: int,
-    mask_grow: int, mask_feather: float, mask_threshold: float, invert_mask: bool,
+    mask_grow: int, blend_grow: int, mask_feather: float, mask_threshold: float,
+    invert_mask: bool, mask_channel: str,
     processing_size: int,
 ) -> dict[str, Any]:
     return {
@@ -213,8 +214,10 @@ def inpaint_payload(
         "roi": roi_box(roi, image_height, image_width) if crop_mode == "manual" else None,
         "context_padding": int(context_padding),
         "mask_grow": int(mask_grow),
+        "blend_grow": int(blend_grow),
         "mask_feather": float(mask_feather),
         "mask_threshold": float(mask_threshold),
         "invert_mask": bool(invert_mask),
+        "mask_channel": mask_channel,
         "processing_size": int(processing_size),
     }

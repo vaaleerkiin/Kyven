@@ -63,7 +63,10 @@ class InpaintService:
         token.report_progress(0.03, "Reading Source and mask")
         with Image.open(request.source) as source_file, Image.open(request.mask) as mask_file:
             source = source_file.convert("RGB")
-            mask = mask_file.convert("L")
+            if request.mask_channel == "alpha" and "A" in mask_file.getbands():
+                mask = mask_file.getchannel("A")
+            else:
+                mask = mask_file.convert("L")
         if source.size != mask.size:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Source and inpaint mask dimensions must match.")
         source_pixels = np.asarray(source, dtype=np.uint8)
@@ -86,7 +89,7 @@ class InpaintService:
         else:
             safe_padding = (
                 request.context_padding
-                + abs(request.mask_grow)
+                + max(abs(request.mask_grow), abs(request.blend_grow))
                 + round(request.mask_feather * 3)
             )
             region = _auto_region(binary_mask, safe_padding)
@@ -123,7 +126,15 @@ class InpaintService:
         if predicted.shape != expected:
             raise KyvenError(ErrorCode.INFERENCE_FAILED, "The inpaint provider returned an invalid image size.", technical_detail=f"Expected {expected}, received {predicted.shape}.")
 
-        merge_mask = Image.fromarray(inference_mask, mode="L")
+        merge_mask = Image.fromarray(binary_mask, mode="L").crop(crop_box)
+        if request.blend_grow > 0:
+            merge_mask = merge_mask.filter(
+                ImageFilter.MaxFilter(_mask_filter_size(request.blend_grow))
+            )
+        elif request.blend_grow < 0:
+            merge_mask = merge_mask.filter(
+                ImageFilter.MinFilter(_mask_filter_size(abs(request.blend_grow)))
+            )
         if request.mask_feather:
             merge_mask = merge_mask.filter(ImageFilter.GaussianBlur(float(request.mask_feather)))
         alpha = np.asarray(merge_mask, dtype=np.float32)[..., None] / 255.0

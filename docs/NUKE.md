@@ -39,11 +39,14 @@ anywhere. `KYVEN_ROOT` is only an optional override for custom deployments. Rest
 Connect Source to input 0 and a removal mask to input 1. Choose Alpha or Red for the mask channel.
 `Auto` Crop Mode finds the thresholded mask bounds and adds Context Padding; `Manual` exposes an
 animatable ROI; `Full` sends the complete frame. Grow gives the model enough area to replace object
-edges; negative Grow erodes. Threshold and Invert normalize different mask conventions, while Edge
-Feather controls the final merge. Only that processed mask is pasted over
+edges. `Model Mask Grow` affects what LaMa replaces; `Blend Mask Grow` and `Blend Feather` are a
+separate, usually tighter final composite mask. This separation prevents generated edge colors
+from creating a bright halo. Negative values erode. Threshold and Invert normalize different mask
+conventions. Only the processed blend mask is pasted over
 Source, so pixels outside it are preserved. LaMa works on CPU and does not consume the 4 GB GPU
 budget. Its fixed 512-square input uses aspect-preserving letterboxing, so a tight ROI improves
-effective detail without stretching the shot. Live follows timeline and control changes; range mode queues independent frames and may
+effective detail without stretching the shot. New nodes combine Source RGB and Mask alpha into one
+uncompressed TIFF export, avoiding the previous double graph evaluation. Live follows timeline and control changes; range mode queues independent frames and may
 flicker on difficult footage because LaMa is not a temporal model.
 
 After updating Kyven, select an existing node and use the matching command:
@@ -189,7 +192,7 @@ Result, premultiplied Patch, Processed Mask, Difference, and Source.
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18775` and requires API 12. A
+The adapter starts an external hidden Python process on `127.0.0.1:18776` and requires API 13. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

@@ -315,9 +315,11 @@ class JobManager:
             roi=JobManager._box_from_payload(payload, "roi"),
             context_padding=int(payload.get("context_padding", 128)),
             mask_grow=int(payload.get("mask_grow", 8)),
-            mask_feather=float(payload.get("mask_feather", 4.0)),
+            blend_grow=int(payload.get("blend_grow", 2)),
+            mask_feather=float(payload.get("mask_feather", 1.0)),
             mask_threshold=float(payload.get("mask_threshold", 0.5)),
             invert_mask=bool(payload.get("invert_mask", False)),
+            mask_channel=str(payload.get("mask_channel", "luminance")),
             processing_size=int(payload.get("processing_size", 0)),
         )
 

@@ -35,9 +35,11 @@ class InpaintRequest:
     roi: BoxPrompt | None = None
     context_padding: int = 128
     mask_grow: int = 8
-    mask_feather: float = 4.0
+    blend_grow: int = 2
+    mask_feather: float = 1.0
     mask_threshold: float = 0.5
     invert_mask: bool = False
+    mask_channel: str = "luminance"
     processing_size: int = 0
 
     def validate(self) -> None:
@@ -50,10 +52,12 @@ class InpaintRequest:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Manual inpaint crop mode requires an ROI.")
         if self.context_padding < 0 or self.mask_feather < 0:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Padding and feather cannot be negative.")
-        if not -128 <= self.mask_grow <= 128:
-            raise KyvenError(ErrorCode.INVALID_REQUEST, "Mask grow must be between -128 and 128 pixels.")
+        if not -128 <= self.mask_grow <= 128 or not -128 <= self.blend_grow <= 128:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Mask grow values must be between -128 and 128 pixels.")
         if not 0.0 <= self.mask_threshold <= 1.0:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Mask threshold must be between 0 and 1.")
+        if self.mask_channel not in {"luminance", "alpha"}:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Mask channel must be luminance or alpha.")
         if self.processing_size and self.processing_size < 128:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Processing size must be zero or at least 128 pixels.")
 
@@ -65,9 +69,11 @@ class InpaintRequest:
             "roi": self.roi.canonical() if self.roi else None,
             "context_padding": self.context_padding,
             "mask_grow": self.mask_grow,
+            "blend_grow": self.blend_grow,
             "mask_feather": self.mask_feather,
             "mask_threshold": self.mask_threshold,
             "invert_mask": self.invert_mask,
+            "mask_channel": self.mask_channel,
             "processing_size": self.processing_size,
         }
 
