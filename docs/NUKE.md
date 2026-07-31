@@ -1,7 +1,9 @@
-# Kyven for Nuke
+# Kyven Tools for Nuke
 
-The Nuke adapter is a Group node that exports frames to the local Kyven Server and reads cached
-PNG mattes back into the graph. Nuke remains responsive while server inference runs.
+The Nuke adapter exposes independent Kyven Tools operations as native-looking Group nodes. The
+current Segment and Refine nodes export frames to the local Kyven Server and read cached PNG mattes
+back into the graph. Future Depth and Inpaint nodes will reuse the same host/server boundary and
+per-node cache conventions. Nuke remains responsive while server inference runs.
 
 ## Portable install
 
@@ -72,6 +74,9 @@ The ROI is an inference crop, not a SAM box prompt:
 3. Point coordinates are translated into crop space.
 4. SAM receives only the cropped pixels.
 5. Kyven places the returned mask on a full-size black canvas.
+
+Inverted ROI corners are normalized and coordinates are clamped to the input format. A zero-size or
+fully outside ROI falls back to the full frame instead of failing the job.
 
 The final matte always has the source dimensions. A positive point must be inside the ROI;
 negative points outside it are ignored. `Reset Points + ROI to Input` restores the ROI to the input
@@ -159,7 +164,7 @@ D:/Kyven/.runtime/nuke_cache/<node-uuid>/
 
 Typical files include exported source frames, displayed `matte.%04d.png`, CPU-preview source
 `raw_matte.%04d.png`, video JPEGs, `tracked_matte.%04d.png`, and
-`raw_tracked_matte.%04d.png`. Refine nodes add `refine_source.%04d.png`,
+`raw_tracked_matte.%04d.png`. Refine nodes add fast lossless `refine_source.%04d.tif`,
 `refine_mask.%04d.png`, `refined_matte.%04d.png`, exact processed trimaps, and lightweight
 `trimap_preview` files under their own UUID folder.
 
@@ -170,7 +175,7 @@ Typical files include exported source frames, displayed `matte.%04d.png`, CPU-pr
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18772` and requires API 9. A
+The adapter starts an external hidden Python process on `127.0.0.1:18773` and requires API 10. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

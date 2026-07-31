@@ -755,6 +755,7 @@ def _payload_for_paths(
         raw_output=str(raw_matte_path.resolve()),
         model_index=int(node["model"].getValue()),
         profile=str(node["profile"].value()),
+        image_width=int(source.width()),
         image_height=int(source.height()),
         positive_points=_collect_points(node, "positive"),
         negative_points=_collect_points(node, "negative"),
@@ -1002,6 +1003,7 @@ def propagate_video(direction: str) -> None:
         raw_output_pattern=str(raw_output_pattern.resolve()),
         model_index=int(node["model"].getValue()),
         profile=str(node["profile"].value()),
+        image_width=int(source.width()),
         image_height=int(source.height()),
         positive_points=positive_points,
         negative_points=negative_points,
@@ -1164,7 +1166,7 @@ def _restyle_node_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 9</font>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 10</font>'
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
@@ -1172,6 +1174,21 @@ def _restyle_node_ui(node: Any) -> None:
             "<b>Source + Alpha</b>: original RGB, mask in alpha<br>"
             "<b>Cutout</b>: premultiplied foreground &nbsp; | &nbsp; "
             "<b>Source</b>: bypass"
+        )
+    if "roi_help" in node.knobs():
+        node["roi_help"].setValue(
+            "Crops before SAM; points are translated and the matte returns at full size.<br>"
+            "The ROI can be animated without changing the output format."
+        )
+    if "postprocess_help" in node.knobs():
+        node["postprocess_help"].setValue(
+            "CPU-only preview from the cached raw SAM mask; controls never rerun SAM.<br>"
+            "Fills enclosed holes only; <b>0</b> means all hole sizes."
+        )
+    if "live_help" in node.knobs():
+        node["live_help"].setValue(
+            "Live follows timeline and prompt / ROI edits asynchronously.<br>"
+            "Disable Live before range or tracking renders."
         )
 
 
@@ -1304,8 +1321,8 @@ def _ensure_postprocess_controls(node: Any) -> None:
     node["max_hole_area"].setFlag(nuke.STARTLINE)
     if "postprocess_help" in node.knobs():
         node["postprocess_help"].setValue(
-            "CPU-only live preview from the cached raw SAM mask; changing this slider does not "
-            "run SAM again. Set 0 to fill all enclosed holes."
+            "CPU-only preview from the cached raw SAM mask; controls never rerun SAM.<br>"
+            "Fills enclosed holes only; <b>0</b> means all hole sizes."
         )
 
 
@@ -1389,7 +1406,7 @@ def create_segment_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 9</font>',
+            '<font color="#91a3b0">SAM 2 | Local inference | API 10</font>',
         ),
     )
 

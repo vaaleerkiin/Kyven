@@ -2,7 +2,7 @@
 
 ## Project mission
 
-Build Kyven as a production-oriented, local, modular AI masking framework for node-based compositing. Nuke is the first host. Fusion and DaVinci Resolve support must remain possible without rewriting the backend.
+Build Kyven Tools as a production-oriented, local, modular AI toolkit for node-based compositing. Segment and Refine are the first tools, not the boundary of the product. Nuke is the first host. Fusion and DaVinci Resolve support must remain possible without rewriting the backend.
 
 ## Read first
 
@@ -110,7 +110,7 @@ Use synthetic or redistributable fixtures only.
 
 ## Scope discipline
 
-Do not implement depth, inpainting, relighting, generative fill or spline extraction during the Version 1 masking milestone unless explicitly requested by the project owner.
+Do not implement roadmap tools such as Depth, Inpaint, relighting, generative fill, or spline extraction until the project owner explicitly starts that vertical slice. Their planned architecture and licensing constraints belong in `docs/ROADMAP.md`.
 
 ## Definition of done for a task
 

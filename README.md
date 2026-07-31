@@ -1,13 +1,17 @@
-# Kyven
+# Kyven Tools
 
-Local, modular AI masking for node-based compositing.
+Local, modular AI tools for node-based compositing.
 
-Kyven currently provides working `Kyven Segment` and `Kyven Refine` nodes for Foundry Nuke. SAM 2
-and ViTMatte run in a separate authenticated local process, keeping PyTorch and CUDA outside Nuke
-and writing reusable matte files to per-node caches. Fusion and DaVinci Resolve adapters are planned
-around the same host-independent server.
+Kyven Tools is an expandable compositing toolkit, not a single masking plug-in. The first working
+tools are `Kyven Segment` and `Kyven Refine` for Foundry Nuke. SAM 2 and ViTMatte run in a separate
+authenticated local process, keeping PyTorch and CUDA outside Nuke and writing reusable results to
+per-node caches. Depth, inpainting, paint-oriented utilities, Fusion, and DaVinci Resolve support
+are planned around the same host-independent server.
 
-## Current features
+The product name is **Kyven Tools**. The repository, Python package, CLI command, server, and node
+prefix keep the short technical name `kyven` / `Kyven` for compatibility.
+
+## Available today
 
 - SAM 2.1 Tiny, Small, Base+, and Large model selection;
 - ViTMatte Small refinement from any connected mask or artist trimap;
@@ -32,14 +36,28 @@ Nuke Group node
       |
       | authenticated HTTP on 127.0.0.1
       v
-Kyven Server -> job queue -> provider registry -> SAM 2 / ViTMatte
+Kyven Server -> job queue -> provider registry -> task-specific local models
       |
       v
-Atomic grayscale PNG matte cache
+Atomic per-node result cache
 ```
 
-The Nuke process never imports PyTorch or SAM. Only one selected segmentation model is kept
-resident, and older local server revisions are asked to unload before a new revision starts.
+The Nuke process never imports PyTorch or model implementations. Providers are loaded on demand,
+inactive models can be unloaded, and older local server revisions are asked to unload before a new
+revision starts.
+
+## Planned tools
+
+- **Kyven Depth:** interactive single-frame depth, temporally consistent video depth, independent
+  frame fallback, scene-cut handling, temporal stabilization, multiple output views, and a
+  low-memory/CPU path.
+- **Kyven Inpaint:** under design. It will remain a separate graph node with explicit Source and
+  Mask inputs, current-frame and range workflows, cache controls, and a commercially safe provider.
+- **Kyven Utils:** future focused utilities such as paint/cleanup assistance and other compositing
+  image operations. Each major operation remains an independent node.
+
+The detailed, non-binding implementation plan and model-license constraints are recorded in
+[Vision and roadmap](docs/ROADMAP.md).
 
 ## Portable installation on Windows
 
@@ -118,7 +136,7 @@ in GPU time or VRAM.
 ## Privacy, security, and licensing
 
 Inference is local by default. The server binds only to `127.0.0.1` and requires a random token.
-Kyven does not commit or redistribute model weights. Project code is Apache-2.0; provider and
+Kyven Tools does not commit or redistribute model weights. Project code is Apache-2.0; provider and
 dependency licenses are recorded in [Third-party notices](THIRD_PARTY_NOTICES.md).
 
 ## Documentation
@@ -131,8 +149,10 @@ dependency licenses are recorded in [Third-party notices](THIRD_PARTY_NOTICES.md
 - [Server API](docs/SERVER.md)
 - [Model catalog](docs/MODELS.md)
 - [Development benchmarks](docs/BENCHMARKS.md)
+- [Kyven Tools vision and roadmap](docs/ROADMAP.md)
 
 ## Project status
 
-Active pre-alpha implementation. Segment and Refine/ViTMatte vertical slices work in Nuke; Fusion
-and DaVinci Resolve integrations are not implemented yet.
+Active pre-alpha implementation. Kyven Tools currently ships working Segment and Refine/ViTMatte
+vertical slices in Nuke. Depth and Inpaint are planned, not implemented. Fusion and DaVinci Resolve
+integrations are also not implemented yet.

@@ -19,7 +19,7 @@ from kyven.segment.providers.registry import ProviderRegistry
 from kyven.server.jobs import JobManager
 
 MAX_REQUEST_BYTES = 1024 * 1024
-SERVER_API_VERSION = 9
+SERVER_API_VERSION = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +59,10 @@ def _handler_type(
             self.send_header("Content-Length", str(len(encoded)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
-            self.wfile.write(encoded)
+            try:
+                self.wfile.write(encoded)
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                return
 
         def _error(self, error: KyvenError) -> None:
             status = {

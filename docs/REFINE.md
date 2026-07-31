@@ -42,6 +42,11 @@ Manual current-frame processing and frame-range processing open a native Nuke pr
 export stage, frame/tile progress, percentage, ETA, and Cancel. Live refreshes remain unobtrusive and
 report through the node Status field instead of opening a new window after every Viewer edit.
 
+Range input export uses two batched Nuke renders instead of two render calls per frame. Source is
+stored as fast lossless TIFF and the mask as PNG; ViTMatte jobs remain sequential after export.
+Inverted ROI corners are normalized, ROI is clamped to the input, and an empty/outside ROI safely
+falls back to the full input format.
+
 The cached files for a processed frame are `refine_source`, `refine_mask`, `refined_matte`, and
 `trimap`. Range processing writes matching `%04d` sequences and connects internal Reads to both the
 refined matte and trimap. `Create Read from Current Matte` creates a Read for the refined matte; use
