@@ -42,6 +42,7 @@ class InpaintRequest:
     invert_mask: bool = False
     mask_channel: str = "luminance"
     processing_size: int = 0
+    preprocess_mask: bool = True
 
     def validate(self) -> None:
         for label, path in (("Source", self.source), ("Mask", self.mask)):
@@ -79,6 +80,7 @@ class InpaintRequest:
             "invert_mask": self.invert_mask,
             "mask_channel": self.mask_channel,
             "processing_size": self.processing_size,
+            "preprocess_mask": self.preprocess_mask,
         }
 
     def cache_key(self, provider_version: str, model_checksum: str) -> str:

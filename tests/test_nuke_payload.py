@@ -101,9 +101,9 @@ class NukePayloadTests(unittest.TestCase):
 
     def test_listener_pid_parser_uses_only_exact_listening_port(self) -> None:
         output = """
-          TCP    127.0.0.1:18778    0.0.0.0:0    LISTENING    17020
+          TCP    127.0.0.1:18779    0.0.0.0:0    LISTENING    17020
           TCP    127.0.0.1:18777    0.0.0.0:0    LISTENING    999
-          TCP    127.0.0.1:18778    127.0.0.1:50000    TIME_WAIT    0
+          TCP    127.0.0.1:18779    127.0.0.1:50000    TIME_WAIT    0
         """
 
         self.assertEqual(_listener_pids(output), (17020,))
@@ -259,7 +259,14 @@ class NukePayloadTests(unittest.TestCase):
         )
         self.assertEqual(
             INPAINT_OUTPUT_MODES,
-            ("Result", "Patch", "Processed Mask", "Difference", "Source"),
+            (
+                "Result",
+                "Patch",
+                "Model Mask Preview",
+                "Blend Mask",
+                "Difference",
+                "Source",
+            ),
         )
 
     def test_inpaint_payload_includes_processed_mask_controls(self) -> None:
@@ -279,6 +286,7 @@ class NukePayloadTests(unittest.TestCase):
         self.assertEqual(payload["edge_color_match"], 0.75)
         self.assertEqual(payload["mask_channel"], "alpha")
         self.assertTrue(payload["invert_mask"])
+        self.assertTrue(payload["preprocess_mask"])
 
     def test_video_payload_uses_key_frame_and_cpu_offload(self) -> None:
         payload = segment_video_payload(

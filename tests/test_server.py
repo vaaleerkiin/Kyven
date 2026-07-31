@@ -121,7 +121,7 @@ class ServerTests(unittest.TestCase):
             try:
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
                 self.assertEqual(client.health()["status"], "ok")
-                self.assertEqual(client.health()["api_version"], 15)
+                self.assertEqual(client.health()["api_version"], 16)
                 self.assertEqual(len(client.models()), 8)
                 operation_id = client.start_model_remove("sam2.1-tiny")
                 deadline = time.monotonic() + 5
@@ -214,6 +214,22 @@ class ServerTests(unittest.TestCase):
                 with Image.open(trimap_preview) as preview:
                     self.assertEqual(preview.getpixel((3, 3)), 255)
                     self.assertEqual(preview.getpixel((1, 3)), 128)
+                inpaint_mask_input = root / "inpaint_mask_input.png"
+                inpaint_mask_preview = root / "inpaint_mask_preview.png"
+                inpaint_pixels = np.zeros((9, 9), dtype=np.uint8)
+                inpaint_pixels[4, 4] = 255
+                Image.fromarray(inpaint_pixels, mode="L").save(inpaint_mask_input)
+                inpaint_preview_result = client.preview_inpaint_mask(
+                    {
+                        "mask": str(inpaint_mask_input.resolve()),
+                        "output": str(inpaint_mask_preview.resolve()),
+                        "preprocess_mask": True,
+                        "mask_grow": 1,
+                    }
+                )
+                self.assertEqual(inpaint_preview_result["nonzero_pixels"], 9)
+                with Image.open(inpaint_mask_preview) as preview:
+                    self.assertEqual(preview.getpixel((3, 3)), 255)
                 refine_output = root / "refined.png"
                 trimap_output = root / "trimap.png"
                 refine_job_id = client.submit_refine(

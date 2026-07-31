@@ -95,6 +95,9 @@ class NukeKyvenClient:
             timeout_seconds=60.0,
         )
 
+    def preview_inpaint_mask(self, payload):
+        return self._request("POST", "/v1/preview/inpaint-mask", payload, timeout_seconds=60.0)
+
     def job(self, job_id):
         return self._request("GET", f"/v1/jobs/{job_id}")
 

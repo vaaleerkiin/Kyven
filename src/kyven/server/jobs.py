@@ -323,6 +323,7 @@ class JobManager:
             invert_mask=bool(payload.get("invert_mask", False)),
             mask_channel=str(payload.get("mask_channel", "luminance")),
             processing_size=int(payload.get("processing_size", 0)),
+            preprocess_mask=bool(payload.get("preprocess_mask", True)),
         )
 
     def submit_inpaint(self, payload: dict[str, Any]) -> str:

@@ -212,6 +212,7 @@ def inpaint_payload(
     mask_threshold: float,
     invert_mask: bool, mask_channel: str,
     processing_size: int,
+    preprocess_mask: bool = True,
 ) -> dict[str, Any]:
     return {
         "source": source,
@@ -231,4 +232,5 @@ def inpaint_payload(
         "invert_mask": bool(invert_mask),
         "mask_channel": mask_channel,
         "processing_size": int(processing_size),
+        "preprocess_mask": bool(preprocess_mask),
     }

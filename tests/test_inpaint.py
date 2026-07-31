@@ -112,6 +112,40 @@ class InpaintServiceTests(unittest.TestCase):
             np.testing.assert_array_equal(rendered[20, 20], (223, 32, 32))
             self.assertEqual(result.metadata["edge_color_offset"], [-32.0, 32.0, 32.0])
 
+    def test_disabled_preprocess_preserves_clean_soft_blend_mask(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            mask = root / "mask.png"
+            output = root / "output.png"
+            processed = root / "processed.png"
+            Image.fromarray(np.full((8, 8, 3), 25, dtype=np.uint8)).save(source)
+            pixels = np.zeros((8, 8), dtype=np.uint8)
+            pixels[2:6, 2:6] = 192
+            pixels[3:5, 3:5] = 255
+            Image.fromarray(pixels).save(mask)
+            provider = FakeInpaintProvider()
+
+            InpaintService(self._registry(provider)).run(
+                InpaintRequest(
+                    source,
+                    mask,
+                    output,
+                    mask_output=processed,
+                    provider_id="fake",
+                    crop_mode="full",
+                    preprocess_mask=False,
+                    invert_mask=True,
+                    mask_grow=40,
+                    blend_grow=40,
+                    mask_feather=20,
+                    edge_color_match=0,
+                )
+            )
+
+            np.testing.assert_array_equal(np.asarray(Image.open(processed)), pixels)
+            self.assertEqual(len(provider.requests), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

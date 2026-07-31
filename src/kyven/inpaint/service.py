@@ -12,14 +12,11 @@ from PIL import Image, ImageFilter
 
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
+from kyven.inpaint.masks import mask_filter_size, prepare_inpaint_masks
 from kyven.inpaint.models import InpaintRequest, InpaintResult
 from kyven.segment.output import write_mask_png_atomic
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.segment.roi import ResolvedRegion, resolve_region
-
-
-def _mask_filter_size(radius: int) -> int:
-    return max(3, radius * 2 + 1) | 1
 
 
 def _write_rgb_atomic(path: Path, pixels: np.ndarray) -> None:
@@ -66,7 +63,7 @@ def _match_patch_color(
     mask_image = Image.fromarray(inference_mask, mode="L")
     ring_radius = 16
     expanded = np.asarray(
-        mask_image.filter(ImageFilter.MaxFilter(_mask_filter_size(ring_radius))),
+        mask_image.filter(ImageFilter.MaxFilter(mask_filter_size(ring_radius))),
         dtype=np.uint8,
     )
     ring = (expanded >= 128) & (inference_mask < 128)
@@ -96,14 +93,19 @@ class InpaintService:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Source and inpaint mask dimensions must match.")
         source_pixels = np.asarray(source, dtype=np.uint8)
         mask_pixels = np.asarray(mask, dtype=np.uint8)
-        if request.invert_mask:
-            mask_pixels = 255 - mask_pixels
-        threshold = round(request.mask_threshold * 255.0)
-        binary_mask = np.where(mask_pixels >= threshold, 255, 0).astype(np.uint8)
-        if not np.any(binary_mask):
+        inference_full, merge_full = prepare_inpaint_masks(
+            mask_pixels,
+            preprocess=request.preprocess_mask,
+            invert=request.invert_mask,
+            threshold=request.mask_threshold,
+            model_grow=request.mask_grow,
+            blend_grow=request.blend_grow,
+            blend_feather=request.mask_feather,
+        )
+        if not np.any(inference_full):
             _write_rgb_atomic(request.output, source_pixels)
             if request.mask_output is not None:
-                write_mask_png_atomic(request.mask_output, binary_mask)
+                write_mask_png_atomic(request.mask_output, np.zeros_like(mask_pixels))
             token.report_progress(1.0, "Mask is empty; Source copied unchanged")
             return InpaintResult(request.output, request.mask_output, "empty-mask", {"empty_mask": True})
 
@@ -112,25 +114,31 @@ class InpaintService:
         elif request.crop_mode == "full":
             region = ResolvedRegion(0, 0, source.width, source.height, source.width, source.height)
         else:
-            safe_padding = (
-                request.context_padding
-                + max(abs(request.mask_grow), abs(request.blend_grow))
-                + round(request.mask_feather * 3)
+            mask_coverage = np.maximum(
+                inference_full,
+                np.where(merge_full > 0, 255, 0).astype(np.uint8),
             )
-            region = _auto_region(binary_mask, safe_padding)
+            region = _auto_region(
+                mask_coverage,
+                request.context_padding,
+            )
             assert region is not None
         crop_box = (region.x0, region.y0, region.x1, region.y1)
         source_crop = source.crop(crop_box)
-        mask_crop = Image.fromarray(binary_mask, mode="L").crop(crop_box)
-        if request.mask_grow > 0:
-            mask_crop = mask_crop.filter(ImageFilter.MaxFilter(_mask_filter_size(request.mask_grow)))
-        elif request.mask_grow < 0:
-            mask_crop = mask_crop.filter(ImageFilter.MinFilter(_mask_filter_size(abs(request.mask_grow))))
-        inference_mask = np.asarray(mask_crop, dtype=np.uint8)
+        raw_crop = np.asarray(Image.fromarray(mask_pixels, mode="L").crop(crop_box))
+        inference_mask, merge_crop_pixels = prepare_inpaint_masks(
+            raw_crop,
+            preprocess=request.preprocess_mask,
+            invert=request.invert_mask,
+            threshold=request.mask_threshold,
+            model_grow=request.mask_grow,
+            blend_grow=request.blend_grow,
+            blend_feather=request.mask_feather,
+        )
         if not np.any(inference_mask):
             _write_rgb_atomic(request.output, source_pixels)
             if request.mask_output is not None:
-                write_mask_png_atomic(request.mask_output, np.zeros_like(binary_mask))
+                write_mask_png_atomic(request.mask_output, np.zeros_like(mask_pixels))
             return InpaintResult(request.output, request.mask_output, "empty-roi-mask", {"empty_mask": True})
 
         provider = self._registry.activate(request.provider_id)
@@ -158,19 +166,9 @@ class InpaintService:
             inference_mask,
             request.edge_color_match,
         )
-        merge_mask = Image.fromarray(binary_mask, mode="L").crop(crop_box)
-        if request.blend_grow > 0:
-            merge_mask = merge_mask.filter(
-                ImageFilter.MaxFilter(_mask_filter_size(request.blend_grow))
-            )
-        elif request.blend_grow < 0:
-            merge_mask = merge_mask.filter(
-                ImageFilter.MinFilter(_mask_filter_size(abs(request.blend_grow)))
-            )
-        if request.mask_feather:
-            merge_mask = merge_mask.filter(ImageFilter.GaussianBlur(float(request.mask_feather)))
+        merge_mask = Image.fromarray(merge_crop_pixels, mode="L")
         alpha = np.asarray(merge_mask, dtype=np.float32)[..., None] / 255.0
-        full_merge_mask = np.zeros_like(binary_mask)
+        full_merge_mask = np.zeros_like(mask_pixels)
         full_merge_mask[region.y0 : region.y1, region.x0 : region.x1] = np.asarray(merge_mask)
         if request.mask_output is not None:
             write_mask_png_atomic(request.mask_output, full_merge_mask)

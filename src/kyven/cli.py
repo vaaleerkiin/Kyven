@@ -111,6 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     inpaint.add_argument("--edge-color-match", default=1.0, type=float)
     inpaint.add_argument("--mask-threshold", default=0.5, type=float)
     inpaint.add_argument("--invert-mask", action="store_true")
+    inpaint.add_argument("--no-mask-preprocess", action="store_true")
     inpaint.add_argument("--processed-mask-output", type=Path)
     inpaint.add_argument("--processing-size", default=0, type=int)
 
@@ -264,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
                 blend_grow=args.blend_grow,
                 edge_color_match=args.edge_color_match,
                 mask_threshold=args.mask_threshold, invert_mask=args.invert_mask,
+                preprocess_mask=not args.no_mask_preprocess,
                 processing_size=args.processing_size,
             ))
             print(json.dumps({"output": str(result.output), "mask_output": str(result.mask_output) if result.mask_output else None, "cache_key": result.cache_key, "metadata": result.metadata}, indent=2))

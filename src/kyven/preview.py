@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image
 
 from kyven.errors import ErrorCode, KyvenError
+from kyven.inpaint.masks import prepare_inpaint_masks
 from kyven.refine.trimap import generate_trimap, normalize_trimap
 from kyven.segment.models import BoxPrompt
 from kyven.segment.output import write_mask_png_atomic
@@ -169,4 +170,52 @@ def postprocess_mask_preview(payload: dict[str, Any]) -> dict[str, Any]:
         "max_hole_area": max_hole_area,
         "filled_holes": filled_holes,
         "filled_pixels": filled_pixels,
+    }
+
+
+def prepare_inpaint_mask_preview(payload: dict[str, Any]) -> dict[str, Any]:
+    """Write the exact binary mask that an Inpaint provider will receive."""
+
+    mask_path = _absolute_file(payload, "mask", must_exist=True)
+    output_path = _absolute_file(payload, "output", must_exist=False)
+    try:
+        threshold = float(payload.get("mask_threshold", 0.5))
+        model_grow = int(payload.get("mask_grow", 12))
+    except (TypeError, ValueError) as exc:
+        raise KyvenError(
+            ErrorCode.INVALID_REQUEST,
+            "Inpaint mask preview controls are invalid.",
+            technical_detail=str(exc),
+        ) from exc
+    if not 0 <= threshold <= 1 or not -128 <= model_grow <= 128:
+        raise KyvenError(ErrorCode.INVALID_REQUEST, "Inpaint mask preview controls are out of range.")
+    channel = str(payload.get("mask_channel", "luminance"))
+    try:
+        with Image.open(mask_path) as image_file:
+            if channel == "alpha" and "A" in image_file.getbands():
+                pixels = np.asarray(image_file.getchannel("A"), dtype=np.uint8)
+            else:
+                pixels = np.asarray(image_file.convert("L"), dtype=np.uint8)
+    except OSError as exc:
+        raise KyvenError(
+            ErrorCode.INVALID_REQUEST,
+            f"Could not read Inpaint mask preview input: {mask_path}",
+            technical_detail=str(exc),
+        ) from exc
+    model_mask, _blend_mask = prepare_inpaint_masks(
+        pixels,
+        preprocess=bool(payload.get("preprocess_mask", True)),
+        invert=bool(payload.get("invert_mask", False)),
+        threshold=threshold,
+        model_grow=model_grow,
+        blend_grow=0,
+        blend_feather=0,
+    )
+    write_mask_png_atomic(output_path, model_mask)
+    return {
+        "output": str(output_path),
+        "preprocess_mask": bool(payload.get("preprocess_mask", True)),
+        "mask_threshold": threshold,
+        "mask_grow": model_grow,
+        "nonzero_pixels": int(np.count_nonzero(model_mask)),
     }
