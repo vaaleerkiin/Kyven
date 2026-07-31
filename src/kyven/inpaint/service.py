@@ -93,13 +93,32 @@ class InpaintService:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Source and inpaint mask dimensions must match.")
         source_pixels = np.asarray(source, dtype=np.uint8)
         mask_pixels = np.asarray(mask, dtype=np.uint8)
-        inference_full, merge_full = prepare_inpaint_masks(
-            mask_pixels,
-            preprocess=request.preprocess_mask,
-            invert=request.invert_mask,
-            threshold=request.mask_threshold,
-            model_grow=request.mask_grow,
-        )
+        if request.model_mask is not None:
+            with Image.open(request.model_mask) as model_mask_file:
+                model_mask = model_mask_file.convert("L")
+            if model_mask.size != source.size:
+                raise KyvenError(
+                    ErrorCode.INVALID_REQUEST,
+                    "Source and exported model mask dimensions must match.",
+                )
+            inference_full = np.where(
+                np.asarray(model_mask, dtype=np.uint8) >= 128,
+                255,
+                0,
+            ).astype(np.uint8)
+            merge_full = (
+                255 - mask_pixels
+                if request.preprocess_mask and request.invert_mask
+                else mask_pixels.copy()
+            )
+        else:
+            inference_full, merge_full = prepare_inpaint_masks(
+                mask_pixels,
+                preprocess=request.preprocess_mask,
+                invert=request.invert_mask,
+                threshold=request.mask_threshold,
+                model_grow=request.mask_grow,
+            )
         if not np.any(inference_full):
             _write_rgb_atomic(request.output, source_pixels)
             if request.patch_output is not None:
@@ -125,14 +144,18 @@ class InpaintService:
             assert region is not None
         crop_box = (region.x0, region.y0, region.x1, region.y1)
         source_crop = source.crop(crop_box)
-        raw_crop = np.asarray(Image.fromarray(mask_pixels, mode="L").crop(crop_box))
-        inference_mask, merge_crop_pixels = prepare_inpaint_masks(
-            raw_crop,
-            preprocess=request.preprocess_mask,
-            invert=request.invert_mask,
-            threshold=request.mask_threshold,
-            model_grow=request.mask_grow,
-        )
+        if request.model_mask is not None:
+            inference_mask = inference_full[region.y0 : region.y1, region.x0 : region.x1]
+            merge_crop_pixels = merge_full[region.y0 : region.y1, region.x0 : region.x1]
+        else:
+            raw_crop = np.asarray(Image.fromarray(mask_pixels, mode="L").crop(crop_box))
+            inference_mask, merge_crop_pixels = prepare_inpaint_masks(
+                raw_crop,
+                preprocess=request.preprocess_mask,
+                invert=request.invert_mask,
+                threshold=request.mask_threshold,
+                model_grow=request.mask_grow,
+            )
         if not np.any(inference_mask):
             _write_rgb_atomic(request.output, source_pixels)
             if request.patch_output is not None:

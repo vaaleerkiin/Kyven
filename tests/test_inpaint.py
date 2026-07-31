@@ -16,6 +16,7 @@ from kyven.segment.providers.registry import ProviderRegistry
 class FakeInpaintProvider:
     def __init__(self) -> None:
         self.requests: list[InpaintRequest] = []
+        self.mask_pixels: list[np.ndarray] = []
 
     @property
     def capabilities(self) -> InpaintCapabilities:
@@ -23,6 +24,8 @@ class FakeInpaintProvider:
 
     def predict(self, request: InpaintRequest, cancellation) -> InpaintPrediction:
         self.requests.append(request)
+        with Image.open(request.mask) as mask:
+            self.mask_pixels.append(np.asarray(mask.convert("L")).copy())
         with Image.open(request.source) as image:
             shape = np.asarray(image.convert("RGB")).shape
         return InpaintPrediction(np.full(shape, (255, 0, 0), dtype=np.uint8))
@@ -143,6 +146,45 @@ class InpaintServiceTests(unittest.TestCase):
 
             np.testing.assert_array_equal(np.asarray(Image.open(processed)), pixels)
             self.assertEqual(len(provider.requests), 1)
+
+    def test_exported_model_mask_drives_inference_but_clean_mask_drives_composite(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            mask = root / "mask.png"
+            model_mask = root / "model-mask.png"
+            output = root / "output.png"
+            patch = root / "patch.png"
+            Image.fromarray(np.full((20, 20, 3), 25, dtype=np.uint8)).save(source)
+            clean = np.zeros((20, 20), dtype=np.uint8)
+            clean[9:11, 9:11] = 255
+            exported = np.zeros((20, 20), dtype=np.uint8)
+            exported[6:14, 6:14] = 255
+            Image.fromarray(clean).save(mask)
+            Image.fromarray(exported).save(model_mask)
+            provider = FakeInpaintProvider()
+
+            InpaintService(self._registry(provider)).run(
+                InpaintRequest(
+                    source,
+                    mask,
+                    output,
+                    model_mask=model_mask,
+                    patch_output=patch,
+                    provider_id="fake",
+                    crop_mode="full",
+                    mask_grow=-128,
+                    mask_threshold=1.0,
+                    edge_color_match=0,
+                )
+            )
+
+            self.assertEqual(int(np.count_nonzero(provider.mask_pixels[0])), 64)
+            rendered = np.asarray(Image.open(output).convert("RGB"))
+            rendered_patch = np.asarray(Image.open(patch).convert("RGB"))
+            self.assertTrue(np.all(rendered[6, 6] == 25))
+            self.assertTrue(np.all(rendered[9, 9] == (255, 0, 0)))
+            self.assertTrue(np.all(rendered_patch[6, 6] == (255, 0, 0)))
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from kyven_nuke.branding import add_node_branding
+from kyven_nuke.client import NukeKyvenClientError
 from kyven_nuke.node import (
     _add_knob,
     _add_section,
@@ -36,38 +37,26 @@ INPAINT_OUTPUT_MODES = (
     "Result + Source Alpha",
     "Result Premult",
     "Generated Patch",
-    "Model Mask Preview",
     "Difference",
     "Source",
 )
-_mask_preview_lock = threading.RLock()
-_mask_preview_worker_lock = threading.Lock()
-_mask_preview_revisions: dict[str, int] = {}
-_mask_preview_running: set[str] = set()
 
 
-def _paths(node: Any, frame: int) -> tuple[Path, Path, Path, Path, Path]:
+def _paths(node: Any, frame: int) -> tuple[Path, Path, Path, Path, Path, Path]:
     root = _cache_root(node)
     return (
         root / f"inpaint_source.{frame:04d}.tif",
         root / f"inpaint_mask.{frame:04d}.png",
+        root / f"inpaint_model_mask.{frame:04d}.png",
         root / f"inpaint_result.{frame:04d}.png",
         root / f"inpaint_processed_mask.{frame:04d}.png",
         root / f"inpaint_patch.{frame:04d}.png",
     )
 
 
-def _mask_preview_paths(node: Any, frame: int, revision: int) -> tuple[Path, Path]:
-    root = _cache_root(node)
-    return (
-        root / f"inpaint_mask_preview_input.{frame:04d}.{revision}.png",
-        root / f"inpaint_model_mask_preview_r{revision}.{frame:04d}.png",
-    )
-
-
-def _payload(node: Any, source: Any, source_path: Path, mask_path: Path, output_path: Path, processed_mask_path: Path, patch_path: Path, mask_channel: str) -> dict[str, Any]:
+def _payload(node: Any, source: Any, source_path: Path, mask_path: Path, model_mask_path: Path, output_path: Path, processed_mask_path: Path, patch_path: Path, mask_channel: str) -> dict[str, Any]:
     return inpaint_payload(
-        source=str(source_path.resolve()), mask=str(mask_path.resolve()), output=str(output_path.resolve()), mask_output=str(processed_mask_path.resolve()), patch_output=str(patch_path.resolve()),
+        source=str(source_path.resolve()), mask=str(mask_path.resolve()), model_mask=str(model_mask_path.resolve()), output=str(output_path.resolve()), mask_output=str(processed_mask_path.resolve()), patch_output=str(patch_path.resolve()),
         model_index=int(node["model"].getValue()), profile=str(node["profile"].value()),
         image_width=int(source.width()), image_height=int(source.height()),
         crop_mode=str(node["crop_mode"].value()), roi=tuple(node["processing_roi"].value()),
@@ -142,31 +131,8 @@ def _set_patch(node: Any, path: Path, first: int | None = None, last: int | None
         node.end()
 
 
-def _set_model_mask_preview(node: Any, path: Path, frame: int) -> None:
-    nuke = _nuke()
-    node.begin()
-    try:
-        read = nuke.toNode("KyvenModelMaskPreviewRead")
-        model_switch = nuke.toNode("KyvenModelMaskSwitch")
-        if model_switch is None:
-            return
-        if read is None:
-            read = nuke.nodes.Read(name="KyvenModelMaskPreviewRead", file=_nuke_file_path(path))
-            model_switch.setInput(1, read)
-        else:
-            read["file"].setValue(_nuke_file_path(path))
-        for name in ("first", "last", "origfirst", "origlast"):
-            if name in read.knobs():
-                read[name].setValue(frame)
-        if "reload" in read.knobs():
-            read["reload"].execute()
-        model_switch["which"].setValue(1)
-    finally:
-        node.end()
-
-
 def _ensure_inpaint_preview_graph(node: Any) -> None:
-    """Add the model-mask preview branch and current six-way output switch wiring."""
+    """Build the live Nuke model mask and wire the public output modes."""
 
     nuke = _nuke()
     if "output_mode" in node.knobs():
@@ -175,6 +141,7 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         previous = {
             "Result": "Result + Source Alpha",
             "Patch": "Generated Patch",
+            "Model Mask Preview": "Result + Source Alpha",
             "Processed Mask": "Result + Source Alpha",
             "Blend Mask": "Result + Source Alpha",
         }.get(previous, previous)
@@ -186,6 +153,11 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         output_switch = nuke.toNode("KyvenOutputSwitch")
         difference = nuke.toNode("KyvenDifference")
         source = nuke.toNode("Source")
+        mask = nuke.toNode("Mask")
+        if source is not None:
+            source.setXpos(-120)
+        if mask is not None:
+            mask.setXpos(120)
         result_switch = nuke.toNode("KyvenResultSwitch")
         result_opaque = nuke.toNode("KyvenResultOpaque")
         if result_opaque is None:
@@ -208,181 +180,49 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         if patch_switch is None:
             patch_switch = nuke.nodes.Switch(name="KyvenPatchSwitch")
             patch_switch.setInput(0, source)
-        model_switch = nuke.toNode("KyvenModelMaskSwitch")
-        if model_switch is None:
-            model_switch = nuke.nodes.Switch(name="KyvenModelMaskSwitch")
-            model_switch.setInput(0, channel_switch)
-        writer = nuke.toNode("KyvenInpaintMaskPreviewWrite")
+        threshold = nuke.toNode("KyvenModelMaskThreshold")
+        if threshold is None:
+            threshold = nuke.nodes.Expression(name="KyvenModelMaskThreshold")
+        threshold.setInput(0, channel_switch)
+        for index, channel in enumerate(("r", "g", "b", "a")):
+            expression = (
+                "parent.preprocess_mask ? "
+                f"((parent.invert_mask ? 1-{channel} : {channel}) >= parent.mask_threshold) "
+                f": ({channel} >= 0.5)"
+            )
+            knob_name = f"expr{index}"
+            if knob_name in threshold.knobs():
+                threshold[knob_name].setValue(expression)
+        model_mask = nuke.toNode("KyvenModelMaskGrow")
+        if model_mask is None:
+            model_mask = nuke.nodes.FilterErode(name="KyvenModelMaskGrow")
+        model_mask.setInput(0, threshold)
+        if "channels" in model_mask.knobs():
+            model_mask["channels"].setValue("rgba")
+        model_mask["size"].setExpression(
+            "parent.preprocess_mask ? -parent.mask_grow : 0"
+        )
+        writer = nuke.toNode("KyvenInpaintModelMaskWrite")
         if writer is None:
-            writer = nuke.nodes.Write(name="KyvenInpaintMaskPreviewWrite")
-            writer.setInput(0, channel_switch)
+            writer = nuke.nodes.Write(name="KyvenInpaintModelMaskWrite")
             writer["file_type"].setValue("png")
             writer["channels"].setValue("rgb")
+        writer.setInput(0, model_mask)
         if output_switch is not None:
             output_switch.setInput(0, result_opaque)
             output_switch.setInput(1, result_source_alpha)
             output_switch.setInput(2, result_premult)
             output_switch.setInput(3, patch_switch)
-            output_switch.setInput(4, model_switch)
-            output_switch.setInput(5, difference)
-            output_switch.setInput(6, source)
+            output_switch.setInput(4, difference)
+            output_switch.setInput(5, source)
+            output_switch.setInput(6, model_mask)
             if "preview_model_mask" in node.knobs():
-                selector = "parent.preview_model_mask ? 4 : parent.output_mode"
+                selector = "parent.preview_model_mask ? 6 : parent.output_mode"
             else:
                 selector = "parent.output_mode"
             output_switch["which"].setExpression(selector)
     finally:
         node.end()
-
-
-def request_mask_preview(node: Any, delay_seconds: float = 0.18) -> None:
-    """Debounce mask controls into a CPU-only preview without running LaMa."""
-
-    node_name = str(node.fullName())
-    with _mask_preview_lock:
-        revision = _mask_preview_revisions.get(node_name, 0) + 1
-        _mask_preview_revisions[node_name] = revision
-    if not _model_preview_visible(node):
-        return
-    timer = threading.Timer(delay_seconds, _dispatch_mask_preview, args=(node_name, revision))
-    timer.daemon = True
-    timer.start()
-
-
-def _dispatch_mask_preview(node_name: str, revision: int) -> None:
-    _nuke().executeInMainThread(_start_mask_preview, args=(node_name, revision))
-
-
-def _model_preview_visible(node: Any) -> bool:
-    if "preview_model_mask" in node.knobs() and bool(node["preview_model_mask"].value()):
-        return True
-    return (
-        "output_mode" in node.knobs()
-        and str(node["output_mode"].value()) == "Model Mask Preview"
-    )
-
-
-def _start_mask_preview(node_name: str, revision: int) -> None:
-    nuke = _nuke()
-    with _mask_preview_lock:
-        if _mask_preview_revisions.get(node_name) != revision:
-            return
-        if node_name in _mask_preview_running:
-            timer = threading.Timer(0.2, _dispatch_mask_preview, args=(node_name, revision))
-            timer.daemon = True
-            timer.start()
-            return
-    node = nuke.toNode(node_name)
-    if node is None or not _model_preview_visible(node):
-        return
-    if nuke.executing() or bool(node["kyven_busy"].value()):
-        return
-    if node.input(1) is None:
-        return
-    frame = int(nuke.frame())
-    input_path, model_output_path = _mask_preview_paths(
-        node,
-        frame,
-        revision,
-    )
-    input_path.parent.mkdir(parents=True, exist_ok=True)
-    writer = _inside(node, "KyvenInpaintMaskPreviewWrite")
-    if writer is None:
-        _ensure_inpaint_preview_graph(node)
-        writer = _inside(node, "KyvenInpaintMaskPreviewWrite")
-    writer["file"].setValue(_nuke_file_path(input_path))
-    try:
-        nuke.execute(writer, frame, frame)
-    except Exception as exc:  # noqa: BLE001
-        _set_status(node_name, f"Mask preview export failed: {exc}")
-        return
-    payload = {
-        "mask": str(input_path.resolve()),
-        "output": str(model_output_path.resolve()),
-        "mask_channel": "luminance",
-        "preprocess_mask": bool(node["preprocess_mask"].value()),
-        "invert_mask": bool(node["invert_mask"].value()),
-        "mask_threshold": float(node["mask_threshold"].value()),
-        "mask_grow": int(node["mask_grow"].value()),
-    }
-    with _mask_preview_lock:
-        _mask_preview_running.add(node_name)
-    _set_status(node_name, "Updating model mask preview (CPU only)...")
-    threading.Thread(
-        target=_mask_preview_worker,
-        args=(
-            node_name,
-            revision,
-            frame,
-            input_path,
-            model_output_path,
-            payload,
-        ),
-        name="kyven-inpaint-mask-preview",
-        daemon=True,
-    ).start()
-
-
-def _mask_preview_worker(
-    node_name: str,
-    revision: int,
-    frame: int,
-    input_path: Path,
-    model_output_path: Path,
-    payload: dict[str, Any],
-) -> None:
-    error = ""
-    result: dict[str, Any] = {}
-    try:
-        with _mask_preview_worker_lock:
-            with _mask_preview_lock:
-                current = _mask_preview_revisions.get(node_name)
-            if current == revision:
-                result = ensure_server().preview_inpaint_mask(payload)
-    except Exception as exc:  # noqa: BLE001
-        error = str(exc)
-    _nuke().executeInMainThread(
-        _finish_mask_preview,
-        args=(
-            node_name,
-            revision,
-            frame,
-            input_path,
-            model_output_path,
-            result,
-            error,
-        ),
-    )
-
-
-def _finish_mask_preview(
-    node_name: str,
-    revision: int,
-    frame: int,
-    input_path: Path,
-    model_output_path: Path,
-    result: dict[str, Any],
-    error: str,
-) -> None:
-    input_path.unlink(missing_ok=True)
-    with _mask_preview_lock:
-        _mask_preview_running.discard(node_name)
-        current = _mask_preview_revisions.get(node_name)
-    if current != revision:
-        model_output_path.unlink(missing_ok=True)
-        if current is not None and node_name not in _mask_preview_running:
-            _start_mask_preview(node_name, current)
-        return
-    node = _nuke().toNode(node_name)
-    if node is None:
-        model_output_path.unlink(missing_ok=True)
-        return
-    if error or not model_output_path.is_file():
-        _set_status(node_name, f"Mask preview failed: {error or 'output was not created'}")
-        return
-    _set_model_mask_preview(node, model_output_path, frame)
-    mode = "preprocessed" if result.get("preprocess_mask") else "clean input"
-    _set_status(node_name, f"Model mask preview ready ({mode}).")
 
 
 def _apply(node_name: str, job: dict[str, Any], output: Path, processed_mask: Path, patch: Path) -> None:
@@ -391,8 +231,6 @@ def _apply(node_name: str, job: dict[str, Any], output: Path, processed_mask: Pa
     _set_busy(node_name, False)
     if job["status"] != "succeeded":
         _set_status(node_name, f"Inpaint failed: {_job_error_text(job)}")
-        if _model_preview_visible(node):
-            request_mask_preview(node)
         return
     _set_result(node, output)
     _set_processed_mask(node, processed_mask)
@@ -400,8 +238,6 @@ def _apply(node_name: str, job: dict[str, Any], output: Path, processed_mask: Pa
     roi = (job.get("result") or {}).get("metadata", {}).get("processing_roi")
     suffix = f" | crop {roi['width']}x{roi['height']}" if roi else ""
     _set_status(node_name, f"Inpaint complete{suffix}")
-    if _model_preview_visible(node):
-        request_mask_preview(node)
 
 
 def process_current_frame_for_node(node: Any, live: bool = False) -> None:
@@ -416,16 +252,18 @@ def process_current_frame_for_node(node: Any, live: bool = False) -> None:
         if not live:
             nuke.message("Kyven Inpaint needs Source on input 0 and Mask on input 1.")
         return
+    if _inside(node, "KyvenInpaintModelMaskWrite") is None:
+        _ensure_inpaint_preview_graph(node)
     _set_busy(node_name, True)
-    with _mask_preview_lock:
-        _mask_preview_revisions[node_name] = _mask_preview_revisions.get(node_name, 0) + 1
     frame = int(nuke.frame())
-    source_path, mask_path, output_path, processed_mask_path, patch_path = _paths(node, frame)
+    source_path, mask_path, model_mask_path, output_path, processed_mask_path, patch_path = _paths(node, frame)
     source_path.parent.mkdir(parents=True, exist_ok=True)
     source_writer = _inside(node, "KyvenInpaintSourceWrite")
+    model_mask_writer = _inside(node, "KyvenInpaintModelMaskWrite")
     combined = _inside(node, "KyvenInpaintCombined") is not None
     mask_writer = None if combined else _inside(node, "KyvenInpaintMaskWrite")
     source_writer["file"].setValue(_nuke_file_path(source_path))
+    model_mask_writer["file"].setValue(_nuke_file_path(model_mask_path))
     if combined:
         mask_path = source_path
     else:
@@ -436,6 +274,7 @@ def process_current_frame_for_node(node: Any, live: bool = False) -> None:
         _start_progress(node_name, "Kyven Inpaint", f"Exporting frame {frame}")
     try:
         nuke.execute(source_writer, frame, frame)
+        nuke.execute(model_mask_writer, frame, frame)
         if mask_writer is not None: nuke.execute(mask_writer, frame, frame)
     except Exception as exc:  # noqa: BLE001
         if show_progress:
@@ -445,13 +284,26 @@ def process_current_frame_for_node(node: Any, live: bool = False) -> None:
             _set_status(node_name, f"Live inpaint export failed: {exc}")
         _set_busy(node_name, False)
         return
-    payload = _payload(node, source, source_path, mask_path, output_path, processed_mask_path, patch_path, "alpha" if combined else "luminance")
+    payload = _payload(node, source, source_path, mask_path, model_mask_path, output_path, processed_mask_path, patch_path, "alpha" if combined else "luminance")
     def work() -> None:
         try:
             client = ensure_server(); job_id = client.submit_inpaint(payload)
             _nuke().executeInMainThread(lambda: node["kyven_job_id"].setValue(job_id))
+            last_contact = time.monotonic()
             while True:
-                job = client.job(job_id)
+                try:
+                    job = client.job(job_id)
+                    last_contact = time.monotonic()
+                except NukeKyvenClientError:
+                    if time.monotonic() - last_contact > 120.0:
+                        raise
+                    if show_progress:
+                        _nuke().executeInMainThread(
+                            _update_progress,
+                            args=(node_name, 0, "Server busy; reconnecting..."),
+                        )
+                    time.sleep(0.5)
+                    continue
                 if job["status"] in ("succeeded", "failed", "cancelled"): break
                 progress = float(job.get("progress") or 0.0)
                 message = str(job.get("progress_message") or "Inpainting")
@@ -487,14 +339,16 @@ def process_frame_range() -> None:
     first = int(node["range_first"].value()); last = int(node["range_last"].value())
     if source is None or mask is None: nuke.message("Connect Source and Mask first."); return
     if last < first: nuke.message("Range Last must be equal to or greater than Range First."); return
+    if _inside(node, "KyvenInpaintModelMaskWrite") is None:
+        _ensure_inpaint_preview_graph(node)
     _set_busy(node_name, True)
-    with _mask_preview_lock:
-        _mask_preview_revisions[node_name] = _mask_preview_revisions.get(node_name, 0) + 1
-    root = _cache_root(node); source_pattern = root / "inpaint_source.%04d.tif"; mask_pattern = root / "inpaint_mask.%04d.png"; output_pattern = root / "inpaint_result.%04d.png"; processed_mask_pattern = root / "inpaint_processed_mask.%04d.png"; patch_pattern = root / "inpaint_patch.%04d.png"
+    root = _cache_root(node); source_pattern = root / "inpaint_source.%04d.tif"; mask_pattern = root / "inpaint_mask.%04d.png"; model_mask_pattern = root / "inpaint_model_mask.%04d.png"; output_pattern = root / "inpaint_result.%04d.png"; processed_mask_pattern = root / "inpaint_processed_mask.%04d.png"; patch_pattern = root / "inpaint_patch.%04d.png"
     source_writer = _inside(node, "KyvenInpaintSourceWrite")
+    model_mask_writer = _inside(node, "KyvenInpaintModelMaskWrite")
     combined = _inside(node, "KyvenInpaintCombined") is not None
     mask_writer = None if combined else _inside(node, "KyvenInpaintMaskWrite")
     source_writer["file"].setValue(_nuke_file_path(source_pattern))
+    model_mask_writer["file"].setValue(_nuke_file_path(model_mask_pattern))
     if combined:
         mask_pattern = source_pattern
     else:
@@ -502,11 +356,12 @@ def process_frame_range() -> None:
     _start_progress(node_name, "Kyven Inpaint", f"Exporting frames {first}-{last}")
     try:
         nuke.execute(source_writer, first, last)
+        nuke.execute(model_mask_writer, first, last)
         if mask_writer is not None: nuke.execute(mask_writer, first, last)
     except Exception as exc:  # noqa: BLE001
         _finish_progress(node_name); _set_busy(node_name, False); nuke.message(f"Inpaint export failed: {exc}"); return
     payloads = [
-        _payload(node, source, Path(str(source_pattern) % frame), Path(str(mask_pattern) % frame), Path(str(output_pattern) % frame), Path(str(processed_mask_pattern) % frame), Path(str(patch_pattern) % frame), "alpha" if combined else "luminance")
+        _payload(node, source, Path(str(source_pattern) % frame), Path(str(mask_pattern) % frame), Path(str(model_mask_pattern) % frame), Path(str(output_pattern) % frame), Path(str(processed_mask_pattern) % frame), Path(str(patch_pattern) % frame), "alpha" if combined else "luminance")
         for frame in range(first, last + 1)
     ]
     def work() -> None:
@@ -593,6 +448,16 @@ def reset_roi_to_input() -> None:
 
 def knob_changed() -> None:
     nuke = _nuke(); node = nuke.thisNode(); knob_name = nuke.thisKnob().name()
+    if knob_name in {
+        "output_mode",
+        "mask_channel",
+        "preprocess_mask",
+        "preview_model_mask",
+        "invert_mask",
+        "mask_threshold",
+        "mask_grow",
+    } and _inside(node, "KyvenInpaintModelMaskWrite") is None:
+        _ensure_inpaint_preview_graph(node)
     node["processing_roi"].setVisible(str(node["crop_mode"].value()) == "manual")
     node["context_padding"].setVisible(str(node["crop_mode"].value()) == "auto")
     if knob_name == "model":
@@ -604,17 +469,6 @@ def knob_changed() -> None:
     for name in ("invert_mask", "mask_threshold", "mask_grow"):
         if name in node.knobs():
             node[name].setVisible(preprocess)
-    if knob_name in {
-        "inputChange",
-        "output_mode",
-        "mask_channel",
-        "preprocess_mask",
-        "preview_model_mask",
-        "invert_mask",
-        "mask_threshold",
-        "mask_grow",
-    }:
-        request_mask_preview(node)
     from kyven_nuke.live import affects_live_result, request_live_update
     if affects_live_result(knob_name, "inpaint"):
         node["kyven_live_frame"].setValue(-2147483647)
@@ -713,7 +567,7 @@ def create_inpaint_node() -> Any:
     nuke = _nuke(); selected = nuke.selectedNodes(); source = selected[0] if selected else None; mask = selected[1] if len(selected) > 1 else None
     node = nuke.nodes.Group(name="KyvenInpaint"); node.setInput(0, source); node.setInput(1, mask)
     node["label"].setValue("[value kyven_status]"); node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint")); add_node_branding(node, nuke)
-    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 18</font>'))
+    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 19</font>'))
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
     _add_knob(nuke, node, nuke.Enumeration_Knob("profile", "Memory Profile", ["low_memory", "balanced", "quality"])); node["profile"].setValue(1)
@@ -755,8 +609,8 @@ def create_inpaint_node() -> Any:
     node["knobChanged"].setValue("kyven_nuke.inpaint_node.knob_changed()")
     node.begin()
     try:
-        src = nuke.nodes.Input(name="Source"); src["number"].setValue(0)
-        msk = nuke.nodes.Input(name="Mask"); msk["number"].setValue(1)
+        src = nuke.nodes.Input(name="Source"); src["number"].setValue(0); src.setXpos(-120)
+        msk = nuke.nodes.Input(name="Mask"); msk["number"].setValue(1); msk.setXpos(120)
         result_switch = nuke.nodes.Switch(name="KyvenResultSwitch"); result_switch.setInput(0, src)
         processed_mask = nuke.nodes.Switch(name="KyvenProcessedMaskSwitch"); processed_mask.setInput(0, msk)
         result_opaque = nuke.nodes.Shuffle(name="KyvenResultOpaque"); result_opaque.setInput(0, result_switch); result_opaque["alpha"].setValue("white")
@@ -764,7 +618,7 @@ def create_inpaint_node() -> Any:
         result_premult = nuke.nodes.Premult(name="KyvenResultPremult"); result_premult.setInput(0, result_alpha)
         patch = nuke.nodes.Switch(name="KyvenPatchSwitch"); patch.setInput(0, src)
         difference = nuke.nodes.Merge2(name="KyvenDifference", operation="difference"); difference.setInput(0, result_switch); difference.setInput(1, src)
-        output_switch = nuke.nodes.Switch(name="KyvenOutputSwitch"); output_switch.setInput(0, result_opaque); output_switch.setInput(1, result_alpha); output_switch.setInput(2, result_premult); output_switch.setInput(3, patch); output_switch.setInput(4, processed_mask); output_switch.setInput(5, difference); output_switch.setInput(6, src); output_switch["which"].setExpression("parent.output_mode")
+        output_switch = nuke.nodes.Switch(name="KyvenOutputSwitch"); output_switch.setInput(0, result_opaque); output_switch.setInput(1, result_alpha); output_switch.setInput(2, result_premult); output_switch.setInput(3, patch); output_switch.setInput(4, difference); output_switch.setInput(5, src); output_switch["which"].setExpression("parent.output_mode")
         out = nuke.nodes.Output(name="Output"); out.setInput(0, output_switch)
         sw = nuke.nodes.Write(name="KyvenInpaintSourceWrite"); sw.setInput(0, src); sw["file_type"].setValue("tiff"); sw["channels"].setValue("rgb")
         alpha = nuke.nodes.Shuffle(name="KyvenInpaintMaskAlpha"); alpha.setInput(0, msk)
@@ -784,8 +638,6 @@ def create_inpaint_node() -> Any:
     node["processing_roi"].setVisible(False)
     _restyle_inpaint_cache(node)
     add_node_branding(node, nuke)
-    if mask is not None:
-        request_mask_preview(node)
     return node
 
 
@@ -848,7 +700,7 @@ def upgrade_selected_inpaint_node() -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br>'
-            '<font color="#91a3b0">LaMa | Source + Mask | API 18</font>'
+            '<font color="#91a3b0">LaMa | Source + Mask | API 19</font>'
         )
     if "mask_help" in node.knobs():
         node["mask_help"].setValue(
@@ -863,5 +715,3 @@ def upgrade_selected_inpaint_node() -> None:
         )
     if "kyven_status" in node.knobs():
         node["kyven_status"].setValue("Inpaint UI upgraded. Cached results were preserved.")
-    if node.input(1) is not None:
-        request_mask_preview(node)

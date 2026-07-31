@@ -121,7 +121,7 @@ class ServerTests(unittest.TestCase):
             try:
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
                 self.assertEqual(client.health()["status"], "ok")
-                self.assertEqual(client.health()["api_version"], 18)
+                self.assertEqual(client.health()["api_version"], 19)
                 self.assertEqual(len(client.models()), 8)
                 operation_id = client.start_model_remove("sam2.1-tiny")
                 deadline = time.monotonic() + 5

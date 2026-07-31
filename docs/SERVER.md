@@ -102,7 +102,10 @@ exact model mask to `output`.
 area, reducing visible patch boundaries without changing pixels outside the processed mask.
 Empty masks return Source unchanged without loading a model.
 
-API version 18 removes the internal Blend Mask controls, makes preview strictly opt-in, adds a true
+API version 19 removes the server round trip from Inpaint mask preview. Nuke now evaluates Threshold,
+Model Mask Grow, and inversion directly in the node graph and exports that exact mask for inference.
+This keeps multiple Inpaint nodes independent and makes preview changes immediate. API version 18
+removed the internal Blend Mask controls, made preview strictly opt-in, and added a true
 uncomposited Generated Patch output, and serializes concurrent Nuke server startup. It retains the clean-input
 mask bypass and
 selectable fast LaMa ONNX and native-resolution Big-LaMa, edge color matching, the single-file
@@ -115,5 +118,5 @@ rerunning a model. It also retains detailed Segment and Refine progress stages a
 persisted `trimap_output`. `GET /v1/jobs/{id}` returns `progress` (0.0-1.0) and
 `progress_message`. A video request may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
-returned masks to the original dimensions. The Nuke adapter uses versioned port `18781` to avoid
+returned masks to the original dimensions. The Nuke adapter uses versioned port `18782` to avoid
 connecting to stale API processes during development.

@@ -28,6 +28,7 @@ class InpaintRequest:
     source: Path
     mask: Path
     output: Path
+    model_mask: Path | None = None
     mask_output: Path | None = None
     patch_output: Path | None = None
     provider_id: str = "lama-2025jan-onnx"
@@ -47,6 +48,11 @@ class InpaintRequest:
         for label, path in (("Source", self.source), ("Mask", self.mask)):
             if not path.is_file():
                 raise KyvenError(ErrorCode.INVALID_REQUEST, f"{label} image does not exist: {path}")
+        if self.model_mask is not None and not self.model_mask.is_file():
+            raise KyvenError(
+                ErrorCode.INVALID_REQUEST,
+                f"Model mask image does not exist: {self.model_mask}",
+            )
         if self.crop_mode not in {"auto", "manual", "full"}:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Inpaint crop mode must be auto, manual, or full.")
         if self.crop_mode == "manual" and self.roi is None:
@@ -84,6 +90,7 @@ class InpaintRequest:
         payload = {
             "source_sha256": _sha256(self.source),
             "mask_sha256": _sha256(self.mask),
+            "model_mask_sha256": _sha256(self.model_mask) if self.model_mask else None,
             "request": self.canonical(),
             "provider_version": provider_version,
             "model_checksum": model_checksum,

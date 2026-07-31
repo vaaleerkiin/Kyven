@@ -52,8 +52,10 @@ every threshold between those two values. Lower Threshold includes more gray pix
 Threshold includes fewer. Model Mask Grow then expands or erodes that binary area.
 
 **Preview Model Mask** temporarily overrides the node output with the exact binary mask sent to
-LaMa. It is opt-in: when neither the checkbox nor the matching Output mode is active, Kyven performs
-no preview export or server request. This keeps mask preview work out of normal Inpaint renders.
+LaMa. This is a native Nuke branch, so Threshold, Invert, and Model Mask Grow update immediately
+without a preview export, server request, or LaMa run. The same branch is exported for processing,
+so the displayed mask and the model input cannot drift apart. The Output menu deliberately does not
+repeat this temporary preview option.
 
 `Preprocess Input Mask` is enabled by default. In this mode Invert, Threshold, and Model Mask Grow
 prepare the model input. The clean soft input mask is always used for the default Result composite.
@@ -80,13 +82,13 @@ stabilization in the current node.
 | **Result + Source Alpha** | Final RGB carrying Source alpha; default |
 | **Result Premult** | Result + Source Alpha after Premult |
 | **Generated Patch** | Full-format uncomposited model RGB; use with an external mask and Merge |
-| **Model Mask Preview** | CPU-only binary mask sent to LaMa |
 | **Difference** | Absolute change between Result and Source |
 | **Source** | Unchanged bypass |
 
 ## Cache
 
-Every Inpaint node stores exported inputs, `inpaint_result.%04d.png`, the full-format
+Every Inpaint node stores exported inputs, the exact `inpaint_model_mask.%04d.png` seen in preview,
+`inpaint_result.%04d.png`, the full-format
 `inpaint_patch.%04d.png`, and its clean composite mask under its UUID folder.
 
 - **Create Result Read** creates a normal Nuke Read for the cached frame or sequence.

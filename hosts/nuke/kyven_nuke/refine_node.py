@@ -703,7 +703,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 18</font>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 19</font>'
         )
     created_selector = "output_mode" not in node.knobs()
     previous_label = str(node["output_mode"].value()) if not created_selector else None
@@ -747,11 +747,15 @@ def _ensure_refine_output_controls(node: Any) -> None:
     node.begin()
     try:
         source = nuke.toNode("Source")
+        mask_input = nuke.toNode("MaskOrTrimap")
         refined = nuke.toNode("KyvenMatteSwitch")
         mask_channel = nuke.toNode("KyvenMaskChannelSwitch")
         output = nuke.toNode("Output")
         if source is None or refined is None or mask_channel is None or output is None:
             raise RuntimeError("Selected node is not a compatible Kyven Refine Group.")
+        source.setXpos(-120)
+        if mask_input is not None:
+            mask_input.setXpos(120)
 
         trimap = nuke.toNode("KyvenTrimapSwitch")
         if trimap is None:
@@ -895,7 +899,7 @@ def _restyle_refine_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 18</font>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 19</font>'
         )
     if "trimap_help" in node.knobs():
         node["trimap_help"].setValue(REFINE_TRIMAP_HELP)
@@ -950,7 +954,7 @@ def create_refine_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 18</font>',
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 19</font>',
         ),
     )
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
@@ -1090,8 +1094,10 @@ def create_refine_node() -> Any:
     try:
         source = nuke.nodes.Input(name="Source")
         source["number"].setValue(0)
+        source.setXpos(-120)
         mask = nuke.nodes.Input(name="MaskOrTrimap")
         mask["number"].setValue(1)
+        mask.setXpos(120)
         alpha_extract = nuke.nodes.Shuffle(name="KyvenMaskExtractAlpha")
         alpha_extract.setInput(0, mask)
         for channel in ("red", "green", "blue", "alpha"):

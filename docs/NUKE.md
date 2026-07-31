@@ -209,10 +209,11 @@ Typical files include exported source frames, displayed `matte.%04d.png`, CPU-pr
 `trimap_preview` files under their own UUID folder. Inpaint adds source, mask, and full-format
 `inpaint_result.%04d.png`, `inpaint_patch.%04d.png`, and the clean composite-mask files. Inpaint
 outputs include opaque Result, default Result + Source Alpha, Result Premult, uncomposited Generated
-Patch, CPU-only Model Mask Preview, Difference, and Source.
+Patch, Difference, and Source.
 Disable **Preprocess Input Mask** to use the untouched soft input for compositing; the preview still
 shows the unavoidable binary mask supplied to LaMa. **Preview Model Mask** is the only live mask
-override and reacts to Threshold and Model Grow without running LaMa.
+override and reacts to Threshold and Model Grow natively inside Nuke without disk I/O, a server
+request, or a LaMa run. That exact native mask is exported when processing begins.
 
 Inpaint offers two model choices. `LaMa ONNX Fast` is CPU-friendly and uses a fixed 512 model input,
 so it is the better Live option. `Big-LaMa Native` processes the selected ROI at native detail
@@ -228,7 +229,7 @@ clean RGB; lower it only when deliberate brightness changes inside the repaired 
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18781` and requires API 18. A
+The adapter starts an external hidden Python process on `127.0.0.1:18782` and requires API 19. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

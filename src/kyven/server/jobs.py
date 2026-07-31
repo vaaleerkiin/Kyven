@@ -305,12 +305,15 @@ class JobManager:
         mask_output = Path(str(mask_output_value)) if mask_output_value else None
         patch_output_value = payload.get("patch_output")
         patch_output = Path(str(patch_output_value)) if patch_output_value else None
-        if not source.is_absolute() or not mask.is_absolute() or not output.is_absolute() or (mask_output is not None and not mask_output.is_absolute()) or (patch_output is not None and not patch_output.is_absolute()):
+        model_mask_value = payload.get("model_mask")
+        model_mask = Path(str(model_mask_value)) if model_mask_value else None
+        if not source.is_absolute() or not mask.is_absolute() or not output.is_absolute() or (model_mask is not None and not model_mask.is_absolute()) or (mask_output is not None and not mask_output.is_absolute()) or (patch_output is not None and not patch_output.is_absolute()):
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Inpaint job paths must be absolute.")
         return InpaintRequest(
             source=source,
             mask=mask,
             output=output,
+            model_mask=model_mask,
             mask_output=mask_output,
             patch_output=patch_output,
             provider_id=str(payload.get("model_id", "lama-2025jan-onnx")),

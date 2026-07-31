@@ -8,6 +8,7 @@ from unittest import mock
 NUKE_ROOT = Path(__file__).parents[1] / "hosts" / "nuke"
 sys.path.insert(0, str(NUKE_ROOT))
 
+from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 from kyven_nuke.inpaint_node import INPAINT_OUTPUT_MODES
 from kyven_nuke.live import affects_live_result
 from kyven_nuke.node import (
@@ -34,6 +35,21 @@ from kyven_nuke.runtime import _listener_pids, _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_nuke_client_wait_retries_transient_poll_timeout(self) -> None:
+        client = NukeKyvenClient("http://127.0.0.1:1", "token")
+        client.job = mock.Mock(
+            side_effect=[
+                NukeKyvenClientError("temporary timeout"),
+                {"status": "running"},
+                {"status": "succeeded"},
+            ]
+        )
+
+        result = client.wait("job", poll_seconds=0, timeout_seconds=1)
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(client.job.call_count, 3)
+
     def test_int_control_is_upgraded_to_animated_double_slider_in_place(self) -> None:
         class Knob:
             def __init__(self, name: str, label: str = "", value: float = 0) -> None:
@@ -101,9 +117,9 @@ class NukePayloadTests(unittest.TestCase):
 
     def test_listener_pid_parser_uses_only_exact_listening_port(self) -> None:
         output = """
-          TCP    127.0.0.1:18781    0.0.0.0:0    LISTENING    17020
+          TCP    127.0.0.1:18782    0.0.0.0:0    LISTENING    17020
           TCP    127.0.0.1:18777    0.0.0.0:0    LISTENING    999
-          TCP    127.0.0.1:18781    127.0.0.1:50000    TIME_WAIT    0
+          TCP    127.0.0.1:18782    127.0.0.1:50000    TIME_WAIT    0
         """
 
         self.assertEqual(_listener_pids(output), (17020,))
@@ -264,7 +280,6 @@ class NukePayloadTests(unittest.TestCase):
                 "Result + Source Alpha",
                 "Result Premult",
                 "Generated Patch",
-                "Model Mask Preview",
                 "Difference",
                 "Source",
             ),
@@ -273,6 +288,7 @@ class NukePayloadTests(unittest.TestCase):
     def test_inpaint_payload_includes_processed_mask_controls(self) -> None:
         payload = inpaint_payload(
             source="D:/source.tif", mask="D:/mask.png", output="D:/result.png",
+            model_mask="D:/model-mask.png",
             mask_output="D:/processed.png", patch_output="D:/patch.png",
             model_index=0, profile="balanced",
             image_width=1920, image_height=1080, crop_mode="manual",
@@ -282,6 +298,7 @@ class NukePayloadTests(unittest.TestCase):
         )
         self.assertEqual(payload["model_id"], "lama-2025jan-onnx")
         self.assertEqual(payload["mask_output"], "D:/processed.png")
+        self.assertEqual(payload["model_mask"], "D:/model-mask.png")
         self.assertEqual(payload["patch_output"], "D:/patch.png")
         self.assertEqual(payload["roi"]["y0"], 680.0)
         self.assertEqual(payload["mask_grow"], -2)

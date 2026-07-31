@@ -82,7 +82,11 @@ class NukeKyvenClient:
         return str(self._request("POST", "/v1/jobs/refine", payload)["job_id"])
 
     def submit_inpaint(self, payload):
-        return str(self._request("POST", "/v1/jobs/inpaint", payload)["job_id"])
+        return str(
+            self._request(
+                "POST", "/v1/jobs/inpaint", payload, timeout_seconds=30.0
+            )["job_id"]
+        )
 
     def preview_trimap(self, payload):
         return self._request("POST", "/v1/preview/trimap", payload, timeout_seconds=60.0)
@@ -99,7 +103,7 @@ class NukeKyvenClient:
         return self._request("POST", "/v1/preview/inpaint-mask", payload, timeout_seconds=60.0)
 
     def job(self, job_id):
-        return self._request("GET", f"/v1/jobs/{job_id}")
+        return self._request("GET", f"/v1/jobs/{job_id}", timeout_seconds=30.0)
 
     def cancel(self, job_id):
         return self._request("POST", f"/v1/jobs/{job_id}/cancel", {})
@@ -112,9 +116,17 @@ class NukeKyvenClient:
 
     def wait(self, job_id, poll_seconds=0.2, timeout_seconds=600.0):
         deadline = time.monotonic() + timeout_seconds
+        last_error = None
         while time.monotonic() < deadline:
-            job = self.job(job_id)
+            try:
+                job = self.job(job_id)
+                last_error = None
+            except NukeKyvenClientError as exc:
+                last_error = exc
+                time.sleep(poll_seconds)
+                continue
             if job["status"] in ("succeeded", "failed", "cancelled"):
                 return job
             time.sleep(poll_seconds)
-        raise NukeKyvenClientError(f"Timed out waiting for Kyven job {job_id}.")
+        detail = f" Last connection error: {last_error}" if last_error else ""
+        raise NukeKyvenClientError(f"Timed out waiting for Kyven job {job_id}.{detail}")

@@ -205,7 +205,7 @@ def refine_payload(
 
 
 def inpaint_payload(
-    *, source: str, mask: str, output: str, mask_output: str, patch_output: str,
+    *, source: str, mask: str, model_mask: str, output: str, mask_output: str, patch_output: str,
     model_index: int, profile: str,
     image_width: int, image_height: int, crop_mode: str,
     roi: tuple[float, float, float, float], context_padding: int,
@@ -218,6 +218,7 @@ def inpaint_payload(
     return {
         "source": source,
         "mask": mask,
+        "model_mask": model_mask,
         "output": output,
         "mask_output": mask_output,
         "patch_output": patch_output,
