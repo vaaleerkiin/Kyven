@@ -274,6 +274,36 @@ def knob_changed() -> None:
         request_live_update(node)
 
 
+def refresh_models() -> None:
+    nuke = _nuke()
+    node = nuke.thisNode()
+    node_name = node.fullName()
+
+    def refresh() -> None:
+        try:
+            models = [model for model in ensure_server().models() if model.get("task") == "inpaint"]
+            labels = []
+            for model in models:
+                suffix = "installed" if model["installed"] else "not installed"
+                if model["compatible"] is False:
+                    suffix += ", VRAM warning"
+                labels.append(f"{model['display_name']} [{suffix}]")
+            nuke.executeInMainThread(_apply_model_labels, args=(node_name, labels))
+        except Exception as exc:  # noqa: BLE001
+            nuke.executeInMainThread(_set_status, args=(node_name, f"Model refresh failed: {exc}"))
+
+    threading.Thread(target=refresh, name="kyven-inpaint-models", daemon=True).start()
+
+
+def _apply_model_labels(node_name: str, labels: list[str]) -> None:
+    node = _nuke().toNode(node_name)
+    if node is not None and labels:
+        previous = int(node["model"].getValue())
+        node["model"].setValues(labels)
+        node["model"].setValue(min(previous, len(labels) - 1))
+        node["kyven_status"].setValue("Inpaint model list refreshed.")
+
+
 def _restyle_inpaint_cache(node: Any) -> None:
     """Apply the shared Cache labels and compact three-row layout."""
 
@@ -307,10 +337,12 @@ def create_inpaint_node() -> Any:
     nuke = _nuke(); selected = nuke.selectedNodes(); source = selected[0] if selected else None; mask = selected[1] if len(selected) > 1 else None
     node = nuke.nodes.Group(name="KyvenInpaint"); node.setInput(0, source); node.setInput(1, mask)
     node["label"].setValue("[value kyven_status]"); node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint"))
-    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 14</font>'))
+    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 15</font>'))
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
     _add_knob(nuke, node, nuke.Enumeration_Knob("profile", "Memory Profile", ["low_memory", "balanced", "quality"])); node["profile"].setValue(1)
+    _add_knob(nuke, node, nuke.PyScript_Knob("refresh_models", "Refresh Models", "kyven_nuke.inpaint_node.refresh_models()"))
+    _add_knob(nuke, node, nuke.PyScript_Knob("open_model_manager", "Model Manager...", "kyven_nuke.model_manager.show_model_manager()"), start_line=False)
     size = nuke.Int_Knob("processing_size", "Processing Size"); size.setValue(512); size.setVisible(False); node.addKnob(size)
     _add_knob(nuke, node, nuke.Text_Knob("model_help", "", "Fast: fixed 512 x 512 model input, CPU-friendly and best for Live. Use a tight Auto ROI for more detail."))
     _add_section(nuke, node, "mask_section", "MASK")
@@ -388,6 +420,27 @@ def upgrade_selected_inpaint_node() -> None:
     if "create_result_read" not in node.knobs() or "kyven_uuid" not in node.knobs():
         nuke.message("The selected Group is not a Kyven Inpaint node.")
         return
+    if "refresh_models" not in node.knobs():
+        _add_knob(
+            nuke,
+            node,
+            nuke.PyScript_Knob(
+                "refresh_models",
+                "Refresh Models",
+                "kyven_nuke.inpaint_node.refresh_models()",
+            ),
+        )
+    if "open_model_manager" not in node.knobs():
+        _add_knob(
+            nuke,
+            node,
+            nuke.PyScript_Knob(
+                "open_model_manager",
+                "Model Manager...",
+                "kyven_nuke.model_manager.show_model_manager()",
+            ),
+            start_line=False,
+        )
     if "delete_all_cache" not in node.knobs():
         tail = [
             node[name]

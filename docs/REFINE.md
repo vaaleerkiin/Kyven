@@ -3,6 +3,11 @@
 Refine converts a coarse mask into a soft alpha matte using ViTMatte while keeping model inference
 outside the compositing host.
 
+Kyven offers the official ViTMatte Small and Base backbone sizes. There is no official Medium
+variant. Small Composition-1k is the recommended 4–8 GB default; Base Distinctions-646 has 96.7 M
+parameters and is intended for 8 GB+ systems with tiling when required. Install either checkpoint
+from **Kyven > Model Manager...** without rerunning the portable installer.
+
 ## Nuke graph
 
 ```text

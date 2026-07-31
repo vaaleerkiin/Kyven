@@ -125,6 +125,24 @@
       "license_url": "https://huggingface.co/hustvl/vitmatte-small-composition-1k",
       "commercial_use": true,
       "redistribution": true
+    },
+    {
+      "model_id": "vitmatte-base-distinctions-646",
+      "task": "refine",
+      "display_name": "ViTMatte Base (Distinctions-646)",
+      "provider": "vitmatte",
+      "config": "vitmatte-base-config.json",
+      "filename": "vitmatte-base-distinctions-646.safetensors",
+      "source": "https://huggingface.co/hustvl/vitmatte-base-distinctions-646/resolve/b58373f8dbbfbeb58157456e2e4949f9f872aa18/model.safetensors",
+      "sha256": "0d1e43962bfc6daecec29a76b90194b51902ad0286dfaaf91e1b8a4f17d15348",
+      "size_bytes": 386782180,
+      "parameters_millions": 96.7,
+      "recommended_vram_mb": 8192,
+      "supports_cpu": true,
+      "license": "Apache-2.0",
+      "license_url": "https://huggingface.co/hustvl/vitmatte-base-distinctions-646",
+      "commercial_use": true,
+      "redistribution": true
     }
   ]
 }

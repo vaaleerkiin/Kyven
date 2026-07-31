@@ -17,6 +17,8 @@ if str(Path(__file__).parent) not in sys.path:
 import kyven_nuke
 
 menu = nuke.menu("Nodes").addMenu("Kyven")
+menu.addCommand("Model Manager...", kyven_nuke.show_model_manager, icon="")
+menu.addSeparator()
 menu.addCommand("Segment", kyven_nuke.create_segment_node, icon="")
 menu.addCommand("Refine", kyven_nuke.create_refine_node, icon="")
 menu.addCommand("Inpaint", kyven_nuke.create_inpaint_node, icon="")

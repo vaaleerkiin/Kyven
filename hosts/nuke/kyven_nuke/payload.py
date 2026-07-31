@@ -20,8 +20,14 @@ MODEL_LABELS = (
     "SAM 2.1 Large (12 GB+)",
 )
 
-REFINE_MODEL_IDS = ("vitmatte-small-composition-1k",)
-REFINE_MODEL_LABELS = ("ViTMatte Small (4 GB+, recommended for 8 GB)",)
+REFINE_MODEL_IDS = (
+    "vitmatte-small-composition-1k",
+    "vitmatte-base-distinctions-646",
+)
+REFINE_MODEL_LABELS = (
+    "ViTMatte Small (4 GB+, recommended for 8 GB)",
+    "ViTMatte Base (8 GB+, use tiling)",
+)
 INPAINT_MODEL_IDS = ("lama-2025jan-onnx", "big-lama-native")
 INPAINT_MODEL_LABELS = (
     "LaMa ONNX Fast (CPU / Live)",

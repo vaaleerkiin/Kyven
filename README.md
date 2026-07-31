@@ -18,7 +18,7 @@ sequences that remain usable without a live model connection.
 | Node | Input | Purpose | Models |
 | --- | --- | --- | --- |
 | **Kyven Segment** | Source + Viewer prompts | Binary object masks and video propagation | SAM 2.1 Tiny / Small / Base+ / Large |
-| **Kyven Refine** | Source + mask or trimap | Soft alpha refinement and trimap inspection | ViTMatte Small |
+| **Kyven Refine** | Source + mask or trimap | Soft alpha refinement and trimap inspection | ViTMatte Small / Base |
 | **Kyven Inpaint** | Source + removal mask | ROI-aware object removal and clean-up | LaMa ONNX Fast / Big-LaMa Native |
 
 All new nodes default to a compositing-friendly **Source + Alpha** or **Source + Refined Alpha**
@@ -86,6 +86,12 @@ Nodes > Kyven > Inpaint
 
 The installer deliberately does not edit `init.py` for the user.
 
+Additional models can be installed later without leaving Nuke. Open **Kyven > Model Manager...**
+or press **Model Manager...** inside any Kyven node, select a trusted catalog model, and choose
+**Install Selected**. Nuke shows download progress and verifies the exact file size and SHA-256
+before the model becomes selectable. The same panel can safely remove an unused model without
+touching node caches or source media.
+
 ## Model guide
 
 | Workload | Recommended choice | Hardware guidance | Main trade-off |
@@ -94,7 +100,8 @@ The installer deliberately does not edit `init.py` for the user.
 | Segment on 8 GB | SAM 2.1 Small | 6 GB VRAM | Recommended balance |
 | Higher-detail Segment | SAM 2.1 Base+ | 8 GB VRAM | May require fallback on an 8 GB GPU |
 | Maximum Segment model | SAM 2.1 Large | 12 GB+ VRAM | Slowest and heaviest |
-| Refine | ViTMatte Small | 4 GB+ or tiled | Soft alpha from mask/trimap |
+| Refine on 4–8 GB | ViTMatte Small | 4 GB+ or tiled | Fastest and recommended default |
+| Maximum Refine quality | ViTMatte Base | 8 GB+ with tiling | 96.7 M parameters; slower and heavier |
 | Fast Inpaint / Live | LaMa ONNX Fast | CPU, no GPU required | Fixed 512 × 512 model input |
 | Detailed Inpaint | Big-LaMa Native | 4 GB+ or CPU | Native ROI detail, slower |
 

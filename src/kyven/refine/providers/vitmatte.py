@@ -18,7 +18,7 @@ from kyven.refine.providers.base import RefinementProvider
 
 
 class VitMatteProvider(RefinementProvider):
-    """ViTMatte Small provider that stays unloaded until first use."""
+    """ViTMatte provider that stays unloaded until first use."""
 
     def __init__(
         self,
@@ -29,6 +29,8 @@ class VitMatteProvider(RefinementProvider):
         expected_checksum: str | None = None,
         provider_id: str = "vitmatte-small-composition-1k",
         display_name: str = "ViTMatte Small (Composition-1k)",
+        license_url: str = "https://huggingface.co/hustvl/vitmatte-small-composition-1k",
+        minimum_vram_mb: int = 4096,
     ) -> None:
         self._checkpoint = Path(checkpoint)
         self._config = Path(config)
@@ -37,6 +39,8 @@ class VitMatteProvider(RefinementProvider):
         self._expected_checksum = expected_checksum
         self._provider_id = provider_id
         self._display_name = display_name
+        self._license_url = license_url
+        self._minimum_vram_mb = minimum_vram_mb
         self._checksum: str | None = None
         self._model: Any | None = None
         self._processor: Any | None = None
@@ -62,10 +66,10 @@ class VitMatteProvider(RefinementProvider):
             provider_version="1",
             model_checksum=self._checksum_if_present(),
             license_name="Apache-2.0",
-            license_url="https://huggingface.co/hustvl/vitmatte-small-composition-1k",
+            license_url=self._license_url,
             supports_cpu=True,
             supports_tiling=True,
-            minimum_vram_mb=4096,
+            minimum_vram_mb=self._minimum_vram_mb,
         )
 
     def _load(self) -> tuple[Any, Any]:
@@ -75,7 +79,7 @@ class VitMatteProvider(RefinementProvider):
             raise KyvenError(
                 code=ErrorCode.MODEL_NOT_FOUND,
                 message=f"ViTMatte checkpoint was not found: {self._checkpoint}",
-                suggested_action="Run install.cmd and select ViTMatte Small.",
+                suggested_action="Open Kyven > Model Manager in Nuke or run install.cmd.",
             )
         checksum = self._checksum_if_present()
         if self._expected_checksum and checksum.lower() != self._expected_checksum.lower():

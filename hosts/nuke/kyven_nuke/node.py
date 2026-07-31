@@ -1134,6 +1134,7 @@ def _restyle_node_ui(node: Any) -> None:
             node[name].setValue(_section_markup(title))
     labels = {
         "refresh_models": "Refresh Models",
+        "open_model_manager": "Model Manager...",
         "add_positive_point": "+ Positive Point",
         "remove_positive_point": "- Last Positive",
         "add_negative_point": "+ Negative Point",
@@ -1153,7 +1154,7 @@ def _restyle_node_ui(node: Any) -> None:
         if name in node.knobs():
             node[name].setLabel(label)
     same_line = {
-        "refresh_models",
+        "open_model_manager",
         "remove_positive_point",
         "remove_negative_point",
         "range_last",
@@ -1166,12 +1167,14 @@ def _restyle_node_ui(node: Any) -> None:
     for name in same_line:
         if name in node.knobs():
             node[name].clearFlag(nuke.STARTLINE)
+    if "refresh_models" in node.knobs():
+        node["refresh_models"].setFlag(nuke.STARTLINE)
     if "delete_all_cache" in node.knobs():
         node["delete_all_cache"].setFlag(nuke.STARTLINE)
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 14</font>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 15</font>'
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
@@ -1359,6 +1362,21 @@ def _ensure_live_controls(node: Any, kind: str = "segment") -> None:
         node.addKnob(knob)
 
 
+def _ensure_model_manager_control(node: Any) -> None:
+    nuke = _nuke()
+    if "open_model_manager" not in node.knobs():
+        _add_knob(
+            nuke,
+            node,
+            nuke.PyScript_Knob(
+                "open_model_manager",
+                "Model Manager...",
+                "kyven_nuke.model_manager.show_model_manager()",
+            ),
+            start_line=False,
+        )
+
+
 def _upgrade_roi_controls(node: Any) -> None:
     """Update legacy prompt-box labels to the Processing ROI terminology."""
     if "box_section" in node.knobs():
@@ -1384,6 +1402,7 @@ def upgrade_selected_segment_node() -> None:
         _ensure_cache_controls(node)
         _ensure_postprocess_controls(node)
         _ensure_live_controls(node)
+        _ensure_model_manager_control(node)
         _upgrade_roi_controls(node)
         _restyle_node_ui(node)
         sync_prompt_visibility(node)
@@ -1411,7 +1430,7 @@ def create_segment_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 14</font>',
+            '<font color="#91a3b0">SAM 2 | Local inference | API 15</font>',
         ),
     )
 
@@ -1435,6 +1454,16 @@ def create_segment_node() -> Any:
             "refresh_models",
             "Refresh Models",
             "kyven_nuke.node.refresh_models()",
+        ),
+        start_line=True,
+    )
+    _add_knob(
+        nuke,
+        node,
+        nuke.PyScript_Knob(
+            "open_model_manager",
+            "Model Manager...",
+            "kyven_nuke.model_manager.show_model_manager()",
         ),
         start_line=False,
     )

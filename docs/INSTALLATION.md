@@ -50,7 +50,7 @@ Nothing is added to the system `PATH`, and the installer intentionally does not 
 ## Update
 
 Pull or replace the repository files, then run `install.cmd` again. Existing verified checkpoints
-and downloads are reused. Restart Nuke so Python modules and API 14 are reloaded, then update older
+and downloads are reused. Restart Nuke so Python modules and API 15 are reloaded, then update older
 Groups from the Nodes menu:
 
 - `Kyven > Upgrade Selected Segment Node`;
@@ -70,10 +70,25 @@ A Windows virtual environment stores absolute paths. If the Kyven folder is move
 ```powershell
 .\install.ps1 -Model sam2.1-tiny
 .\install.ps1 -Model sam2.1-small,vitmatte-small-composition-1k
+.\install.ps1 -Model vitmatte-base-distinctions-646
 .\install.ps1 -Model lama-2025jan-onnx
 .\install.ps1 -Model big-lama-native
 .\install.ps1 -Model none
 ```
+
+## Install or remove models from Nuke
+
+After the portable runtime is installed once, additional checkpoints do not require rerunning the
+installer:
+
+1. Open `Kyven > Model Manager...`, or press **Model Manager...** in a Kyven node.
+2. Choose **Install Selected** and select a catalog model.
+3. Confirm the progress window reaches checksum verification.
+4. Press **Refresh Models** in an open node if its list was created by an older Kyven version.
+
+Choose **Remove Selected** to reclaim disk space. Removal waits for active processing, unloads only
+the selected provider, and leaves source media, rendered node caches, and other models untouched.
+The manager never accepts arbitrary URLs: it uses only the pinned, commercially approved catalog.
 
 See [Model selection](MODELS.md) for VRAM guidance and [Troubleshooting](TROUBLESHOOTING.md) if the
 server or CUDA runtime does not start.

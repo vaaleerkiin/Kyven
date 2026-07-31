@@ -74,6 +74,20 @@ class KyvenClient:
         response = self._request("GET", "/v1/models")
         return list(response["models"])
 
+    def start_model_download(self, model_id: str) -> str:
+        response = self._request("POST", "/v1/models/download", {"model_id": model_id})
+        return str(response["operation_id"])
+
+    def start_model_remove(self, model_id: str) -> str:
+        response = self._request("POST", "/v1/models/remove", {"model_id": model_id})
+        return str(response["operation_id"])
+
+    def model_operation(self, operation_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/v1/model-operations/{operation_id}")
+
+    def cancel_model_operation(self, operation_id: str) -> dict[str, Any]:
+        return self._request("POST", f"/v1/model-operations/{operation_id}/cancel", {})
+
     def submit_segment(self, payload: dict[str, Any]) -> str:
         response = self._request("POST", "/v1/jobs/segment", payload)
         return str(response["job_id"])

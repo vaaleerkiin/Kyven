@@ -58,6 +58,20 @@ class NukeKyvenClient:
     def models(self):
         return list(self._request("GET", "/v1/models")["models"])
 
+    def start_model_download(self, model_id):
+        response = self._request("POST", "/v1/models/download", {"model_id": model_id})
+        return str(response["operation_id"])
+
+    def start_model_remove(self, model_id):
+        response = self._request("POST", "/v1/models/remove", {"model_id": model_id})
+        return str(response["operation_id"])
+
+    def model_operation(self, operation_id):
+        return self._request("GET", f"/v1/model-operations/{operation_id}")
+
+    def cancel_model_operation(self, operation_id):
+        return self._request("POST", f"/v1/model-operations/{operation_id}/cancel", {})
+
     def submit_segment(self, payload):
         return str(self._request("POST", "/v1/jobs/segment", payload)["job_id"])
 

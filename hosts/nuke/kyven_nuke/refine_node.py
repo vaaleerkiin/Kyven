@@ -699,7 +699,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 14</font>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 15</font>'
         )
     created_selector = "output_mode" not in node.knobs()
     previous_label = str(node["output_mode"].value()) if not created_selector else None
@@ -839,6 +839,7 @@ def _restyle_refine_ui(node: Any) -> None:
 
     labels = {
         "refresh_models": "Refresh Models",
+        "open_model_manager": "Model Manager...",
         "tile_size": "Tile Size (0 = Auto)",
         "tile_overlap": "Tile Overlap",
         "mask_channel": "Input 1 Channel",
@@ -865,7 +866,7 @@ def _restyle_refine_ui(node: Any) -> None:
             node[name].setLabel(label)
 
     same_line = {
-        "refresh_models",
+        "open_model_manager",
         "tile_overlap",
         "cancel",
         "range_last",
@@ -874,6 +875,8 @@ def _restyle_refine_ui(node: Any) -> None:
     for name in same_line:
         if name in node.knobs():
             node[name].clearFlag(nuke.STARTLINE)
+    if "refresh_models" in node.knobs():
+        node["refresh_models"].setFlag(nuke.STARTLINE)
     if "delete_all_cache" in node.knobs():
         node["delete_all_cache"].setFlag(nuke.STARTLINE)
     for name in (
@@ -888,7 +891,7 @@ def _restyle_refine_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 14</font>'
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 15</font>'
         )
     if "trimap_help" in node.knobs():
         node["trimap_help"].setValue(REFINE_TRIMAP_HELP)
@@ -909,6 +912,16 @@ def upgrade_selected_refine_node() -> None:
         return
     try:
         _ensure_refine_output_controls(node)
+        if "open_model_manager" not in node.knobs():
+            _add_knob(
+                nuke,
+                node,
+                nuke.PyScript_Knob(
+                    "open_model_manager",
+                    "Model Manager...",
+                    "kyven_nuke.model_manager.show_model_manager()",
+                ),
+            )
         _restyle_refine_ui(node)
     except Exception as exc:  # noqa: BLE001
         nuke.message(f"Could not upgrade the selected Refine node:\n{exc}")
@@ -931,7 +944,7 @@ def create_refine_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 14</font>',
+            '<font color="#91a3b0">ViTMatte | Source + Mask | API 15</font>',
         ),
     )
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
@@ -947,6 +960,16 @@ def create_refine_node() -> Any:
         node,
         nuke.PyScript_Knob(
             "refresh_models", "Refresh Models", "kyven_nuke.refine_node.refresh_models()"
+        ),
+        start_line=True,
+    )
+    _add_knob(
+        nuke,
+        node,
+        nuke.PyScript_Knob(
+            "open_model_manager",
+            "Model Manager...",
+            "kyven_nuke.model_manager.show_model_manager()",
         ),
         start_line=False,
     )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -120,8 +121,18 @@ class ServerTests(unittest.TestCase):
             try:
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
                 self.assertEqual(client.health()["status"], "ok")
-                self.assertEqual(client.health()["api_version"], 14)
-                self.assertEqual(len(client.models()), 7)
+                self.assertEqual(client.health()["api_version"], 15)
+                self.assertEqual(len(client.models()), 8)
+                operation_id = client.start_model_remove("sam2.1-tiny")
+                deadline = time.monotonic() + 5
+                while True:
+                    operation = client.model_operation(operation_id)
+                    if operation["status"] in {"succeeded", "failed", "cancelled"}:
+                        break
+                    if time.monotonic() >= deadline:
+                        self.fail("Model removal API did not finish")
+                    time.sleep(0.01)
+                self.assertEqual(operation["status"], "succeeded")
                 job_id = client.submit_segment(
                     {
                         "source": str(source.resolve()),

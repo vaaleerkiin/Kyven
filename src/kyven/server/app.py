@@ -14,12 +14,13 @@ from urllib.parse import urlparse
 
 from kyven.errors import ErrorCode, KyvenError
 from kyven.models.catalog import ModelCatalog
+from kyven.models.operations import ModelOperationManager
 from kyven.preview import postprocess_mask_preview, prepare_trimap_preview
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.server.jobs import JobManager
 
 MAX_REQUEST_BYTES = 1024 * 1024
-SERVER_API_VERSION = 14
+SERVER_API_VERSION = 15
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +42,7 @@ def _handler_type(
     registry: ProviderRegistry,
     catalog: ModelCatalog,
     config: ServerConfig,
+    model_operations: ModelOperationManager,
 ) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         server_version = "Kyven/0.1"
@@ -138,6 +140,10 @@ def _handler_type(
                         },
                     )
                     return
+                if path.startswith("/v1/model-operations/"):
+                    operation_id = path.removeprefix("/v1/model-operations/")
+                    self._send(HTTPStatus.OK, model_operations.get(operation_id))
+                    return
                 if path.startswith("/v1/jobs/"):
                     job_id = path.removeprefix("/v1/jobs/")
                     self._send(HTTPStatus.OK, manager.get(job_id))
@@ -181,6 +187,18 @@ def _handler_type(
                     job_id = manager.submit_inpaint(payload)
                     self._send(HTTPStatus.ACCEPTED, {"job_id": job_id, "status": "queued"})
                     return
+                if path == "/v1/models/download":
+                    operation_id = model_operations.submit("download", str(payload.get("model_id", "")))
+                    self._send(HTTPStatus.ACCEPTED, {"operation_id": operation_id})
+                    return
+                if path == "/v1/models/remove":
+                    operation_id = model_operations.submit("remove", str(payload.get("model_id", "")))
+                    self._send(HTTPStatus.ACCEPTED, {"operation_id": operation_id})
+                    return
+                if path.startswith("/v1/model-operations/") and path.endswith("/cancel"):
+                    operation_id = path.removeprefix("/v1/model-operations/").removesuffix("/cancel")
+                    self._send(HTTPStatus.OK, model_operations.cancel(operation_id))
+                    return
                 if path == "/v1/preview/trimap":
                     self._send(HTTPStatus.OK, prepare_trimap_preview(payload))
                     return
@@ -213,9 +231,15 @@ class KyvenServer:
         catalog: ModelCatalog,
     ) -> None:
         self._manager = manager
+        self._model_operations = ModelOperationManager(
+            catalog,
+            config.models_dir,
+            registry,
+            unload_provider=lambda provider_id: manager.unload_provider(registry, provider_id),
+        )
         self._httpd = ThreadingHTTPServer(
             ("127.0.0.1", config.port),
-            _handler_type(manager, registry, catalog, config),
+            _handler_type(manager, registry, catalog, config, self._model_operations),
         )
         self._thread: threading.Thread | None = None
 
@@ -240,4 +264,5 @@ class KyvenServer:
 
     def close(self) -> None:
         self._httpd.server_close()
+        self._model_operations.shutdown()
         self._manager.shutdown()

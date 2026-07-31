@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -56,7 +57,9 @@ class ModelSpec:
             "commercial_use": self.commercial_use,
             "installed": path.is_file(),
             "compatible": (
-                None if available_vram_mb is None else available_vram_mb >= self.recommended_vram_mb
+                None
+                if available_vram_mb is None
+                else available_vram_mb + 128 >= self.recommended_vram_mb
             ),
         }
 
@@ -105,6 +108,8 @@ class ModelCatalog:
                     expected_checksum=spec.sha256,
                     provider_id=spec.model_id,
                     display_name=spec.display_name,
+                    license_url=spec.license_url,
+                    minimum_vram_mb=spec.recommended_vram_mb,
                 ),
             )
         resources = Path(__file__).parents[1] / "resources" / "models"
@@ -142,7 +147,13 @@ class ModelCatalog:
                 )
         return registry
 
-    def download(self, model_id: str, models_dir: Path) -> Path:
+    def download(
+        self,
+        model_id: str,
+        models_dir: Path,
+        progress: Callable[[int, int], None] | None = None,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> Path:
         spec = self.get(model_id)
         models_dir.mkdir(parents=True, exist_ok=True)
         target = spec.path(models_dir)
@@ -154,7 +165,18 @@ class ModelCatalog:
         os.close(descriptor)
         temporary = Path(temporary_name)
         try:
-            urllib.request.urlretrieve(spec.source, temporary)
+            downloaded = 0
+            with urllib.request.urlopen(spec.source, timeout=30) as response, temporary.open("wb") as stream:
+                while True:
+                    if cancelled is not None and cancelled():
+                        raise KyvenError(ErrorCode.CANCELLED, f"Download cancelled: {model_id}")
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    stream.write(chunk)
+                    downloaded += len(chunk)
+                    if progress is not None:
+                        progress(downloaded, spec.size_bytes)
             if temporary.stat().st_size != spec.size_bytes:
                 raise KyvenError(
                     code=ErrorCode.MODEL_NOT_FOUND,
@@ -173,6 +195,17 @@ class ModelCatalog:
             return target
         finally:
             temporary.unlink(missing_ok=True)
+
+    def remove(self, model_id: str, models_dir: Path) -> bool:
+        spec = self.get(model_id)
+        models_root = models_dir.resolve()
+        target = spec.path(models_root).resolve()
+        if target.parent != models_root:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Model path is outside the models directory.")
+        if not target.exists():
+            return False
+        target.unlink()
+        return True
 
     @staticmethod
     def _sha256(path: Path) -> str:

@@ -549,3 +549,8 @@ class JobManager:
         """Queue unloading behind active inference to avoid model races."""
 
         self._executor.submit(registry.unload_all).result(timeout=120)
+
+    def unload_provider(self, registry: ProviderRegistry, provider_id: str) -> None:
+        """Queue one provider unload behind active inference to avoid model races."""
+
+        self._executor.submit(registry.unload, provider_id).result(timeout=120)

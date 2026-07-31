@@ -23,6 +23,10 @@ it must not be committed or logged.
 | --- | --- | --- |
 | `GET` | `/v1/health` | Authenticated readiness check |
 | `GET` | `/v1/models` | Model choices, installation state, and hardware guidance |
+| `POST` | `/v1/models/download` | Start a verified catalog model download |
+| `POST` | `/v1/models/remove` | Safely unload and remove one catalog checkpoint |
+| `GET` | `/v1/model-operations/{id}` | Read model-operation progress and result |
+| `POST` | `/v1/model-operations/{id}/cancel` | Cancel an active model download |
 | `POST` | `/v1/jobs/segment` | Queue a segmentation job |
 | `POST` | `/v1/jobs/segment-video` | Queue SAM 2 temporal mask propagation |
 | `POST` | `/v1/jobs/refine` | Queue ViTMatte alpha refinement |
@@ -34,7 +38,9 @@ it must not be committed or logged.
 | `POST` | `/v1/providers/unload-all` | Safely unload models after active work |
 
 GPU jobs execute in a single-worker queue. HTTP requests and host UIs remain responsive. Model
-unloading is queued behind active inference so it cannot race a running kernel.
+unloading is queued behind active inference so it cannot race a running kernel. Model removal uses
+the same inference queue before deleting the exact catalog-owned file. Downloads stream to a
+temporary file and activate atomically only after byte-size and SHA-256 verification.
 
 ### Segment payload fields
 
@@ -101,5 +107,5 @@ rerunning a model. It also retains detailed Segment and Refine progress stages a
 persisted `trimap_output`. `GET /v1/jobs/{id}` returns `progress` (0.0-1.0) and
 `progress_message`. A video request may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
-returned masks to the original dimensions. The Nuke adapter uses versioned port `18777` to avoid
+returned masks to the original dimensions. The Nuke adapter uses versioned port `18778` to avoid
 connecting to stale API processes during development.

@@ -16,7 +16,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 All runtime files stay inside that repository. The installer does not require administrator access,
 does not alter `PATH`, and does not edit Nuke settings. It prints the exact plugin path when done.
-Its console menu allows one or several SAM 2 models plus ViTMatte to be selected according to
+Its console menu allows one or several SAM 2, ViTMatte, and LaMa models to be selected according to
 available VRAM.
 Choose the final repository location before installing; after moving it, rerun `install.ps1`.
 
@@ -33,6 +33,10 @@ nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 The adapter discovers the repository from its own installed plugin path, so the folder may be placed
 anywhere. `KYVEN_ROOT` is only an optional override for custom deployments. Restart Nuke and choose
 `Kyven > Segment`, `Kyven > Refine`, or `Kyven > Inpaint` from the Nodes menu.
+
+Use `Kyven > Model Manager...` at any time to install or remove a trusted catalog checkpoint. The
+same button appears in every Kyven node. Downloads show progress and become available only after
+exact size and SHA-256 verification; model removal does not delete rendered caches.
 
 ## Inpaint workflow
 
@@ -56,6 +60,7 @@ After updating Kyven, select an existing node and use the matching command:
 
 - `Kyven > Upgrade Selected Segment Node` preserves its UUID, cached matte, prompts, and input;
 - `Kyven > Upgrade Selected Refine Node` preserves its refined matte and adds current trimap outputs.
+- `Kyven > Upgrade Selected Inpaint Node` preserves its UUID and cached result sequence.
 
 A newly created node always receives the latest controls and output graph.
 
@@ -76,6 +81,7 @@ rendering a range.
 - `Model` selects a SAM 2.1 checkpoint.
 - `Memory Profile` records Low Memory, Balanced, or Quality intent.
 - `Refresh Models` updates installation and VRAM advice from the server.
+- `Model Manager...` installs or removes trusted models without leaving Nuke.
 
 ### Points
 
@@ -203,7 +209,7 @@ clean RGB; lower it only when deliberate brightness changes inside the repaired 
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18777` and requires API 14. A
+The adapter starts an external hidden Python process on `127.0.0.1:18778` and requires API 15. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

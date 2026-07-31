@@ -29,18 +29,28 @@ kyven models download sam2.1-small --models-dir models
 Downloads are written through a temporary file, checked against trusted byte size and SHA-256,
 then moved atomically into the model directory. Every entry records its source and license.
 
+Inside Nuke, use `Kyven > Model Manager...` or the **Model Manager...** button in any Kyven node.
+It lists all catalog models with task, download size, installation state, and a VRAM warning. Model
+downloads run outside the Nuke UI thread with a progress window and Cancel button. Removing a model
+waits for active inference to finish, unloads it safely, and deletes only its verified checkpoint.
+
 ## Refine catalog
 
 | Model ID | Display name | Parameters | Download | VRAM guidance |
 | --- | --- | ---: | ---: | ---: |
 | `vitmatte-small-composition-1k` | ViTMatte Small | 25.8 M | 103 MB | 4 GB |
+| `vitmatte-base-distinctions-646` | ViTMatte Base | 96.7 M | 369 MB | 8 GB+ |
 
-The checkpoint is pinned to an official Hugging Face revision and verified with SHA-256 before it
-is moved into `models`. Its model card is Apache-2.0; the original ViTMatte implementation is MIT.
+ViTMatte officially provides Small and Base backbones; it does not publish a Medium variant. Kyven
+keeps Small Composition-1k as the portable default and offers Base Distinctions-646 as the heavier
+quality option. Both checkpoints are pinned to official Hugging Face revisions and verified with
+SHA-256 before they are moved into `models`. Their model cards are Apache-2.0; the original
+ViTMatte implementation is MIT.
 Refine unloads a resident SAM model before loading ViTMatte, which keeps the 4–8 GB workflow viable.
 
 ```text
 kyven models download vitmatte-small-composition-1k --models-dir models
+kyven models download vitmatte-base-distinctions-646 --models-dir models
 ```
 
 ## Inpaint catalog

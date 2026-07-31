@@ -26,10 +26,16 @@ class ModelCatalogTests(unittest.TestCase):
 
     def test_refine_catalog_is_commercial_and_low_memory_capable(self) -> None:
         models = ModelCatalog.builtin().list("refine")
-        self.assertEqual([model.model_id for model in models], ["vitmatte-small-composition-1k"])
+        self.assertEqual(
+            [model.model_id for model in models],
+            ["vitmatte-small-composition-1k", "vitmatte-base-distinctions-646"],
+        )
         self.assertTrue(models[0].commercial_use)
         self.assertTrue(models[0].supports_cpu)
         self.assertEqual(models[0].recommended_vram_mb, 4096)
+        self.assertEqual(models[1].parameters_millions, 96.7)
+        self.assertEqual(models[1].recommended_vram_mb, 8192)
+        self.assertTrue(models[1].snapshot(Path("models"), 8188)["compatible"])
 
     def test_vitmatte_provider_is_lazy_and_declares_license(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
