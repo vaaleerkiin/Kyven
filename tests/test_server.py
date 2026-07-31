@@ -121,7 +121,7 @@ class ServerTests(unittest.TestCase):
             try:
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
                 self.assertEqual(client.health()["status"], "ok")
-                self.assertEqual(client.health()["api_version"], 16)
+                self.assertEqual(client.health()["api_version"], 17)
                 self.assertEqual(len(client.models()), 8)
                 operation_id = client.start_model_remove("sam2.1-tiny")
                 deadline = time.monotonic() + 5
@@ -216,6 +216,7 @@ class ServerTests(unittest.TestCase):
                     self.assertEqual(preview.getpixel((1, 3)), 128)
                 inpaint_mask_input = root / "inpaint_mask_input.png"
                 inpaint_mask_preview = root / "inpaint_mask_preview.png"
+                inpaint_blend_preview = root / "inpaint_blend_preview.png"
                 inpaint_pixels = np.zeros((9, 9), dtype=np.uint8)
                 inpaint_pixels[4, 4] = 255
                 Image.fromarray(inpaint_pixels, mode="L").save(inpaint_mask_input)
@@ -223,13 +224,19 @@ class ServerTests(unittest.TestCase):
                     {
                         "mask": str(inpaint_mask_input.resolve()),
                         "output": str(inpaint_mask_preview.resolve()),
+                        "blend_output": str(inpaint_blend_preview.resolve()),
                         "preprocess_mask": True,
                         "mask_grow": 1,
+                        "blend_grow": 2,
+                        "mask_feather": 0,
                     }
                 )
                 self.assertEqual(inpaint_preview_result["nonzero_pixels"], 9)
+                self.assertEqual(inpaint_preview_result["blend_nonzero_pixels"], 25)
                 with Image.open(inpaint_mask_preview) as preview:
                     self.assertEqual(preview.getpixel((3, 3)), 255)
+                with Image.open(inpaint_blend_preview) as preview:
+                    self.assertEqual(preview.getpixel((2, 2)), 255)
                 refine_output = root / "refined.png"
                 trimap_output = root / "trimap.png"
                 refine_job_id = client.submit_refine(

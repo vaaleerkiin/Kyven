@@ -54,15 +54,18 @@ If a bright outline remains, first confirm that the incoming mask covers the com
 increase Model Mask Grow and Blend Mask Grow slightly. Increase Feather only after the old fringe is
 fully covered; excessive feather can mix the unwanted object edge back into the result.
 
-Pixels outside the blend mask remain identical to Source. **Model Mask Preview** updates on the CPU
-without running LaMa and shows the exact binary mask sent to the model. **Blend Mask** shows the
-soft area changed by the final composite, while **Difference** displays all RGB modifications.
+Pixels outside the blend mask remain identical to Source. Enable **Preview Processed Mask** beside
+the preprocessing toggle to temporarily send the live Blend Mask to the node output. It updates on
+the CPU while Threshold, Grow, or Feather is adjusted and never runs LaMa. **Model Mask Preview**
+shows the exact binary mask sent to the model; **Blend Mask** shows the soft area changed by the
+final composite, while **Difference** displays all RGB modifications.
 
 `Preprocess Input Mask` is enabled by default. In this mode Invert, Threshold, Model Mask Grow,
 Blend Mask Grow, and Blend Feather prepare the input. Disable it to bypass all five operations:
 Kyven preserves the clean soft input mask for compositing and performs only the mandatory 0.5
 binary conversion required by LaMa internally. The irrelevant controls are hidden while bypassed.
-Changing these controls updates only the CPU preview and never runs LaMa or opens a progress window.
+Changing these controls updates both mask previews on the CPU and never runs LaMa or opens a
+progress window.
 
 ## Processing modes
 

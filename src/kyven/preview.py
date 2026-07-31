@@ -174,20 +174,33 @@ def postprocess_mask_preview(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def prepare_inpaint_mask_preview(payload: dict[str, Any]) -> dict[str, Any]:
-    """Write the exact binary mask that an Inpaint provider will receive."""
+    """Write the exact model and blend masks used by Inpaint."""
 
     mask_path = _absolute_file(payload, "mask", must_exist=True)
     output_path = _absolute_file(payload, "output", must_exist=False)
+    blend_output_value = payload.get("blend_output")
+    blend_output_path = (
+        _absolute_file(payload, "blend_output", must_exist=False)
+        if blend_output_value
+        else None
+    )
     try:
         threshold = float(payload.get("mask_threshold", 0.5))
         model_grow = int(payload.get("mask_grow", 12))
+        blend_grow = int(payload.get("blend_grow", 8))
+        blend_feather = float(payload.get("mask_feather", 4.0))
     except (TypeError, ValueError) as exc:
         raise KyvenError(
             ErrorCode.INVALID_REQUEST,
             "Inpaint mask preview controls are invalid.",
             technical_detail=str(exc),
         ) from exc
-    if not 0 <= threshold <= 1 or not -128 <= model_grow <= 128:
+    if (
+        not 0 <= threshold <= 1
+        or not -128 <= model_grow <= 128
+        or not -128 <= blend_grow <= 128
+        or not 0 <= blend_feather <= 64
+    ):
         raise KyvenError(ErrorCode.INVALID_REQUEST, "Inpaint mask preview controls are out of range.")
     channel = str(payload.get("mask_channel", "luminance"))
     try:
@@ -202,20 +215,27 @@ def prepare_inpaint_mask_preview(payload: dict[str, Any]) -> dict[str, Any]:
             f"Could not read Inpaint mask preview input: {mask_path}",
             technical_detail=str(exc),
         ) from exc
-    model_mask, _blend_mask = prepare_inpaint_masks(
+    model_mask, blend_mask = prepare_inpaint_masks(
         pixels,
         preprocess=bool(payload.get("preprocess_mask", True)),
         invert=bool(payload.get("invert_mask", False)),
         threshold=threshold,
         model_grow=model_grow,
-        blend_grow=0,
-        blend_feather=0,
+        blend_grow=blend_grow,
+        blend_feather=blend_feather,
     )
     write_mask_png_atomic(output_path, model_mask)
+    if blend_output_path is not None:
+        write_mask_png_atomic(blend_output_path, blend_mask)
     return {
         "output": str(output_path),
+        "blend_output": str(blend_output_path) if blend_output_path is not None else None,
         "preprocess_mask": bool(payload.get("preprocess_mask", True)),
         "mask_threshold": threshold,
         "mask_grow": model_grow,
+        "blend_grow": blend_grow,
+        "mask_feather": blend_feather,
+        "model_nonzero_pixels": int(np.count_nonzero(model_mask)),
+        "blend_nonzero_pixels": int(np.count_nonzero(blend_mask)),
         "nonzero_pixels": int(np.count_nonzero(model_mask)),
     }

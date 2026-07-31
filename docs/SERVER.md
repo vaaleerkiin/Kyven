@@ -33,7 +33,7 @@ it must not be committed or logged.
 | `POST` | `/v1/jobs/inpaint` | Queue LaMa Source + Mask object removal |
 | `POST` | `/v1/preview/trimap` | Build trimap on CPU without ViTMatte |
 | `POST` | `/v1/preview/mask-postprocess` | Rebuild matte from raw SAM output on CPU |
-| `POST` | `/v1/preview/inpaint-mask` | Build the exact LaMa model mask on CPU |
+| `POST` | `/v1/preview/inpaint-mask` | Build exact LaMa model and final blend masks on CPU |
 | `GET` | `/v1/jobs/{id}` | Read status or result |
 | `POST` | `/v1/jobs/{id}/cancel` | Request cooperative cancellation |
 | `POST` | `/v1/providers/unload-all` | Safely unload models after active work |
@@ -98,11 +98,14 @@ manual mode uses `roi`, while auto mode uses `context_padding`. `mask_grow`, `ma
 expands the model-removal area; the separate `blend_grow` and `mask_feather` define the final merge.
 `preprocess_mask=false` bypasses invert, threshold, grow, and feather for the blend mask while still
 performing the binary conversion required by the model.
+The CPU preview endpoint accepts `output` for the model mask and optional `blend_output` for the
+soft composite mask, using the same threshold, grow, and feather fields as an Inpaint job.
 `edge_color_match` (0-1) corrects a local RGB offset measured in clean pixels around the generated
 area, reducing visible patch boundaries without changing pixels outside the processed mask.
 Empty masks return Source unchanged without loading a model.
 
-API version 16 adds the CPU-only Inpaint model-mask preview and clean-input mask bypass. It retains
+API version 17 adds simultaneous CPU-only Inpaint model-mask and live blend-mask previews. It
+retains the clean-input mask bypass and
 selectable fast LaMa ONNX and native-resolution Big-LaMa, edge color matching, the single-file
 Source+Mask export, separate
 inference/final blend masks, persisted processed masks, signed grow/erode,
@@ -113,5 +116,5 @@ rerunning a model. It also retains detailed Segment and Refine progress stages a
 persisted `trimap_output`. `GET /v1/jobs/{id}` returns `progress` (0.0-1.0) and
 `progress_message`. A video request may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
-returned masks to the original dimensions. The Nuke adapter uses versioned port `18779` to avoid
+returned masks to the original dimensions. The Nuke adapter uses versioned port `18780` to avoid
 connecting to stale API processes during development.

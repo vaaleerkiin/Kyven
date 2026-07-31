@@ -1283,7 +1283,7 @@ def _restyle_node_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 16</font>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 17</font>'
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
@@ -1573,7 +1573,7 @@ def create_segment_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 16</font>',
+            '<font color="#91a3b0">SAM 2 | Local inference | API 17</font>',
         ),
     )
 
