@@ -17,6 +17,7 @@ from kyven_nuke.node import (
     _inside,
     _nuke,
     _nuke_file_path,
+    _place_knob_after,
     _progress_cancelled,
     _set_busy,
     _set_status,
@@ -441,6 +442,7 @@ def upgrade_selected_inpaint_node() -> None:
             ),
             start_line=False,
         )
+    _place_knob_after(node, "open_model_manager", "refresh_models")
     if "delete_all_cache" not in node.knobs():
         tail = [
             node[name]

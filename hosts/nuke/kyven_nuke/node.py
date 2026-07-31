@@ -1110,6 +1110,26 @@ def _add_section(nuke: Any, node: Any, name: str, title: str) -> None:
     _add_knob(nuke, node, nuke.Text_Knob(name, "", _section_markup(title)))
 
 
+def _place_knob_after(node: Any, knob_name: str, anchor_name: str) -> None:
+    """Move an existing user knob directly after an anchor without recreating controls."""
+
+    names = list(node.knobs())
+    if knob_name not in names or anchor_name not in names:
+        return
+    anchor_index = names.index(anchor_name)
+    knob_index = names.index(knob_name)
+    if knob_index == anchor_index + 1 or knob_index <= anchor_index:
+        return
+    tail_names = names[anchor_index + 1 :]
+    tail = [node[name] for name in tail_names]
+    for knob in tail:
+        node.removeKnob(knob)
+    ordered = [node_knob for node_knob in tail if node_knob.name() == knob_name]
+    ordered.extend(node_knob for node_knob in tail if node_knob.name() != knob_name)
+    for knob in ordered:
+        node.addKnob(knob)
+
+
 def _section_markup(title: str) -> str:
     return f'<br><font color="#9fc7e8"><b>{title}</b></font>'
 
@@ -1117,6 +1137,7 @@ def _section_markup(title: str) -> str:
 def _restyle_node_ui(node: Any) -> None:
     """Apply current labels and section styling to new or upgraded nodes."""
     nuke = _nuke()
+    _place_knob_after(node, "open_model_manager", "refresh_models")
     sections = {
         "model_section": "MODEL AND PERFORMANCE",
         "positive_section": "POSITIVE POINTS / OBJECT TO KEEP",

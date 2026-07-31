@@ -20,6 +20,7 @@ from kyven_nuke.node import (
     _nuke,
     _nuke_file_path,
     _path_for_frame,
+    _place_knob_after,
     _progress_cancelled,
     _section_markup,
     _set_busy,
@@ -824,6 +825,7 @@ def _restyle_refine_ui(node: Any) -> None:
     """Apply the shared compact Kyven layout to new and upgraded Refine nodes."""
 
     nuke = _nuke()
+    _place_knob_after(node, "open_model_manager", "refresh_models")
     sections = {
         "model_section": "MODEL AND PERFORMANCE",
         "trimap_section": "TRIMAP",

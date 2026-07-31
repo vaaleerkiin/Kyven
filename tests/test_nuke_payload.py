@@ -15,6 +15,7 @@ from kyven_nuke.node import (
     _cache_root_path,
     _nuke_file_path,
     _path_for_frame,
+    _place_knob_after,
     _point_knob_names,
     _prompt_defaults,
     _section_markup,
@@ -89,6 +90,47 @@ class NukePayloadTests(unittest.TestCase):
         self.assertTrue(markup.startswith("<br>"))
         self.assertIn("#9fc7e8", markup)
         self.assertIn("<b>OUTPUT</b>", markup)
+
+    def test_model_manager_is_moved_next_to_model_refresh(self) -> None:
+        class Knob:
+            def __init__(self, name: str) -> None:
+                self._name = name
+
+            def name(self) -> str:
+                return self._name
+
+        class Node:
+            def __init__(self) -> None:
+                self._knobs = {
+                    name: Knob(name)
+                    for name in (
+                        "model_section",
+                        "model",
+                        "refresh_models",
+                        "processing_section",
+                        "kyven_status",
+                        "open_model_manager",
+                    )
+                }
+
+            def knobs(self) -> dict[str, Knob]:
+                return self._knobs
+
+            def __getitem__(self, name: str) -> Knob:
+                return self._knobs[name]
+
+            def removeKnob(self, knob: Knob) -> None:
+                self._knobs.pop(knob.name())
+
+            def addKnob(self, knob: Knob) -> None:
+                self._knobs[knob.name()] = knob
+
+        node = Node()
+        _place_knob_after(node, "open_model_manager", "refresh_models")
+
+        names = list(node.knobs())
+        self.assertEqual(names.index("open_model_manager"), names.index("refresh_models") + 1)
+        self.assertEqual(names[-1], "kyven_status")
 
     def test_node_cache_path_rejects_parent_traversal(self) -> None:
         class Knob:
