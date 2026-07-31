@@ -1156,6 +1156,48 @@ def _add_section(nuke: Any, node: Any, name: str, title: str) -> None:
     _add_knob(nuke, node, nuke.Text_Knob(name, "", _section_markup(title)))
 
 
+def _ensure_double_slider(
+    node: Any,
+    name: str,
+    label: str,
+    minimum: float,
+    maximum: float,
+    default: float | None = None,
+) -> Any:
+    """Create or upgrade a numeric user knob to a full-width animated slider."""
+
+    nuke = _nuke()
+    existing = node[name] if name in node.knobs() else None
+    if existing is not None and isinstance(existing, nuke.Double_Knob):
+        existing.setLabel(label)
+        existing.setRange(minimum, maximum)
+        existing.setFlag(nuke.STARTLINE)
+        return existing
+    value_script = existing.toScript() if existing is not None else ""
+    fallback = float(existing.value()) if existing is not None else default
+    names = list(node.knobs())
+    tail = []
+    if existing is not None:
+        tail = [node[knob_name] for knob_name in names[names.index(name) :]]
+        for knob in tail:
+            node.removeKnob(knob)
+    slider = nuke.Double_Knob(name, label)
+    slider.setRange(minimum, maximum)
+    slider.setFlag(nuke.STARTLINE)
+    if value_script:
+        try:
+            slider.fromScript(value_script)
+        except Exception:  # noqa: BLE001 - fall back to the current scalar value
+            if fallback is not None:
+                slider.setValue(fallback)
+    elif fallback is not None:
+        slider.setValue(fallback)
+    node.addKnob(slider)
+    for knob in tail[1:]:
+        node.addKnob(knob)
+    return slider
+
+
 def _place_knob_after(node: Any, knob_name: str, anchor_name: str) -> None:
     """Move an existing user knob directly after an anchor without recreating controls."""
 
@@ -1379,9 +1421,14 @@ def _ensure_postprocess_controls(node: Any) -> None:
         fill_holes = nuke.Boolean_Knob("fill_holes", "Fill Enclosed Holes")
         fill_holes.setValue(True)
         _add_knob(nuke, node, fill_holes)
-        max_area = nuke.Int_Knob("max_hole_area", "Max Hole Area (px)")
-        max_area.setValue(2_048)
-        _add_knob(nuke, node, max_area)
+        _ensure_double_slider(
+            node,
+            "max_hole_area",
+            "Max Hole Area (px)",
+            0,
+            100_000,
+            2_048,
+        )
         _add_knob(
             nuke,
             node,
@@ -1392,8 +1439,7 @@ def _ensure_postprocess_controls(node: Any) -> None:
                 "Set 0 to fill all enclosed holes.",
             ),
         )
-    node["max_hole_area"].setRange(0, 100_000)
-    node["max_hole_area"].setFlag(nuke.STARTLINE)
+    _ensure_double_slider(node, "max_hole_area", "Max Hole Area (px)", 0, 100_000, 2_048)
     if "postprocess_help" in node.knobs():
         node["postprocess_help"].setValue(
             "CPU-only preview from the cached raw SAM mask; controls never rerun SAM.<br>"

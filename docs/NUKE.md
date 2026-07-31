@@ -88,6 +88,11 @@ rendering a range.
 - `Refresh Models` updates installation and VRAM advice from the server.
 - `Model Manager...` installs or removes trusted models without leaving Nuke.
 
+Numeric mask preparation controls use full-width sliders. Segment hole filling and Refine trimap
+construction update their cached CPU previews silently. Inpaint Live updates caused by mask sliders
+also stay non-modal: progress appears in Status, while an explicit Process Current Frame or frame
+range still opens the normal cancellable progress window.
+
 ### Points
 
 Positive points identify the object to keep. Negative points remove unwanted areas. Each point type

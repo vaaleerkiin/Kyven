@@ -13,6 +13,7 @@ from kyven_nuke.live import affects_live_result
 from kyven_nuke.node import (
     OUTPUT_MODES,
     _cache_root_path,
+    _ensure_double_slider,
     _job_error_text,
     _nuke_file_path,
     _path_for_frame,
@@ -33,6 +34,71 @@ from kyven_nuke.runtime import _listener_pids, _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_int_control_is_upgraded_to_animated_double_slider_in_place(self) -> None:
+        class Knob:
+            def __init__(self, name: str, label: str = "", value: float = 0) -> None:
+                self._name = name
+                self._label = label
+                self._value = value
+
+            def name(self) -> str:
+                return self._name
+
+            def value(self) -> float:
+                return self._value
+
+            def toScript(self) -> str:
+                return str(self._value)
+
+        class DoubleKnob(Knob):
+            def setLabel(self, label: str) -> None:
+                self._label = label
+
+            def setRange(self, minimum: float, maximum: float) -> None:
+                self.range = (minimum, maximum)
+
+            def setFlag(self, flag: int) -> None:
+                self.flag = flag
+
+            def setValue(self, value: float) -> None:
+                self._value = value
+
+            def fromScript(self, value: str) -> None:
+                self._value = float(value)
+
+        class FakeNuke:
+            STARTLINE = 1
+            Double_Knob = DoubleKnob
+
+        class Node:
+            def __init__(self) -> None:
+                self._knobs = {
+                    "mask_section": Knob("mask_section"),
+                    "mask_grow": Knob("mask_grow", value=23),
+                    "next_section": Knob("next_section"),
+                }
+
+            def knobs(self) -> dict[str, Knob]:
+                return self._knobs
+
+            def __getitem__(self, name: str) -> Knob:
+                return self._knobs[name]
+
+            def removeKnob(self, knob: Knob) -> None:
+                self._knobs.pop(knob.name())
+
+            def addKnob(self, knob: Knob) -> None:
+                self._knobs[knob.name()] = knob
+
+        node = Node()
+        with mock.patch("kyven_nuke.node._nuke", return_value=FakeNuke()):
+            slider = _ensure_double_slider(node, "mask_grow", "Grow", -128, 128, 12)
+
+        self.assertIsInstance(slider, DoubleKnob)
+        self.assertEqual(slider.value(), 23)
+        self.assertEqual(slider.range, (-128, 128))
+        self.assertEqual(list(node.knobs()), ["mask_section", "mask_grow", "next_section"])
+
     def test_listener_pid_parser_uses_only_exact_listening_port(self) -> None:
         output = """
           TCP    127.0.0.1:18778    0.0.0.0:0    LISTENING    17020

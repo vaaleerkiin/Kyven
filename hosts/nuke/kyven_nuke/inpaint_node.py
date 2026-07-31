@@ -12,6 +12,7 @@ from kyven_nuke.node import (
     _add_knob,
     _add_section,
     _cache_root,
+    _ensure_double_slider,
     _ensure_live_controls,
     _ensure_server_controls,
     _finish_progress,
@@ -110,11 +111,12 @@ def _apply(node_name: str, job: dict[str, Any], output: Path, processed_mask: Pa
     _set_status(node_name, f"Inpaint complete{suffix}")
 
 
-def process_current_frame_for_node(node: Any) -> None:
+def process_current_frame_for_node(node: Any, live: bool = False) -> None:
     nuke = _nuke()
     source, mask = node.input(0), node.input(1)
     if source is None or mask is None:
-        nuke.message("Kyven Inpaint needs Source on input 0 and Mask on input 1.")
+        if not live:
+            nuke.message("Kyven Inpaint needs Source on input 0 and Mask on input 1.")
         return
     frame = int(nuke.frame())
     source_path, mask_path, output_path, processed_mask_path = _paths(node, frame)
@@ -129,12 +131,19 @@ def process_current_frame_for_node(node: Any) -> None:
         mask_writer["file"].setValue(_nuke_file_path(mask_path))
     _set_status(node.fullName(), "Exporting inpaint inputs...")
     node_name = str(node.fullName())
-    _start_progress(node_name, "Kyven Inpaint", f"Exporting frame {frame}")
+    show_progress = not live
+    if show_progress:
+        _start_progress(node_name, "Kyven Inpaint", f"Exporting frame {frame}")
     try:
         nuke.execute(source_writer, frame, frame)
         if mask_writer is not None: nuke.execute(mask_writer, frame, frame)
     except Exception as exc:  # noqa: BLE001
-        _finish_progress(node_name); nuke.message(f"Inpaint export failed: {exc}"); return
+        if show_progress:
+            _finish_progress(node_name)
+            nuke.message(f"Inpaint export failed: {exc}")
+        else:
+            _set_status(node_name, f"Live inpaint export failed: {exc}")
+        return
     payload = _payload(node, source, source_path, mask_path, output_path, processed_mask_path, "alpha" if combined else "luminance")
     _set_busy(node_name, True)
 
@@ -147,20 +156,22 @@ def process_current_frame_for_node(node: Any) -> None:
                 if job["status"] in ("succeeded", "failed", "cancelled"): break
                 progress = float(job.get("progress") or 0.0)
                 message = str(job.get("progress_message") or "Inpainting")
-                _nuke().executeInMainThread(_update_progress, args=(node_name, int(progress * 100), message))
-                if _progress_cancelled(node_name): client.cancel(job_id)
+                if show_progress:
+                    _nuke().executeInMainThread(_update_progress, args=(node_name, int(progress * 100), message))
+                    if _progress_cancelled(node_name): client.cancel(job_id)
                 time.sleep(0.15)
             _nuke().executeInMainThread(_apply, args=(node_name, job, output_path, processed_mask_path))
         except Exception as exc:  # noqa: BLE001
             _nuke().executeInMainThread(_set_busy, args=(node_name, False))
             _nuke().executeInMainThread(_set_status, args=(node_name, f"Inpaint failed: {exc}"))
         finally:
-            _nuke().executeInMainThread(_finish_progress, args=(node_name,))
+            if show_progress:
+                _nuke().executeInMainThread(_finish_progress, args=(node_name,))
     threading.Thread(target=work, name="kyven-inpaint", daemon=True).start()
 
 
 def process_current_frame(node: Any | None = None, live: bool = False) -> None:
-    process_current_frame_for_node(node or _nuke().thisNode())
+    process_current_frame_for_node(node or _nuke().thisNode(), live=live)
 
 
 def process_frame_range() -> None:
@@ -306,6 +317,16 @@ def _apply_model_labels(node_name: str, labels: list[str]) -> None:
         node["kyven_status"].setValue("Inpaint model list refreshed.")
 
 
+def _ensure_inpaint_mask_sliders(node: Any) -> None:
+    """Use full-width sliders for all continuous input-mask controls."""
+
+    _ensure_double_slider(node, "mask_threshold", "Threshold", 0, 1, 0.5)
+    _ensure_double_slider(node, "mask_grow", "Model Mask Grow (px)", -128, 128, 12)
+    _ensure_double_slider(node, "blend_grow", "Blend Mask Grow (px)", -128, 128, 8)
+    _ensure_double_slider(node, "mask_feather", "Blend Feather (px)", 0, 64, 4)
+    _ensure_double_slider(node, "edge_color_match", "Edge Color Match", 0, 1, 1)
+
+
 def _restyle_inpaint_cache(node: Any) -> None:
     """Apply the shared Cache labels and compact three-row layout."""
 
@@ -350,11 +371,7 @@ def create_inpaint_node() -> Any:
     _add_section(nuke, node, "mask_section", "MASK")
     _add_knob(nuke, node, nuke.Enumeration_Knob("mask_channel", "Input 1 Channel", ["Alpha", "Red"]))
     invert = nuke.Boolean_Knob("invert_mask", "Invert Input Mask"); _add_knob(nuke, node, invert)
-    threshold = nuke.Double_Knob("mask_threshold", "Threshold"); threshold.setRange(0, 1); threshold.setValue(0.5); _add_knob(nuke, node, threshold)
-    grow = nuke.Int_Knob("mask_grow", "Model Mask Grow (px)"); grow.setRange(-128, 128); grow.setValue(12); _add_knob(nuke, node, grow)
-    blend_grow = nuke.Int_Knob("blend_grow", "Blend Mask Grow (px)"); blend_grow.setRange(-128, 128); blend_grow.setValue(8); _add_knob(nuke, node, blend_grow)
-    feather = nuke.Double_Knob("mask_feather", "Blend Feather (px)"); feather.setRange(0, 64); feather.setValue(4); _add_knob(nuke, node, feather)
-    color_match = nuke.Double_Knob("edge_color_match", "Edge Color Match"); color_match.setRange(0, 1); color_match.setValue(1); _add_knob(nuke, node, color_match)
+    _ensure_inpaint_mask_sliders(node)
     _add_knob(nuke, node, nuke.Text_Knob("mask_help", "", "Model Grow removes the old antialiased edge. Blend Grow/Feather hide the seam; Edge Color Match aligns the patch to nearby clean pixels."))
     _add_section(nuke, node, "roi_section", "PROCESSING ROI / MODEL CROP")
     _add_knob(nuke, node, nuke.Enumeration_Knob("crop_mode", "Crop Mode", ["auto", "manual", "full"]))
@@ -422,6 +439,7 @@ def upgrade_selected_inpaint_node() -> None:
     if "create_result_read" not in node.knobs() or "kyven_uuid" not in node.knobs():
         nuke.message("The selected Group is not a Kyven Inpaint node.")
         return
+    _ensure_inpaint_mask_sliders(node)
     if "refresh_models" not in node.knobs():
         _add_knob(
             nuke,

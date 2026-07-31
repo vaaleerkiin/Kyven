@@ -13,6 +13,7 @@ from kyven_nuke.node import (
     _add_section,
     _cache_root,
     _ensure_cache_controls,
+    _ensure_double_slider,
     _ensure_live_controls,
     _ensure_server_controls,
     _finish_progress,
@@ -737,10 +738,8 @@ def _ensure_refine_output_controls(node: Any) -> None:
         preview_frame.setVisible(False)
         preview_frame.clearFlag(nuke.STARTLINE)
         node.addKnob(preview_frame)
-    for name in ("foreground_radius", "background_radius"):
-        if name in node.knobs():
-            node[name].setRange(0, 100)
-            node[name].setFlag(nuke.STARTLINE)
+    _ensure_double_slider(node, "foreground_radius", "Foreground Erosion (px)", 0, 100, 10)
+    _ensure_double_slider(node, "background_radius", "Background Dilation (px)", 0, 100, 15)
     if "trimap_help" in node.knobs():
         node["trimap_help"].setValue(REFINE_TRIMAP_HELP)
 
@@ -995,14 +994,8 @@ def create_refine_node() -> Any:
     generate = nuke.Boolean_Knob("generate_trimap", "Generate Trimap from Mask")
     generate.setValue(True)
     _add_knob(nuke, node, generate)
-    foreground = nuke.Int_Knob("foreground_radius", "Foreground Erosion (px)")
-    foreground.setRange(0, 100)
-    foreground.setValue(10)
-    _add_knob(nuke, node, foreground)
-    background = nuke.Int_Knob("background_radius", "Background Dilation (px)")
-    background.setRange(0, 100)
-    background.setValue(15)
-    _add_knob(nuke, node, background)
+    _ensure_double_slider(node, "foreground_radius", "Foreground Erosion (px)", 0, 100, 10)
+    _ensure_double_slider(node, "background_radius", "Background Dilation (px)", 0, 100, 15)
     _add_knob(
         nuke,
         node,
