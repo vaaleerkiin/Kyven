@@ -88,14 +88,27 @@ def _match_patch_color(
 
 
 def _inward_feather_alpha(mask: np.ndarray, radius: int) -> np.ndarray:
-    """Soften only inside a mask, never modifying pixels outside it."""
+    """Feather inward while keeping Source on the mask boundary.
+
+    Clipping a Gaussian to the binary mask leaves the first inside pixel about
+    half opaque. Any model/source colour difference then becomes a bright or
+    dark outline. Insetting before the blur moves the transition fully inside
+    the generated region and anchors the visible boundary to Source.
+    """
 
     binary = (np.asarray(mask, dtype=np.uint8) >= 128).astype(np.float32)
     if radius <= 0:
         return binary[..., None]
-    blurred = np.asarray(
+    inset = max(1, round(float(radius) / 2.0))
+    protected = np.asarray(
         Image.fromarray((binary * 255).astype(np.uint8), mode="L").filter(
-            ImageFilter.GaussianBlur(radius=max(0.5, float(radius) / 2.0))
+            ImageFilter.MinFilter(mask_filter_size(inset))
+        ),
+        dtype=np.uint8,
+    )
+    blurred = np.asarray(
+        Image.fromarray(protected, mode="L").filter(
+            ImageFilter.GaussianBlur(radius=max(0.5, float(radius) / 4.0))
         ),
         dtype=np.float32,
     ) / 255.0

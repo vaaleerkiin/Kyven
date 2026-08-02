@@ -45,8 +45,9 @@ class InpaintServiceTests(unittest.TestCase):
         mask[5:26, 5:26] = 255
         alpha = _inward_feather_alpha(mask, 8)[..., 0]
         self.assertEqual(float(alpha[4, 15]), 0.0)
-        self.assertGreater(float(alpha[5, 15]), 0.0)
-        self.assertLess(float(alpha[5, 15]), 1.0)
+        self.assertLess(float(alpha[5, 15]), 0.05)
+        self.assertGreater(float(alpha[9, 15]), 0.0)
+        self.assertLess(float(alpha[9, 15]), 1.0)
         self.assertGreater(float(alpha[15, 15]), 0.95)
 
     def test_cached_mask_contains_the_exact_seam_blend_alpha(self) -> None:

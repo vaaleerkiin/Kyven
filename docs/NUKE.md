@@ -15,7 +15,8 @@ Write and Result/Patch Reads. The generated patch is then composited over the or
 Nuke, in the project's working space. This preserves the untouched ACES/HDR source and avoids a
 different file-type default producing a visible color seam. Public Inpaint alpha comes directly
 from the Nuke mask graph rather than from cached RGB, while the cached blend mask carries the exact
-inward feather used for the generated patch.
+inward feather used for the generated patch. The feather keeps the original Source on the mask
+boundary and starts the transition farther inside, preventing bright or dark colour fringes.
 
 ## Portable install
 
