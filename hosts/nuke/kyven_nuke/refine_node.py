@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from kyven_nuke.branding import add_node_branding
+from kyven_nuke.color_management import set_data_io
 from kyven_nuke.node import (
     _add_knob,
     _add_section,
@@ -130,6 +131,7 @@ def _configure_export_writers(source_writer: Any | None, mask_writer: Any) -> No
         if "compression" in source_writer.knobs():
             source_writer["compression"].setValue(0)
     mask_writer["file_type"].setValue("png")
+    set_data_io(mask_writer)
     if "compression" in mask_writer.knobs():
         mask_writer["compression"].setValue(0)
 
@@ -201,6 +203,7 @@ def _set_trimap_read(
             nuke.toNode("KyvenTrimapSwitch").setInput(1, trimap)
         else:
             trimap["file"].setValue(output)
+        set_data_io(trimap)
         if first is not None and last is not None:
             for knob_name, value in (
                 ("first", first),
@@ -961,6 +964,10 @@ def upgrade_selected_refine_node() -> None:
             )
         _ensure_server_controls(node)
         _restyle_refine_ui(node)
+        for internal_name in ("KyvenMatteRead", "KyvenTrimapRead"):
+            cached_data = _inside(node, internal_name)
+            if cached_data is not None:
+                set_data_io(cached_data)
     except Exception as exc:  # noqa: BLE001
         nuke.message(f"Could not upgrade the selected Refine node:\n{exc}")
         return

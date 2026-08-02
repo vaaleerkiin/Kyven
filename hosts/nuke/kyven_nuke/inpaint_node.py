@@ -10,6 +10,7 @@ from typing import Any
 
 from kyven_nuke.branding import add_node_branding
 from kyven_nuke.client import NukeKyvenClientError
+from kyven_nuke.color_management import set_data_io
 from kyven_nuke.node import (
     _add_knob,
     _add_section,
@@ -122,6 +123,7 @@ def _set_processed_mask(node: Any, path: Path, first: int | None = None, last: i
             read = nuke.nodes.Read(name="KyvenProcessedMaskRead", file=_nuke_file_path(path))
             nuke.toNode("KyvenProcessedMaskSwitch").setInput(1, read)
         else: read["file"].setValue(_nuke_file_path(path))
+        set_data_io(read)
         if first is not None and last is not None:
             for name, value in (("first", first), ("last", last), ("origfirst", first), ("origlast", last)):
                 if name in read.knobs(): read[name].setValue(value)
@@ -242,7 +244,11 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
             writer = nuke.nodes.Write(name="KyvenInpaintModelMaskWrite")
             writer["file_type"].setValue("png")
             writer["channels"].setValue("rgb")
+        set_data_io(writer)
         writer.setInput(0, model_mask)
+        processed_mask_read = nuke.toNode("KyvenProcessedMaskRead")
+        if processed_mask_read is not None:
+            set_data_io(processed_mask_read)
         if output_switch is not None:
             output_switch.setInput(0, result_opaque)
             output_switch.setInput(1, result_mask_alpha)

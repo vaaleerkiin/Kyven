@@ -5,6 +5,11 @@ current Segment, Refine, Inpaint, and Generative Inpaint nodes export frames to 
 back into the graph. Future Depth nodes will reuse the same host/server boundary and
 per-node cache conventions. Nuke remains responsive while server inference runs.
 
+All Kyven mask, matte, and trimap cache files are explicitly marked as **raw data** on both Nuke
+Write and Read nodes. OCIO/ACES therefore never applies a display or color-space transform to mask
+RGB values before they are copied into alpha: black remains `0.0`, white remains `1.0`, and soft
+mask values round-trip unchanged apart from the selected file format's numeric precision.
+
 ## Portable install
 
 Clone or extract Kyven into its final writable directory and double-click `install.cmd`. To launch

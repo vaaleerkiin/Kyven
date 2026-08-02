@@ -11,6 +11,7 @@ from typing import Any
 
 from kyven_nuke import config
 from kyven_nuke.branding import add_node_branding
+from kyven_nuke.color_management import set_data_io
 from kyven_nuke.payload import MODEL_LABELS, segment_payload, segment_video_payload
 from kyven_nuke.runtime import ensure_server, stop_server
 
@@ -347,6 +348,7 @@ def _set_matte_read(node: Any, output: str, first: int | None = None, last: int 
             nuke.toNode("KyvenMatteSwitch").setInput(1, matte)
         else:
             matte["file"].setValue(output)
+        set_data_io(matte)
         if first is not None and last is not None:
             for knob_name, value in (
                 ("first", first),
@@ -622,6 +624,7 @@ def create_read_from_current_matte() -> None:
         node.end()
 
     read = nuke.nodes.Read(file=file_path)
+    set_data_io(read)
     for name, value in frame_values.items():
         if name in read.knobs():
             read[name].setValue(value)
@@ -1551,6 +1554,9 @@ def upgrade_selected_segment_node() -> None:
         _upgrade_roi_controls(node)
         _restyle_node_ui(node)
         sync_prompt_visibility(node)
+        cached_matte = _inside(node, "KyvenMatteRead")
+        if cached_matte is not None:
+            set_data_io(cached_matte)
     except Exception as exc:  # noqa: BLE001 - host boundary must report useful context
         nuke.message(f"Could not upgrade the selected node:\n{exc}")
         return
