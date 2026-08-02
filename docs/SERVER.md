@@ -107,9 +107,11 @@ Empty masks return Source unchanged without loading a model.
 `POST /v1/jobs/generative-inpaint` accepts all Inpaint fields and requires a
 `generative_inpaint` catalog model. It additionally accepts `prompt`, `negative_prompt`, `seed`,
 `steps` (1-100), `guidance_scale` (0-20), `strength` (0.01 to below 1.0), `low_memory`, and
-`render_quality` (`preview` or `final`). SDXL uses the same authoritative exported Model Mask and
+`render_quality` (`preview` or `final`), `generation_mode` (`clean_plate` or `replace`), and
+`seam_blend` (0-128 px). SDXL uses the same authoritative exported Model Mask and
 source-safe ROI composite as classic Inpaint.
 
+API version 22 adds Clean Plate prompting, inward-only seam blending, and boundary color matching.
 API version 21 adds the separate optional SDXL Generative Inpaint job and pinned repository model
 downloads. API version 20 makes the enabled Inpaint preprocessing mask authoritative for LaMa inference, final
 RGB compositing, and Mask Alpha/Premult outputs. It also migrates Nuke groups to Source-left and
@@ -130,5 +132,5 @@ rerunning a model. It also retains detailed Segment and Refine progress stages a
 persisted `trimap_output`. `GET /v1/jobs/{id}` returns `progress` (0.0-1.0) and
 `progress_message`. A video request may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
-returned masks to the original dimensions. The Nuke adapter uses versioned port `18784` to avoid
+returned masks to the original dimensions. The Nuke adapter uses versioned port `18785` to avoid
 connecting to stale API processes during development.

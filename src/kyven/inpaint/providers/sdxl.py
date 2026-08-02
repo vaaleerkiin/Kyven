@@ -140,11 +140,30 @@ class SdxlInpaintProvider(InpaintProvider):
             )
             return values
 
+        if request.generation_mode == "clean_plate":
+            scene_hint = request.prompt.strip()
+            prompt = (
+                "empty clean background, seamless continuation of the surrounding background, "
+                "matching perspective, matching lighting, matching texture, photorealistic"
+            )
+            if scene_hint:
+                prompt = f"{prompt}, {scene_hint}"
+            clean_negative = (
+                "person, people, human, body, face, player, animal, vehicle, foreground subject, "
+                "new object, duplicate object, ball, text, logo, sign, artifact, distorted shape"
+            )
+            negative_prompt = ", ".join(
+                value for value in (clean_negative, request.negative_prompt.strip()) if value
+            )
+        else:
+            prompt = request.prompt.strip() or "photorealistic replacement matching the scene"
+            negative_prompt = request.negative_prompt.strip() or None
+
         cancellation.report_progress(0.14, "Preparing SDXL Inpainting")
         try:
             result = pipeline(
-                prompt=request.prompt or "clean background matching the surrounding scene",
-                negative_prompt=request.negative_prompt or None,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
                 image=source_input,
                 mask_image=mask_input,
                 num_inference_steps=steps,
@@ -169,6 +188,9 @@ class SdxlInpaintProvider(InpaintProvider):
             rgb=rgb,
             metadata={
                 "seed": seed,
+                "generation_mode": request.generation_mode,
+                "effective_prompt": prompt,
+                "effective_negative_prompt": negative_prompt,
                 "steps": steps,
                 "guidance_scale": request.guidance_scale,
                 "strength": request.strength,

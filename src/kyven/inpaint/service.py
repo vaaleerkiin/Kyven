@@ -55,6 +55,7 @@ def _match_patch_color(
     original: np.ndarray,
     inference_mask: np.ndarray,
     strength: float,
+    match_boundary: bool = False,
 ) -> tuple[np.ndarray, list[float]]:
     """Remove a local RGB offset measured in the clean ring around the generated area."""
 
@@ -70,9 +71,35 @@ def _match_patch_color(
     if int(np.count_nonzero(ring)) < 32:
         return predicted, [0.0, 0.0, 0.0]
     differences = original[ring].astype(np.float32) - predicted[ring].astype(np.float32)
-    offset = np.clip(np.median(differences, axis=0), -32.0, 32.0) * float(strength)
+    offset = np.median(differences, axis=0)
+    if match_boundary and float(np.max(np.abs(offset))) < 0.5:
+        eroded = np.asarray(
+            mask_image.filter(ImageFilter.MinFilter(mask_filter_size(ring_radius))),
+            dtype=np.uint8,
+        )
+        inner_ring = (inference_mask >= 128) & (eroded < 128)
+        if int(np.count_nonzero(inner_ring)) >= 32:
+            outer_color = np.median(original[ring].astype(np.float32), axis=0)
+            inner_color = np.median(predicted[inner_ring].astype(np.float32), axis=0)
+            offset = outer_color - inner_color
+    offset = np.clip(offset, -32.0, 32.0) * float(strength)
     matched = np.clip(predicted.astype(np.float32) + offset, 0, 255).astype(np.uint8)
     return matched, [round(float(value), 3) for value in offset]
+
+
+def _inward_feather_alpha(mask: np.ndarray, radius: int) -> np.ndarray:
+    """Soften only inside a mask, never modifying pixels outside it."""
+
+    binary = (np.asarray(mask, dtype=np.uint8) >= 128).astype(np.float32)
+    if radius <= 0:
+        return binary[..., None]
+    blurred = np.asarray(
+        Image.fromarray((binary * 255).astype(np.uint8), mode="L").filter(
+            ImageFilter.GaussianBlur(radius=max(0.5, float(radius) / 2.0))
+        ),
+        dtype=np.float32,
+    ) / 255.0
+    return (blurred * binary)[..., None]
 
 
 class InpaintService:
@@ -192,9 +219,10 @@ class InpaintService:
             original_crop,
             inference_mask,
             request.edge_color_match,
+            match_boundary=request.generation_mode == "clean_plate",
         )
         merge_mask = Image.fromarray(merge_crop_pixels, mode="L")
-        alpha = np.asarray(merge_mask, dtype=np.float32)[..., None] / 255.0
+        alpha = _inward_feather_alpha(merge_crop_pixels, request.seam_blend)
         full_merge_mask = np.zeros_like(mask_pixels)
         full_merge_mask[region.y0 : region.y1, region.x0 : region.x1] = np.asarray(merge_mask)
         if request.mask_output is not None:

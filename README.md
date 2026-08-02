@@ -149,6 +149,11 @@ Prompt, keep Low Memory enabled on an 8 GB GPU, iterate in Preview, then switch 
 Inpaint mask preprocessing, ROI, cache, range, progress, cancellation, and output modes. See
 [Generative Inpaint](docs/GENERATIVE_INPAINT.md).
 
+For object removal, leave **Mode = Remove / Clean Plate**. It applies background-only prompting,
+excludes new foreground objects, matches boundary color, and blends the generated RGB inward at the
+mask edge. **Raw Patch** is diagnostic and may show the rectangular ROI boundary; use **Result** or
+**Result + Mask Alpha** for the finished image.
+
 ## Cache controls
 
 Every Kyven node uses the same compact Cache block:

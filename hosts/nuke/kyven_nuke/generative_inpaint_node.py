@@ -13,6 +13,15 @@ from kyven_nuke.runtime import ensure_server
 
 MODEL_IDS = ("sdxl-inpainting-1.0",)
 MODEL_LABELS = ("SDXL Inpainting 1.0 (optional, ~7 GB, 8 GB+ VRAM)",)
+GENERATION_MODE_IDS = ("clean_plate", "replace")
+OUTPUT_LABELS = (
+    "Result",
+    "Result + Mask Alpha",
+    "Result Premult",
+    "Raw Patch (shows ROI seams)",
+    "Difference",
+    "Source",
+)
 
 
 def _payload(node: Any, source: Any, source_path: Path, mask_path: Path, model_mask_path: Path,
@@ -24,6 +33,14 @@ def _payload(node: Any, source: Any, source_path: Path, mask_path: Path, model_m
         "model_id": MODEL_IDS[min(int(node["model"].getValue()), len(MODEL_IDS) - 1)],
         "prompt": str(node["prompt"].value()),
         "negative_prompt": str(node["negative_prompt"].value()),
+        "generation_mode": (
+            GENERATION_MODE_IDS[int(node["generation_mode"].getValue())]
+            if "generation_mode" in node.knobs()
+            else "clean_plate"
+        ),
+        "seam_blend": (
+            int(node["seam_blend"].value()) if "seam_blend" in node.knobs() else 16
+        ),
         "seed": int(node["seed"].value()),
         "steps": int(node["steps"].value()),
         "guidance_scale": float(node["guidance_scale"].value()),
@@ -69,6 +86,7 @@ def reset_roi_to_input() -> None:
 def knob_changed() -> None:
     inpaint_node.knob_changed()
     node = _nuke().thisNode()
+    _update_mode_ui(node)
     node["model_help"].setValue(
         "Prompt-guided 1024-class inpainting. Preview uses up to 768 px / 12 steps; "
         "Final uses up to 1024 px and the selected Steps. Use a tight ROI on 8 GB GPUs.")
@@ -96,13 +114,45 @@ def _multiline_knob(nuke: Any, name: str, label: str) -> Any:
     return getattr(nuke, "Multiline_Eval_String_Knob", nuke.String_Knob)(name, label)
 
 
+def _update_mode_ui(node: Any) -> None:
+    if "generation_mode" not in node.knobs():
+        return
+    clean_plate = int(node["generation_mode"].getValue()) == 0
+    node["prompt"].setLabel("Scene Hint (optional)" if clean_plate else "Replacement Prompt")
+    node["negative_prompt"].setLabel(
+        "Additional Exclusions" if clean_plate else "Negative Prompt"
+    )
+    node["generation_help"].setValue(
+        (
+            "Clean Plate uses a protected background-only prompt and exclusions for people, "
+            "objects, text, and duplicates. Seam Blend softens only the RGB inside the mask."
+        )
+        if clean_plate
+        else (
+            "Replace follows your prompt. The same Seed is repeatable; changing it creates "
+            "another variation. Seam Blend affects only the final RGB composite."
+        )
+    )
+    if "output_mode" in node.knobs():
+        current_labels = tuple(node["output_mode"].values())
+        if current_labels != OUTPUT_LABELS:
+            previous = int(node["output_mode"].getValue())
+            node["output_mode"].setValues(list(OUTPUT_LABELS))
+            node["output_mode"].setValue(min(previous, len(OUTPUT_LABELS) - 1))
+    if "output_help" in node.knobs():
+        node["output_help"].setValue(
+            "Use Result or Result + Mask Alpha for the finished composite. Raw Patch is a "
+            "diagnostic full-ROI model image and intentionally shows rectangular ROI seams."
+        )
+
+
 def create_generative_inpaint_node() -> Any:
     nuke = _nuke(); node = inpaint_node.create_inpaint_node()
     node.setName("KyvenGenerativeInpaint")
     node["kyven"].setLabel("Kyven Generative Inpaint")
     node["kyven_title"].setValue(
         '<font size="5" color="#dce9f2"><b>KYVEN / GENERATIVE INPAINT</b></font><br>'
-        '<font color="#91a3b0">SDXL | Prompt + Source + Mask | API 21</font>')
+        '<font color="#91a3b0">SDXL | Clean Plate or Replace | API 22</font>')
     node["model"].setValues(list(MODEL_LABELS)); node["model"].setValue(0)
     node["model_help"].setValue(
         "Optional ~7 GB download. Best quality at Final; Preview is faster. "
@@ -112,16 +162,20 @@ def create_generative_inpaint_node() -> Any:
     node["kyven_kind"].setValue("generative_inpaint")
 
     _add_section(nuke, node, "generation_section", "GENERATION")
-    prompt = _multiline_knob(nuke, "prompt", "Prompt")
-    prompt.setValue("clean background matching the surrounding scene"); _add_knob(nuke, node, prompt)
-    _add_knob(nuke, node, _multiline_knob(nuke, "negative_prompt", "Negative Prompt"))
+    mode = nuke.Enumeration_Knob(
+        "generation_mode", "Mode", ["Remove / Clean Plate", "Replace / Prompt"]
+    )
+    _add_knob(nuke, node, mode)
+    prompt = _multiline_knob(nuke, "prompt", "Scene Hint (optional)")
+    _add_knob(nuke, node, prompt)
+    _add_knob(nuke, node, _multiline_knob(nuke, "negative_prompt", "Additional Exclusions"))
     seed = nuke.Int_Knob("seed", "Seed"); seed.setValue(0); _add_knob(nuke, node, seed)
     _add_knob(nuke, node, nuke.PyScript_Knob(
         "randomize_seed", "Randomize Seed", "kyven_nuke.generative_inpaint_node.randomize_seed()"),
         start_line=False)
     steps = nuke.Int_Knob("steps", "Steps"); steps.setRange(1, 100); steps.setValue(25)
     _add_knob(nuke, node, steps)
-    guidance = nuke.Double_Knob("guidance_scale", "Guidance"); guidance.setRange(0, 20); guidance.setValue(6)
+    guidance = nuke.Double_Knob("guidance_scale", "Guidance"); guidance.setRange(0, 20); guidance.setValue(4)
     _add_knob(nuke, node, guidance)
     strength = nuke.Double_Knob("strength", "Strength"); strength.setRange(0.01, 0.99); strength.setValue(0.99)
     _add_knob(nuke, node, strength)
@@ -129,13 +183,14 @@ def create_generative_inpaint_node() -> Any:
     _add_knob(nuke, node, quality)
     low_memory = nuke.Boolean_Knob("low_memory", "Low Memory (8 GB)"); low_memory.setValue(True)
     _add_knob(nuke, node, low_memory)
+    seam = nuke.Int_Knob("seam_blend", "Seam Blend (px)")
+    seam.setRange(0, 128); seam.setValue(16); _add_knob(nuke, node, seam)
     _add_knob(nuke, node, nuke.Text_Knob(
-        "generation_help", "", "Strength stays below 1.0 so SDXL preserves Source context. "
-        "The same Seed is repeatable; changing it creates another variation."))
+        "generation_help", "", ""))
     previous = "model_help"
-    for name in ("generation_section", "prompt", "negative_prompt", "seed", "randomize_seed",
+    for name in ("generation_section", "generation_mode", "prompt", "negative_prompt", "seed", "randomize_seed",
                  "steps", "guidance_scale", "strength", "render_quality", "low_memory",
-                 "generation_help"):
+                 "seam_blend", "generation_help"):
         _place_knob_after(node, name, previous); previous = name
 
     for name in ("live_mode", "live_help"):
@@ -155,6 +210,43 @@ def create_generative_inpaint_node() -> Any:
     node["knobChanged"].setValue("kyven_nuke.generative_inpaint_node.knob_changed()")
     node["mask_help"].setValue(
         "The preprocessed Model Mask is sent to SDXL and drives Mask Alpha / Premult output.")
+    if int(node["context_padding"].value()) == 128:
+        node["context_padding"].setValue(256)
+    _update_mode_ui(node)
     node["kyven_status"].setValue("Ready — install SDXL from Model Manager before first use")
     if _inside(node, "KyvenOutputSwitch") is not None: inpaint_node._ensure_inpaint_preview_graph(node)
     return node
+
+
+def upgrade_selected_generative_inpaint_node() -> None:
+    nuke = _nuke(); selected = nuke.selectedNodes()
+    if len(selected) != 1 or selected[0].Class() != "Group":
+        nuke.message("Select one Kyven Generative Inpaint Group node first.")
+        return
+    node = selected[0]
+    if "prompt" not in node.knobs() or "low_memory" not in node.knobs():
+        nuke.message("The selected Group is not a Kyven Generative Inpaint node.")
+        return
+    if "generation_mode" not in node.knobs():
+        mode = nuke.Enumeration_Knob(
+            "generation_mode", "Mode", ["Remove / Clean Plate", "Replace / Prompt"]
+        )
+        node.addKnob(mode); _place_knob_after(node, "generation_mode", "generation_section")
+    if "seam_blend" not in node.knobs():
+        seam = nuke.Int_Knob("seam_blend", "Seam Blend (px)")
+        seam.setRange(0, 128); seam.setValue(16); node.addKnob(seam)
+        _place_knob_after(node, "seam_blend", "low_memory")
+    if str(node["prompt"].value()) == "clean background matching the surrounding scene":
+        node["prompt"].setValue("")
+    if float(node["guidance_scale"].value()) == 6.0:
+        node["guidance_scale"].setValue(4.0)
+    if int(node["context_padding"].value()) == 128:
+        node["context_padding"].setValue(256)
+    node["kyven_title"].setValue(
+        '<font size="5" color="#dce9f2"><b>KYVEN / GENERATIVE INPAINT</b></font><br>'
+        '<font color="#91a3b0">SDXL | Clean Plate or Replace | API 22</font>'
+    )
+    _update_mode_ui(node)
+    if int(node["output_mode"].getValue()) == 3:
+        node["output_mode"].setValue(1)
+    node["kyven_status"].setValue("Updated — Clean Plate and Seam Blend are ready")

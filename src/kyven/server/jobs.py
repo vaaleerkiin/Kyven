@@ -333,6 +333,8 @@ class JobManager:
             preprocess_mask=bool(payload.get("preprocess_mask", True)),
             prompt=str(payload.get("prompt", "")),
             negative_prompt=str(payload.get("negative_prompt", "")),
+            generation_mode=str(payload.get("generation_mode", "clean_plate")),
+            seam_blend=int(payload.get("seam_blend", 0)),
             seed=int(payload.get("seed", 0)),
             steps=int(payload.get("steps", 25)),
             guidance_scale=float(payload.get("guidance_scale", 6.0)),

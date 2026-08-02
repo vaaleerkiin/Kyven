@@ -45,6 +45,8 @@ class InpaintRequest:
     preprocess_mask: bool = True
     prompt: str = ""
     negative_prompt: str = ""
+    generation_mode: str = "clean_plate"
+    seam_blend: int = 0
     seed: int = 0
     steps: int = 25
     guidance_scale: float = 6.0
@@ -85,6 +87,16 @@ class InpaintRequest:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Generative strength must be at least 0.01 and below 1.0.")
         if self.render_quality not in {"preview", "final"}:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Render quality must be preview or final.")
+        if self.generation_mode not in {"clean_plate", "replace"}:
+            raise KyvenError(
+                ErrorCode.INVALID_REQUEST,
+                "Generation mode must be clean_plate or replace.",
+            )
+        if not 0 <= self.seam_blend <= 128:
+            raise KyvenError(
+                ErrorCode.INVALID_REQUEST,
+                "Seam blend must be between 0 and 128 pixels.",
+            )
 
     def canonical(self) -> dict[str, Any]:
         return {
@@ -102,6 +114,8 @@ class InpaintRequest:
             "preprocess_mask": self.preprocess_mask,
             "prompt": self.prompt,
             "negative_prompt": self.negative_prompt,
+            "generation_mode": self.generation_mode,
+            "seam_blend": self.seam_blend,
             "seed": self.seed,
             "steps": self.steps,
             "guidance_scale": self.guidance_scale,

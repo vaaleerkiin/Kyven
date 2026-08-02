@@ -46,6 +46,9 @@ ROI, output modes, frame/range processing, cache, progress, and cancellation. It
 Negative Prompt, Seed, Steps, Guidance, Strength, Preview/Final quality, and Low Memory. SDXL is an
 optional ~7 GB model and is not loaded by classic LaMa Inpaint. See
 [Generative Inpaint](GENERATIVE_INPAINT.md).
+Clean Plate is the removal default. It rejects new foreground subjects and uses inward-only Seam
+Blend plus boundary color matching. `Raw Patch (shows ROI seams)` is intentionally diagnostic;
+finished composites should use Result, Result + Mask Alpha, or Result Premult.
 
 ## Kyven branding and project link
 
@@ -238,7 +241,7 @@ clean RGB; lower it only when deliberate brightness changes inside the repaired 
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18784` and requires API 21. A
+The adapter starts an external hidden Python process on `127.0.0.1:18785` and requires API 22. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

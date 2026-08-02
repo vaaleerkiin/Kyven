@@ -9,7 +9,7 @@ from PIL import Image
 
 from kyven.inpaint.models import InpaintCapabilities, InpaintPrediction, InpaintRequest
 from kyven.inpaint.providers.sdxl import _model_size
-from kyven.inpaint.service import InpaintService
+from kyven.inpaint.service import InpaintService, _inward_feather_alpha
 from kyven.segment.models import BoxPrompt
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.server.jobs import JobManager
@@ -40,6 +40,15 @@ class InpaintServiceTests(unittest.TestCase):
         self.assertEqual(_model_size((400, 200), 1024), (1024, 512))
         self.assertEqual(_model_size((1920, 1080), 768), (768, 432))
 
+    def test_seam_blend_softens_only_inside_model_mask(self) -> None:
+        mask = np.zeros((31, 31), dtype=np.uint8)
+        mask[5:26, 5:26] = 255
+        alpha = _inward_feather_alpha(mask, 8)[..., 0]
+        self.assertEqual(float(alpha[4, 15]), 0.0)
+        self.assertGreater(float(alpha[5, 15]), 0.0)
+        self.assertLess(float(alpha[5, 15]), 1.0)
+        self.assertGreater(float(alpha[15, 15]), 0.95)
+
     def test_generative_parameters_are_validated_and_cached(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -53,12 +62,16 @@ class InpaintServiceTests(unittest.TestCase):
                 prompt="remove the sign", negative_prompt="text", seed=42,
                 steps=18, guidance_scale=5.5, strength=0.95,
                 render_quality="preview",
+                generation_mode="clean_plate",
+                seam_blend=16,
             )
             request.validate()
             canonical = request.canonical()
             self.assertEqual(canonical["prompt"], "remove the sign")
             self.assertEqual(canonical["seed"], 42)
             self.assertEqual(canonical["render_quality"], "preview")
+            self.assertEqual(canonical["generation_mode"], "clean_plate")
+            self.assertEqual(canonical["seam_blend"], 16)
 
             parsed = JobManager.inpaint_request_from_payload(
                 {

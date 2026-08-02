@@ -643,7 +643,7 @@ def create_inpaint_node() -> Any:
     nuke = _nuke(); selected = nuke.selectedNodes(); source = selected[0] if selected else None; mask = selected[1] if len(selected) > 1 else None
     node = nuke.nodes.Group(name="KyvenInpaint"); node.setInput(SOURCE_INPUT, source); node.setInput(MASK_INPUT, mask)
     node["label"].setValue("[value kyven_status]"); node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint")); add_node_branding(node, nuke)
-    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 21</font>'))
+    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 22</font>'))
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
     _add_knob(nuke, node, nuke.Enumeration_Knob("profile", "Memory Profile", ["low_memory", "balanced", "quality"])); node["profile"].setValue(1)
@@ -776,7 +776,7 @@ def upgrade_selected_inpaint_node() -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br>'
-            '<font color="#91a3b0">LaMa | Source + Mask | API 21</font>'
+            '<font color="#91a3b0">LaMa | Source + Mask | API 22</font>'
         )
     if "mask_help" in node.knobs():
         node["mask_help"].setValue(
