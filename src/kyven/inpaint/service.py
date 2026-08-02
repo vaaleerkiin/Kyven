@@ -221,10 +221,12 @@ class InpaintService:
             request.edge_color_match,
             match_boundary=request.generation_mode == "clean_plate",
         )
-        merge_mask = Image.fromarray(merge_crop_pixels, mode="L")
-        alpha = _inward_feather_alpha(merge_crop_pixels, request.seam_blend)
-        full_merge_mask = np.zeros_like(mask_pixels)
-        full_merge_mask[region.y0 : region.y1, region.x0 : region.x1] = np.asarray(merge_mask)
+        if not request.preprocess_mask and request.seam_blend <= 0:
+            alpha = (merge_crop_pixels.astype(np.float32) / 255.0)[..., None]
+        else:
+            alpha = _inward_feather_alpha(merge_crop_pixels, request.seam_blend)
+        full_merge_mask = np.zeros_like(mask_pixels, dtype=np.float32)
+        full_merge_mask[region.y0 : region.y1, region.x0 : region.x1] = alpha[..., 0]
         if request.mask_output is not None:
             write_mask_png_atomic(request.mask_output, full_merge_mask)
         full_patch = source_pixels.copy()

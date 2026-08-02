@@ -10,7 +10,7 @@ from typing import Any
 
 from kyven_nuke.branding import add_node_branding
 from kyven_nuke.client import NukeKyvenClientError
-from kyven_nuke.color_management import set_data_io
+from kyven_nuke.color_management import match_color_io, set_data_io, set_interchange_color_io
 from kyven_nuke.node import (
     _add_knob,
     _add_section,
@@ -106,6 +106,9 @@ def _set_result(node: Any, path: Path, first: int | None = None, last: int | Non
             nuke.toNode("KyvenResultSwitch").setInput(1, read)
         else:
             read["file"].setValue(_nuke_file_path(path))
+        source_writer = nuke.toNode("KyvenInpaintSourceWrite")
+        if source_writer is not None:
+            match_color_io(source_writer, read)
         if first is not None and last is not None:
             for name, value in (("first", first), ("last", last), ("origfirst", first), ("origlast", last)):
                 if name in read.knobs(): read[name].setValue(value)
@@ -145,6 +148,9 @@ def _set_patch(node: Any, path: Path, first: int | None = None, last: int | None
             patch_switch.setInput(1, read)
         else:
             read["file"].setValue(_nuke_file_path(path))
+        source_writer = nuke.toNode("KyvenInpaintSourceWrite")
+        if source_writer is not None:
+            match_color_io(source_writer, read)
         if first is not None and last is not None:
             for name, value in (("first", first), ("last", last), ("origfirst", first), ("origlast", last)):
                 if name in read.knobs():
@@ -228,11 +234,30 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         if processed_mask is None:
             processed_mask = nuke.nodes.Switch(name="KyvenProcessedMaskSwitch")
         processed_mask.setInput(0, effective_mask)
+        patch_mask_alpha = nuke.toNode("KyvenPatchMaskAlpha")
+        if patch_mask_alpha is None:
+            patch_mask_alpha = nuke.nodes.Copy(name="KyvenPatchMaskAlpha")
+        patch_mask_alpha.setInput(0, patch_switch)
+        patch_mask_alpha.setInput(1, processed_mask)
+        patch_mask_alpha["from0"].setValue("rgba.red")
+        patch_mask_alpha["to0"].setValue("rgba.alpha")
+        patch_premult = nuke.toNode("KyvenPatchPremult")
+        if patch_premult is None:
+            patch_premult = nuke.nodes.Premult(name="KyvenPatchPremult")
+        patch_premult.setInput(0, patch_mask_alpha)
+        result_composite = nuke.toNode("KyvenResultComposite")
+        if result_composite is None:
+            result_composite = nuke.nodes.Merge2(name="KyvenResultComposite", operation="over")
+        result_composite.setInput(0, patch_premult)
+        result_composite.setInput(1, source)
+        result_opaque.setInput(0, result_composite)
         result_mask_alpha = nuke.toNode("KyvenResultSourceAlpha")
         if result_mask_alpha is None:
             result_mask_alpha = nuke.nodes.Copy(name="KyvenResultSourceAlpha")
         result_mask_alpha.setInput(0, result_opaque)
-        result_mask_alpha.setInput(1, processed_mask)
+        # Public alpha comes directly from Nuke's data graph. It never travels
+        # through an RGB file, so ACES cannot turn 1.0 into 0.61311.
+        result_mask_alpha.setInput(1, effective_mask)
         result_mask_alpha["from0"].setValue("rgba.red")
         result_mask_alpha["to0"].setValue("rgba.alpha")
         result_premult = nuke.toNode("KyvenResultPremult")
@@ -249,6 +274,16 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         processed_mask_read = nuke.toNode("KyvenProcessedMaskRead")
         if processed_mask_read is not None:
             set_data_io(processed_mask_read)
+        source_writer = nuke.toNode("KyvenInpaintSourceWrite")
+        if source_writer is not None:
+            set_interchange_color_io(source_writer)
+            for read_name in ("KyvenResultRead", "KyvenPatchRead"):
+                color_read = nuke.toNode(read_name)
+                if color_read is not None:
+                    match_color_io(source_writer, color_read)
+        if difference is not None:
+            difference.setInput(0, result_composite)
+            difference.setInput(1, source)
         if output_switch is not None:
             output_switch.setInput(0, result_opaque)
             output_switch.setInput(1, result_mask_alpha)

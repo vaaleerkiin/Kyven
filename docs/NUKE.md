@@ -10,6 +10,13 @@ Write and Read nodes. OCIO/ACES therefore never applies a display or color-space
 RGB values before they are copied into alpha: black remains `0.0`, white remains `1.0`, and soft
 mask values round-trip unchanged apart from the selected file format's numeric precision.
 
+Inpaint color caches use one explicit sRGB interchange colorspace for both the internal Source
+Write and Result/Patch Reads. The generated patch is then composited over the original Source inside
+Nuke, in the project's working space. This preserves the untouched ACES/HDR source and avoids a
+different file-type default producing a visible color seam. Public Inpaint alpha comes directly
+from the Nuke mask graph rather than from cached RGB, while the cached blend mask carries the exact
+inward feather used for the generated patch.
+
 ## Portable install
 
 Clone or extract Kyven into its final writable directory and double-click `install.cmd`. To launch

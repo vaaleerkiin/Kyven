@@ -49,6 +49,38 @@ class InpaintServiceTests(unittest.TestCase):
         self.assertLess(float(alpha[5, 15]), 1.0)
         self.assertGreater(float(alpha[15, 15]), 0.95)
 
+    def test_cached_mask_contains_the_exact_seam_blend_alpha(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            mask = root / "mask.png"
+            output = root / "output.png"
+            processed = root / "processed.png"
+            Image.fromarray(np.full((31, 31, 3), 50, dtype=np.uint8)).save(source)
+            pixels = np.zeros((31, 31), dtype=np.uint8)
+            pixels[5:26, 5:26] = 255
+            Image.fromarray(pixels).save(mask)
+
+            InpaintService(self._registry(FakeInpaintProvider())).run(
+                InpaintRequest(
+                    source,
+                    mask,
+                    output,
+                    mask_output=processed,
+                    provider_id="fake",
+                    crop_mode="full",
+                    mask_grow=0,
+                    seam_blend=8,
+                    edge_color_match=0,
+                )
+            )
+
+            cached = np.asarray(Image.open(processed), dtype=np.uint8)
+            self.assertEqual(int(cached[4, 15]), 0)
+            self.assertGreater(int(cached[5, 15]), 0)
+            self.assertLess(int(cached[5, 15]), 255)
+            self.assertGreater(int(cached[15, 15]), 240)
+
     def test_generative_parameters_are_validated_and_cached(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
