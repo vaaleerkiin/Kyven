@@ -88,6 +88,16 @@ class NukeKyvenClient:
             )["job_id"]
         )
 
+    def submit_generative_inpaint(self, payload):
+        return str(
+            self._request(
+                "POST",
+                "/v1/jobs/generative-inpaint",
+                payload,
+                timeout_seconds=30.0,
+            )["job_id"]
+        )
+
     def preview_trimap(self, payload):
         return self._request("POST", "/v1/preview/trimap", payload, timeout_seconds=60.0)
 

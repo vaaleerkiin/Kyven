@@ -12,6 +12,9 @@ Built-in provider metadata currently references:
 | ViTMatte Base Distinctions-646 checkpoint | Alpha refinement | Apache-2.0 | https://huggingface.co/hustvl/vitmatte-base-distinctions-646 |
 | OpenCV LaMa ONNX checkpoint | Object removal / inpainting | Apache-2.0 | https://huggingface.co/opencv/inpainting_lama |
 | Big-LaMa architecture and TorchScript checkpoint | Native-resolution object removal | Apache-2.0 | https://github.com/advimman/lama |
+| SDXL Inpainting 1.0 checkpoint | Optional prompt-guided inpainting | CreativeML Open RAIL++-M | https://huggingface.co/diffusers/stable-diffusion-xl-1.0-inpainting-0.1 |
+| Hugging Face Diffusers | Optional SDXL pipeline runtime | Apache-2.0 | https://github.com/huggingface/diffusers |
+| Hugging Face Accelerate | Optional low-memory SDXL execution | Apache-2.0 | https://github.com/huggingface/accelerate |
 | ONNX Runtime | LaMa inference runtime | MIT | https://github.com/microsoft/onnxruntime |
 | Hugging Face Transformers | ViTMatte runtime implementation | Apache-2.0 | https://github.com/huggingface/transformers |
 | Safetensors | Verified model weight loading | Apache-2.0 | https://github.com/huggingface/safetensors |

@@ -43,6 +43,14 @@ class InpaintRequest:
     mask_channel: str = "luminance"
     processing_size: int = 0
     preprocess_mask: bool = True
+    prompt: str = ""
+    negative_prompt: str = ""
+    seed: int = 0
+    steps: int = 25
+    guidance_scale: float = 6.0
+    strength: float = 0.99
+    low_memory: bool = True
+    render_quality: str = "final"
 
     def validate(self) -> None:
         for label, path in (("Source", self.source), ("Mask", self.mask)):
@@ -69,6 +77,14 @@ class InpaintRequest:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Mask channel must be luminance or alpha.")
         if self.processing_size and self.processing_size < 128:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Processing size must be zero or at least 128 pixels.")
+        if not 1 <= self.steps <= 100:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Generative steps must be between 1 and 100.")
+        if not 0.0 <= self.guidance_scale <= 20.0:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Guidance scale must be between 0 and 20.")
+        if not 0.01 <= self.strength < 1.0:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Generative strength must be at least 0.01 and below 1.0.")
+        if self.render_quality not in {"preview", "final"}:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Render quality must be preview or final.")
 
     def canonical(self) -> dict[str, Any]:
         return {
@@ -84,6 +100,14 @@ class InpaintRequest:
             "mask_channel": self.mask_channel,
             "processing_size": self.processing_size,
             "preprocess_mask": self.preprocess_mask,
+            "prompt": self.prompt,
+            "negative_prompt": self.negative_prompt,
+            "seed": self.seed,
+            "steps": self.steps,
+            "guidance_scale": self.guidance_scale,
+            "strength": self.strength,
+            "low_memory": self.low_memory,
+            "render_quality": self.render_quality,
         }
 
     def cache_key(self, provider_version: str, model_checksum: str) -> str:

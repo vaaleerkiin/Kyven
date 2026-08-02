@@ -1,7 +1,7 @@
 # Kyven Tools for Nuke
 
 The Nuke adapter exposes independent Kyven Tools operations as native-looking Group nodes. The
-current Segment, Refine, and Inpaint nodes export frames to the local Kyven Server and read cached results
+current Segment, Refine, Inpaint, and Generative Inpaint nodes export frames to the local Kyven Server and read cached results
 back into the graph. Future Depth nodes will reuse the same host/server boundary and
 per-node cache conventions. Nuke remains responsive while server inference runs.
 
@@ -32,11 +32,20 @@ nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 
 The adapter discovers the repository from its own installed plugin path, so the folder may be placed
 anywhere. `KYVEN_ROOT` is only an optional override for custom deployments. Restart Nuke and choose
-`Kyven > Segment`, `Kyven > Refine`, or `Kyven > Inpaint` from the Nodes menu.
+`Kyven > Segment`, `Kyven > Refine`, `Kyven > Inpaint`, or `Kyven > Generative Inpaint (SDXL)` from the Nodes menu.
 
 Use `Kyven > Model Manager...` at any time to install or remove a trusted catalog checkpoint. The
 same button appears in every Kyven node. Downloads show progress and become available only after
 exact size and SHA-256 verification; model removal does not delete rendered caches.
+Pinned repository models use a fixed audited revision instead of a single-file checksum.
+
+## Generative Inpaint workflow
+
+The separate SDXL node reuses classic Inpaint's Source/Mask inputs, immediate Model Mask Preview,
+ROI, output modes, frame/range processing, cache, progress, and cancellation. It adds Prompt,
+Negative Prompt, Seed, Steps, Guidance, Strength, Preview/Final quality, and Low Memory. SDXL is an
+optional ~7 GB model and is not loaded by classic LaMa Inpaint. See
+[Generative Inpaint](GENERATIVE_INPAINT.md).
 
 ## Kyven branding and project link
 
@@ -229,7 +238,7 @@ clean RGB; lower it only when deliberate brightness changes inside the repaired 
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18783` and requires API 20. A
+The adapter starts an external hidden Python process on `127.0.0.1:18784` and requires API 21. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

@@ -5,7 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import tempfile
+import threading
+import time
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -34,16 +37,27 @@ class ModelSpec:
     license_url: str
     commercial_use: bool
     redistribution: bool
+    download_type: str = "file"
+    revision: str = ""
+    allow_patterns: tuple[str, ...] = ()
+    license_acceptance_required: bool = False
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> ModelSpec:
-        return cls(**value)
+        normalized = dict(value)
+        normalized["allow_patterns"] = tuple(normalized.get("allow_patterns", ()))
+        return cls(**normalized)
 
     def path(self, models_dir: Path) -> Path:
         return models_dir / self.filename
 
     def snapshot(self, models_dir: Path, available_vram_mb: int | None = None) -> dict[str, Any]:
         path = self.path(models_dir)
+        installed = (
+            (path / "model_index.json").is_file()
+            if self.download_type == "huggingface_snapshot"
+            else path.is_file()
+        )
         return {
             "model_id": self.model_id,
             "task": self.task,
@@ -54,8 +68,11 @@ class ModelSpec:
             "recommended_vram_mb": self.recommended_vram_mb,
             "supports_cpu": self.supports_cpu,
             "license": self.license,
+            "license_url": self.license_url,
             "commercial_use": self.commercial_use,
-            "installed": path.is_file(),
+            "redistribution": self.redistribution,
+            "license_acceptance_required": self.license_acceptance_required,
+            "installed": installed,
             "compatible": (
                 None
                 if available_vram_mb is None
@@ -145,6 +162,20 @@ class ModelCatalog:
                         device=device,
                     ),
                 )
+        from kyven.inpaint.providers.sdxl import SdxlInpaintProvider
+
+        for spec in self.list("generative_inpaint"):
+            registry.register(
+                spec.model_id,
+                lambda spec=spec: SdxlInpaintProvider(
+                    checkpoint=str(spec.path(models_dir)),
+                    device=device,
+                    provider_id=spec.model_id,
+                    display_name=spec.display_name,
+                    license_url=spec.license_url,
+                    minimum_vram_mb=spec.recommended_vram_mb,
+                ),
+            )
         return registry
 
     def download(
@@ -157,6 +188,8 @@ class ModelCatalog:
         spec = self.get(model_id)
         models_dir.mkdir(parents=True, exist_ok=True)
         target = spec.path(models_dir)
+        if spec.download_type == "huggingface_snapshot":
+            return self._download_snapshot(spec, models_dir, target, progress, cancelled)
         if target.is_file() and self._sha256(target) == spec.sha256:
             return target
         descriptor, temporary_name = tempfile.mkstemp(
@@ -196,6 +229,76 @@ class ModelCatalog:
         finally:
             temporary.unlink(missing_ok=True)
 
+    @staticmethod
+    def _download_snapshot(
+        spec: ModelSpec,
+        models_dir: Path,
+        target: Path,
+        progress: Callable[[int, int], None] | None,
+        cancelled: Callable[[], bool] | None,
+    ) -> Path:
+        if (target / "model_index.json").is_file():
+            return target
+        if cancelled is not None and cancelled():
+            raise KyvenError(ErrorCode.CANCELLED, f"Download cancelled: {spec.model_id}")
+        try:
+            from huggingface_hub import snapshot_download
+        except ImportError as exc:
+            raise KyvenError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                "Hugging Face Hub support is not installed.",
+                suggested_action="Run install.ps1 again before installing SDXL.",
+            ) from exc
+        temporary = Path(tempfile.mkdtemp(prefix=f".{spec.filename}-", dir=models_dir))
+        monitor_stop = threading.Event()
+
+        def monitor_download() -> None:
+            while not monitor_stop.wait(0.5):
+                if progress is None:
+                    continue
+                try:
+                    downloaded = sum(
+                        path.stat().st_size for path in temporary.rglob("*") if path.is_file()
+                    )
+                    progress(min(downloaded, max(1, spec.size_bytes - 1)), spec.size_bytes)
+                except OSError:
+                    time.sleep(0.1)
+
+        monitor = threading.Thread(
+            target=monitor_download,
+            name=f"kyven-download-progress-{spec.model_id}",
+            daemon=True,
+        )
+        try:
+            if progress is not None:
+                progress(1, max(1, spec.size_bytes))
+            monitor.start()
+            snapshot_download(
+                repo_id=spec.source.removeprefix("hf://"),
+                revision=spec.revision or None,
+                local_dir=temporary,
+                allow_patterns=list(spec.allow_patterns) or None,
+            )
+            if not (temporary / "model_index.json").is_file():
+                raise KyvenError(
+                    ErrorCode.MODEL_NOT_FOUND,
+                    f"The pinned model snapshot is incomplete: {spec.model_id}",
+                )
+            if cancelled is not None and cancelled():
+                raise KyvenError(ErrorCode.CANCELLED, f"Download cancelled: {spec.model_id}")
+            if target.exists():
+                shutil.rmtree(target)
+            os.replace(temporary, target)
+            if progress is not None:
+                progress(spec.size_bytes, spec.size_bytes)
+            return target
+        finally:
+            monitor_stop.set()
+            if monitor.is_alive():
+                monitor.join(timeout=1.0)
+            if temporary.exists():
+                shutil.rmtree(temporary)
+
     def remove(self, model_id: str, models_dir: Path) -> bool:
         spec = self.get(model_id)
         models_root = models_dir.resolve()
@@ -204,7 +307,10 @@ class ModelCatalog:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Model path is outside the models directory.")
         if not target.exists():
             return False
-        target.unlink()
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
         return True
 
     @staticmethod

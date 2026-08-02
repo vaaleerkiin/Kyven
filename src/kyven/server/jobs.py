@@ -297,7 +297,10 @@ class JobManager:
         return record.job_id
 
     @staticmethod
-    def inpaint_request_from_payload(payload: dict[str, Any]) -> InpaintRequest:
+    def inpaint_request_from_payload(
+        payload: dict[str, Any],
+        default_model_id: str = "lama-2025jan-onnx",
+    ) -> InpaintRequest:
         source = Path(str(payload["source"]))
         mask = Path(str(payload["mask"]))
         output = Path(str(payload["output"]))
@@ -316,7 +319,7 @@ class JobManager:
             model_mask=model_mask,
             mask_output=mask_output,
             patch_output=patch_output,
-            provider_id=str(payload.get("model_id", "lama-2025jan-onnx")),
+            provider_id=str(payload.get("model_id", default_model_id)),
             profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
             crop_mode=str(payload.get("crop_mode", "auto")),
             roi=JobManager._box_from_payload(payload, "roi"),
@@ -328,6 +331,14 @@ class JobManager:
             mask_channel=str(payload.get("mask_channel", "luminance")),
             processing_size=int(payload.get("processing_size", 0)),
             preprocess_mask=bool(payload.get("preprocess_mask", True)),
+            prompt=str(payload.get("prompt", "")),
+            negative_prompt=str(payload.get("negative_prompt", "")),
+            seed=int(payload.get("seed", 0)),
+            steps=int(payload.get("steps", 25)),
+            guidance_scale=float(payload.get("guidance_scale", 6.0)),
+            strength=float(payload.get("strength", 0.99)),
+            low_memory=bool(payload.get("low_memory", True)),
+            render_quality=str(payload.get("render_quality", "final")),
         )
 
     def submit_inpaint(self, payload: dict[str, Any]) -> str:
@@ -338,6 +349,27 @@ class JobManager:
             request.validate()
         except (KeyError, TypeError, ValueError) as exc:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "The inpaint job payload is invalid.", technical_detail=str(exc)) from exc
+        record = JobRecord(job_id=uuid.uuid4().hex, request=request)
+        with self._lock:
+            self._jobs[record.job_id] = record
+        self._executor.submit(self._run_inpaint, record)
+        return record.job_id
+
+    def submit_generative_inpaint(self, payload: dict[str, Any]) -> str:
+        if self._inpaint_service is None:
+            raise KyvenError(ErrorCode.PROVIDER_UNAVAILABLE, "Generative Inpaint is unavailable.")
+        try:
+            request = self.inpaint_request_from_payload(
+                payload,
+                default_model_id="sdxl-inpainting-1.0",
+            )
+            request.validate()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise KyvenError(
+                ErrorCode.INVALID_REQUEST,
+                "The generative inpaint job payload is invalid.",
+                technical_detail=str(exc),
+            ) from exc
         record = JobRecord(job_id=uuid.uuid4().hex, request=request)
         with self._lock:
             self._jobs[record.job_id] = record

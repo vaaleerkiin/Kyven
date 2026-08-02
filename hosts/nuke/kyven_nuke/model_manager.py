@@ -24,10 +24,10 @@ def _format_size(size_bytes):
 
 def _choice_label(model):
     state = "installed" if model.get("installed") else "not installed"
-    warning = " · VRAM warning" if model.get("compatible") is False else ""
+    warning = " | VRAM warning" if model.get("compatible") is False else ""
     return (
-        f"{str(model.get('task', '')).title()} · {model['display_name']} · "
-        f"{_format_size(model['size_bytes'])} · {state}{warning}"
+        f"{str(model.get('task', '')).replace('_', ' ').title()} | {model['display_name']} | "
+        f"{_format_size(model['size_bytes'])} | {state}{warning}"
     )
 
 
@@ -55,8 +55,9 @@ def show_model_manager():
     )
     panel.addNotepad(
         "Safety",
-        "Downloads come only from the trusted Kyven catalog and are verified by exact size "
-        "and SHA-256 before activation. Model files stay inside the repository.",
+        "Downloads come only from the trusted Kyven catalog. Single-file models are verified "
+        "by exact size and SHA-256; repository models are pinned to an audited revision. "
+        "All model files stay inside the repository.",
     )
     if not panel.show():
         return
@@ -77,6 +78,14 @@ def show_model_manager():
         if model.get("installed"):
             nuke.message(f"{model['display_name']} is already installed.")
             return
+        if model.get("license_acceptance_required") and not nuke.ask(
+            f"Install {model['display_name']}?\n\n"
+            f"License: {model.get('license', 'See model card')}\n"
+            "Commercial use is conditional on following the model license and use restrictions.\n\n"
+            f"Model card: {model.get('license_url', '')}\n\n"
+            "Continue only if you reviewed and accept these terms."
+        ):
+            return
         _start_operation("download", model)
         return
     if not model.get("installed"):
@@ -94,7 +103,7 @@ def _start_operation(action, model):
     nuke = _nuke()
     key = str(model["model_id"])
     title = "Install" if action == "download" else "Remove"
-    task = nuke.ProgressTask(f"Kyven Models · {title} {model['display_name']}")
+    task = nuke.ProgressTask(f"Kyven Models | {title} {model['display_name']}")
     task.setMessage("Submitting model operation")
     task.setProgress(0)
     _tasks[key] = task
@@ -164,7 +173,7 @@ def _refresh_all_nodes():
         return
     by_task = {
         task: [model for model in models if model.get("task") == task]
-        for task in ("segment", "refine", "inpaint")
+        for task in ("segment", "refine", "inpaint", "generative_inpaint")
     }
     for node in nuke.allNodes("Group"):
         if "model" not in node.knobs():

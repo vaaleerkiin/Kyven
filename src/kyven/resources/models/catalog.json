@@ -143,6 +143,43 @@
       "license_url": "https://huggingface.co/hustvl/vitmatte-base-distinctions-646",
       "commercial_use": true,
       "redistribution": true
+    },
+    {
+      "model_id": "sdxl-inpainting-1.0",
+      "task": "generative_inpaint",
+      "display_name": "SDXL Inpainting 1.0",
+      "provider": "sdxl-diffusers",
+      "config": "",
+      "filename": "sdxl-inpainting-1.0",
+      "source": "hf://diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
+      "sha256": "",
+      "size_bytes": 7100000000,
+      "parameters_millions": 3000.0,
+      "recommended_vram_mb": 8192,
+      "supports_cpu": true,
+      "license": "CreativeML Open RAIL++-M",
+      "license_url": "https://huggingface.co/diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
+      "commercial_use": true,
+      "redistribution": true,
+      "download_type": "huggingface_snapshot",
+      "revision": "115134f363124c53c7d878647567d04daf26e41e",
+      "allow_patterns": [
+        "model_index.json",
+        "scheduler/*",
+        "tokenizer/*",
+        "tokenizer_2/*",
+        "text_encoder/config.json",
+        "text_encoder/model.fp16.safetensors",
+        "text_encoder_2/config.json",
+        "text_encoder_2/model.fp16.safetensors",
+        "unet/config.json",
+        "unet/diffusion_pytorch_model.fp16.safetensors",
+        "vae/config.json",
+        "vae/diffusion_pytorch_model.fp16.safetensors",
+        "LICENSE*",
+        "README*"
+      ],
+      "license_acceptance_required": true
     }
   ]
 }

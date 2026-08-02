@@ -260,27 +260,40 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         node.end()
 
 
-def _apply(node_name: str, job: dict[str, Any], output: Path, processed_mask: Path, patch: Path) -> None:
+def _apply(
+    node_name: str,
+    job: dict[str, Any],
+    output: Path,
+    processed_mask: Path,
+    patch: Path,
+    display_name: str = "Inpaint",
+) -> None:
     node = _nuke().toNode(node_name)
     if node is None: return
     _set_busy(node_name, False)
     if job["status"] != "succeeded":
-        _set_status(node_name, f"Inpaint failed: {_job_error_text(job)}")
+        _set_status(node_name, f"{display_name} failed: {_job_error_text(job)}")
         return
     _set_result(node, output)
     _set_processed_mask(node, processed_mask)
     _set_patch(node, patch)
     roi = (job.get("result") or {}).get("metadata", {}).get("processing_roi")
     suffix = f" | crop {roi['width']}x{roi['height']}" if roi else ""
-    _set_status(node_name, f"Inpaint complete{suffix}")
+    _set_status(node_name, f"{display_name} complete{suffix}")
 
 
-def process_current_frame_for_node(node: Any, live: bool = False) -> None:
+def process_current_frame_for_node(
+    node: Any,
+    live: bool = False,
+    payload_builder: Any = _payload,
+    submit_method: str = "submit_inpaint",
+    display_name: str = "Inpaint",
+) -> None:
     nuke = _nuke()
     node_name = str(node.fullName())
     if bool(node["kyven_busy"].value()):
         if not live:
-            _set_status(node_name, "Inpaint is already processing this node.")
+            _set_status(node_name, f"{display_name} is already processing this node.")
         return
     _ensure_input_order(node)
     source, mask = node.input(SOURCE_INPUT), node.input(MASK_INPUT)
@@ -307,7 +320,7 @@ def process_current_frame_for_node(node: Any, live: bool = False) -> None:
     _set_status(node.fullName(), "Exporting inpaint inputs...")
     show_progress = not live
     if show_progress:
-        _start_progress(node_name, "Kyven Inpaint", f"Exporting frame {frame}")
+        _start_progress(node_name, f"Kyven {display_name}", f"Exporting frame {frame}")
     try:
         nuke.execute(source_writer, frame, frame)
         nuke.execute(model_mask_writer, frame, frame)
@@ -320,10 +333,10 @@ def process_current_frame_for_node(node: Any, live: bool = False) -> None:
             _set_status(node_name, f"Live inpaint export failed: {exc}")
         _set_busy(node_name, False)
         return
-    payload = _payload(node, source, source_path, mask_path, model_mask_path, output_path, processed_mask_path, patch_path, "alpha" if combined else "luminance")
+    payload = payload_builder(node, source, source_path, mask_path, model_mask_path, output_path, processed_mask_path, patch_path, "alpha" if combined else "luminance")
     def work() -> None:
         try:
-            client = ensure_server(); job_id = client.submit_inpaint(payload)
+            client = ensure_server(); job_id = getattr(client, submit_method)(payload)
             _nuke().executeInMainThread(lambda: node["kyven_job_id"].setValue(job_id))
             last_contact = time.monotonic()
             while True:
@@ -352,25 +365,33 @@ def process_current_frame_for_node(node: Any, live: bool = False) -> None:
                     if cancelled:
                         client.cancel(job_id)
                 time.sleep(0.15)
-            _nuke().executeInMainThread(_apply, args=(node_name, job, output_path, processed_mask_path, patch_path))
+            _nuke().executeInMainThread(
+                _apply,
+                args=(node_name, job, output_path, processed_mask_path, patch_path, display_name),
+            )
         except Exception as exc:  # noqa: BLE001
             _nuke().executeInMainThread(_set_busy, args=(node_name, False))
-            _nuke().executeInMainThread(_set_status, args=(node_name, f"Inpaint failed: {exc}"))
+            _nuke().executeInMainThread(_set_status, args=(node_name, f"{display_name} failed: {exc}"))
         finally:
             if show_progress:
                 _nuke().executeInMainThread(_finish_progress, args=(node_name,))
-    threading.Thread(target=work, name="kyven-inpaint", daemon=True).start()
+    threading.Thread(target=work, name=f"kyven-{display_name.lower().replace(' ', '-')}", daemon=True).start()
 
 
 def process_current_frame(node: Any | None = None, live: bool = False) -> None:
     process_current_frame_for_node(node or _nuke().thisNode(), live=live)
 
 
-def process_frame_range() -> None:
-    nuke = _nuke(); node = nuke.thisNode(); _ensure_input_order(node); source, mask = node.input(SOURCE_INPUT), node.input(MASK_INPUT)
+def process_frame_range_for_node(
+    node: Any,
+    payload_builder: Any = _payload,
+    submit_method: str = "submit_inpaint",
+    display_name: str = "Inpaint",
+) -> None:
+    nuke = _nuke(); _ensure_input_order(node); source, mask = node.input(SOURCE_INPUT), node.input(MASK_INPUT)
     node_name = str(node.fullName())
     if bool(node["kyven_busy"].value()):
-        _set_status(node_name, "Inpaint is already processing this node.")
+        _set_status(node_name, f"{display_name} is already processing this node.")
         return
     first = int(node["range_first"].value()); last = int(node["range_last"].value())
     if source is None or mask is None: nuke.message("Connect Source and Mask first."); return
@@ -389,7 +410,7 @@ def process_frame_range() -> None:
         mask_pattern = source_pattern
     else:
         mask_writer["file"].setValue(_nuke_file_path(mask_pattern))
-    _start_progress(node_name, "Kyven Inpaint", f"Exporting frames {first}-{last}")
+    _start_progress(node_name, f"Kyven {display_name}", f"Exporting frames {first}-{last}")
     try:
         nuke.execute(source_writer, first, last)
         nuke.execute(model_mask_writer, first, last)
@@ -397,7 +418,7 @@ def process_frame_range() -> None:
     except Exception as exc:  # noqa: BLE001
         _finish_progress(node_name); _set_busy(node_name, False); nuke.message(f"Inpaint export failed: {exc}"); return
     payloads = [
-        _payload(node, source, Path(str(source_pattern) % frame), Path(str(mask_pattern) % frame), Path(str(model_mask_pattern) % frame), Path(str(output_pattern) % frame), Path(str(processed_mask_pattern) % frame), Path(str(patch_pattern) % frame), "alpha" if combined else "luminance")
+        payload_builder(node, source, Path(str(source_pattern) % frame), Path(str(mask_pattern) % frame), Path(str(model_mask_pattern) % frame), Path(str(output_pattern) % frame), Path(str(processed_mask_pattern) % frame), Path(str(patch_pattern) % frame), "alpha" if combined else "luminance")
         for frame in range(first, last + 1)
     ]
     def work() -> None:
@@ -410,12 +431,12 @@ def process_frame_range() -> None:
                 )
                 if cancelled:
                     break
-                job_id = client.submit_inpaint(payload)
+                job_id = getattr(client, submit_method)(payload)
                 _nuke().executeInMainThread(lambda value=job_id: node["kyven_job_id"].setValue(value))
                 job = client.wait(job_id)
                 if job["status"] != "succeeded":
                     error = job.get("error") or {}; raise RuntimeError(error.get("message", job["status"]))
-                _nuke().executeInMainThread(_update_progress, args=(node_name, int(index * 100 / total), f"Inpaint frame {first + index - 1} ({index}/{total})"))
+                _nuke().executeInMainThread(_update_progress, args=(node_name, int(index * 100 / total), f"{display_name} frame {first + index - 1} ({index}/{total})"))
             cancelled = _nuke().executeInMainThreadWithResult(
                 _progress_cancelled,
                 args=(node_name,),
@@ -424,13 +445,17 @@ def process_frame_range() -> None:
                 _nuke().executeInMainThread(_set_result, args=(node, output_pattern, first, last))
                 _nuke().executeInMainThread(_set_processed_mask, args=(node, processed_mask_pattern, first, last))
                 _nuke().executeInMainThread(_set_patch, args=(node, patch_pattern, first, last))
-                _nuke().executeInMainThread(_set_status, args=(node_name, f"Inpaint range ready: {first}-{last}"))
+                _nuke().executeInMainThread(_set_status, args=(node_name, f"{display_name} range ready: {first}-{last}"))
         except Exception as exc:  # noqa: BLE001
-            _nuke().executeInMainThread(_set_status, args=(node_name, f"Inpaint range failed: {exc}"))
+            _nuke().executeInMainThread(_set_status, args=(node_name, f"{display_name} range failed: {exc}"))
         finally:
             _nuke().executeInMainThread(_finish_progress, args=(node_name,))
             _nuke().executeInMainThread(_set_busy, args=(node_name, False))
-    threading.Thread(target=work, name="kyven-inpaint-range", daemon=True).start()
+    threading.Thread(target=work, name=f"kyven-{display_name.lower().replace(' ', '-')}-range", daemon=True).start()
+
+
+def process_frame_range() -> None:
+    process_frame_range_for_node(_nuke().thisNode())
 
 
 def cancel_current_job() -> None:
@@ -618,7 +643,7 @@ def create_inpaint_node() -> Any:
     nuke = _nuke(); selected = nuke.selectedNodes(); source = selected[0] if selected else None; mask = selected[1] if len(selected) > 1 else None
     node = nuke.nodes.Group(name="KyvenInpaint"); node.setInput(SOURCE_INPUT, source); node.setInput(MASK_INPUT, mask)
     node["label"].setValue("[value kyven_status]"); node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint")); add_node_branding(node, nuke)
-    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 20</font>'))
+    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 21</font>'))
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
     _add_knob(nuke, node, nuke.Enumeration_Knob("profile", "Memory Profile", ["low_memory", "balanced", "quality"])); node["profile"].setValue(1)
@@ -751,7 +776,7 @@ def upgrade_selected_inpaint_node() -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br>'
-            '<font color="#91a3b0">LaMa | Source + Mask | API 20</font>'
+            '<font color="#91a3b0">LaMa | Source + Mask | API 21</font>'
         )
     if "mask_help" in node.knobs():
         node["mask_help"].setValue(

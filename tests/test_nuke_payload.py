@@ -201,9 +201,9 @@ class NukePayloadTests(unittest.TestCase):
 
     def test_listener_pid_parser_uses_only_exact_listening_port(self) -> None:
         output = """
-          TCP    127.0.0.1:18783    0.0.0.0:0    LISTENING    17020
+          TCP    127.0.0.1:18784    0.0.0.0:0    LISTENING    17020
           TCP    127.0.0.1:18777    0.0.0.0:0    LISTENING    999
-          TCP    127.0.0.1:18783    127.0.0.1:50000    TIME_WAIT    0
+          TCP    127.0.0.1:18784    127.0.0.1:50000    TIME_WAIT    0
         """
 
         self.assertEqual(_listener_pids(output), (17020,))

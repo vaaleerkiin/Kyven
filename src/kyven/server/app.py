@@ -24,7 +24,7 @@ from kyven.segment.providers.registry import ProviderRegistry
 from kyven.server.jobs import JobManager
 
 MAX_REQUEST_BYTES = 1024 * 1024
-SERVER_API_VERSION = 20
+SERVER_API_VERSION = 21
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +189,16 @@ def _handler_type(
                     if catalog.get(model_id).task != "inpaint":
                         raise KyvenError(ErrorCode.INVALID_REQUEST, "The selected model is not an inpaint model.")
                     job_id = manager.submit_inpaint(payload)
+                    self._send(HTTPStatus.ACCEPTED, {"job_id": job_id, "status": "queued"})
+                    return
+                if path == "/v1/jobs/generative-inpaint":
+                    model_id = str(payload.get("model_id", "sdxl-inpainting-1.0"))
+                    if catalog.get(model_id).task != "generative_inpaint":
+                        raise KyvenError(
+                            ErrorCode.INVALID_REQUEST,
+                            "The selected model is not a generative inpaint model.",
+                        )
+                    job_id = manager.submit_generative_inpaint(payload)
                     self._send(HTTPStatus.ACCEPTED, {"job_id": job_id, "status": "queued"})
                     return
                 if path == "/v1/models/download":

@@ -8,9 +8,11 @@ import numpy as np
 from PIL import Image
 
 from kyven.inpaint.models import InpaintCapabilities, InpaintPrediction, InpaintRequest
+from kyven.inpaint.providers.sdxl import _model_size
 from kyven.inpaint.service import InpaintService
 from kyven.segment.models import BoxPrompt
 from kyven.segment.providers.registry import ProviderRegistry
+from kyven.server.jobs import JobManager
 
 
 class FakeInpaintProvider:
@@ -34,6 +36,44 @@ class FakeInpaintProvider:
 
 
 class InpaintServiceTests(unittest.TestCase):
+    def test_sdxl_model_size_preserves_aspect_and_uses_quality_resolution(self) -> None:
+        self.assertEqual(_model_size((400, 200), 1024), (1024, 512))
+        self.assertEqual(_model_size((1920, 1080), 768), (768, 432))
+
+    def test_generative_parameters_are_validated_and_cached(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            mask = root / "mask.png"
+            output = root / "output.png"
+            Image.new("RGB", (8, 8), "gray").save(source)
+            Image.new("L", (8, 8), 255).save(mask)
+            request = InpaintRequest(
+                source, mask, output, provider_id="sdxl-inpainting-1.0",
+                prompt="remove the sign", negative_prompt="text", seed=42,
+                steps=18, guidance_scale=5.5, strength=0.95,
+                render_quality="preview",
+            )
+            request.validate()
+            canonical = request.canonical()
+            self.assertEqual(canonical["prompt"], "remove the sign")
+            self.assertEqual(canonical["seed"], 42)
+            self.assertEqual(canonical["render_quality"], "preview")
+
+            parsed = JobManager.inpaint_request_from_payload(
+                {
+                    "source": str(source.resolve()),
+                    "mask": str(mask.resolve()),
+                    "output": str(output.resolve()),
+                    "prompt": "new wall",
+                    "seed": 17,
+                },
+                default_model_id="sdxl-inpainting-1.0",
+            )
+            self.assertEqual(parsed.provider_id, "sdxl-inpainting-1.0")
+            self.assertEqual(parsed.prompt, "new wall")
+            self.assertEqual(parsed.seed, 17)
+
     def _registry(self, provider: FakeInpaintProvider) -> ProviderRegistry:
         registry = ProviderRegistry(); registry.register("fake", lambda: provider); return registry
 

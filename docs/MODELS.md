@@ -67,6 +67,18 @@ are pinned by exact byte size and SHA-256, use Apache-2.0 model code/weights, an
 use. PowerPaint is intentionally not included: its roughly 15 GB multi-file runtime conflicts with
 Kyven's portable, efficient installation target.
 
+## Generative Inpaint catalog
+
+| Model ID | Display name | Download | Hardware guidance |
+| --- | --- | ---: | --- |
+| `sdxl-inpainting-1.0` | SDXL Inpainting 1.0 | ~7 GB FP16 subset | 8 GB+ with Low Memory; 12 GB+ preferred |
+
+SDXL is optional and belongs to the separate Generative Inpaint node. Its Diffusers repository is
+pinned to revision `115134f363124c53c7d878647567d04daf26e41e`; Kyven downloads only FP16 pipeline
+components. The model uses CreativeML Open RAIL++-M, not Kyven's Apache-2.0 code license. The user
+must review and accept the model terms, including use restrictions, before installation. See
+[Generative Inpaint](GENERATIVE_INPAINT.md).
+
 ## Planned provider families
 
 Depth is a roadmap item and is not yet part of the catalog or installer. Planned Depth

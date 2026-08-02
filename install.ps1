@@ -2,7 +2,9 @@
 param(
     [string[]]$Model = @(),
 
-    [string]$PythonExe = ""
+    [string]$PythonExe = "",
+
+    [switch]$AcceptRestrictedModelLicense
 )
 
 $ErrorActionPreference = "Stop"
@@ -84,6 +86,7 @@ function Select-Models {
         [pscustomobject]@{ Number = "6"; Id = "lama-2025jan-onnx"; Label = "LaMa ONNX Fast"; Guidance = "CPU / Live, fixed 512 input" },
         [pscustomobject]@{ Number = "7"; Id = "big-lama-native"; Label = "Big-LaMa Native"; Guidance = "best detail, native ROI, 4 GB+" },
         [pscustomobject]@{ Number = "8"; Id = "vitmatte-base-distinctions-646"; Label = "ViTMatte Base"; Guidance = "higher quality, 8 GB+, use tiling" },
+        [pscustomobject]@{ Number = "9"; Id = "sdxl-inpainting-1.0"; Label = "SDXL Inpainting 1.0"; Guidance = "prompt-guided, ~7 GB download, 8 GB+ Low Memory" },
         [pscustomobject]@{ Number = "0"; Id = "none"; Label = "No model"; Guidance = "install runtime only" }
     )
 
@@ -105,7 +108,7 @@ function Select-Models {
         }
         $Match = $Choices | Where-Object Number -eq $Part
         if (-not $Match) {
-            throw "Unknown model choice '$Part'. Run the installer again and enter 0-8."
+            throw "Unknown model choice '$Part'. Run the installer again and enter 0-9."
         }
         if ($Match.Id -eq "none") {
             $AnswerParts = @($Answer -split "[,; ]+" | Where-Object { $_ })
@@ -130,7 +133,8 @@ function Resolve-RequestedModels([string[]]$RequestedModels) {
         "vitmatte-small-composition-1k",
         "lama-2025jan-onnx",
         "big-lama-native",
-        "vitmatte-base-distinctions-646"
+        "vitmatte-base-distinctions-646",
+        "sdxl-inpainting-1.0"
     )
     if (-not $RequestedModels -or $RequestedModels.Count -eq 0) {
         return @(Select-Models)
@@ -184,6 +188,16 @@ Write-Host "Nothing will be installed outside this repository."
 Write-Host "Nuke init.py will not be modified."
 
 $SelectedModels = @(Resolve-RequestedModels $Model)
+if ($SelectedModels -contains "sdxl-inpainting-1.0" -and -not $AcceptRestrictedModelLicense) {
+    Write-Host ""
+    Write-Host "SDXL Inpainting uses the CreativeML Open RAIL++-M license." -ForegroundColor Yellow
+    Write-Host "Commercial use is conditional on following its use restrictions."
+    Write-Host "Review: https://huggingface.co/diffusers/stable-diffusion-xl-1.0-inpainting-0.1"
+    $LicenseAnswer = Read-Host "Type ACCEPT to install this optional model"
+    if ($LicenseAnswer -cne "ACCEPT") {
+        throw "SDXL model license was not accepted. Rerun without model 9 or review and accept its terms."
+    }
+}
 if ($SelectedModels.Count -gt 0) {
     Write-Host "Models: $($SelectedModels -join ', ')"
 }
