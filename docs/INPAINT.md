@@ -104,7 +104,7 @@ stabilization in the current node.
 | **Result** | Final reconstructed RGB with opaque alpha |
 | **Result + Mask Alpha** | Final RGB carrying the effective Inpaint mask in alpha; default |
 | **Result Premult** | Result + Mask Alpha after Premult |
-| **Generated Patch** | Full-format uncomposited model RGB; use with an external mask and Merge |
+| **Generated Patch** | Full-format RGB with generated pixels inside the binary model mask and exact Source RGB outside it; use with an external mask and Merge |
 | **Difference** | Absolute change between Result and Source |
 | **Source** | Unchanged bypass |
 

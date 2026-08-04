@@ -11,6 +11,7 @@ sys.path.insert(0, str(NUKE_ROOT))
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 from kyven_nuke.inpaint_node import (
     INPAINT_OUTPUT_MODES,
+    _wire_patch_over_source,
 )
 from kyven_nuke.inpaint_node import (
     MASK_INPUT as INPAINT_MASK_INPUT,
@@ -59,6 +60,22 @@ from kyven_nuke.runtime import _listener_pids, _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_inpaint_result_wires_generated_patch_over_source(self) -> None:
+        class Merge:
+            def __init__(self) -> None:
+                self.inputs = {}
+
+            def setInput(self, index, node) -> None:
+                self.inputs[index] = node
+
+        merge = Merge()
+        patch = object()
+        source = object()
+        _wire_patch_over_source(merge, patch, source)
+
+        self.assertIs(merge.inputs[0], source)
+        self.assertIs(merge.inputs[1], patch)
+
     def test_two_input_groups_migrate_source_left_without_swapping_media(self) -> None:
         class Knob:
             def __init__(self, value):

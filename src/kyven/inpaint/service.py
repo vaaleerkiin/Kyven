@@ -249,8 +249,15 @@ class InpaintService:
         full_merge_mask[region.y0 : region.y1, region.x0 : region.x1] = alpha[..., 0]
         if request.mask_output is not None:
             write_mask_png_atomic(request.mask_output, full_merge_mask)
+        # LaMa predicts the complete rectangular ROI and may slightly alter
+        # otherwise clean pixels outside its binary mask. A public Generated
+        # Patch must not expose that model-wide color drift as a visible box.
+        # Keep Source bit-exact outside the model mask and copy only generated
+        # pixels into the full-format patch.
         full_patch = source_pixels.copy()
-        full_patch[region.y0 : region.y1, region.x0 : region.x1] = predicted
+        patch_crop = full_patch[region.y0 : region.y1, region.x0 : region.x1]
+        generated_pixels = inference_mask >= 128
+        patch_crop[generated_pixels] = predicted[generated_pixels]
         if request.patch_output is not None:
             _write_rgb_atomic(request.patch_output, full_patch)
         merged_crop = np.clip(original_crop * (1.0 - alpha) + predicted * alpha, 0, 255).astype(np.uint8)
@@ -265,6 +272,7 @@ class InpaintService:
             "crop_mode": request.crop_mode,
             "edge_color_offset": color_offset,
             "edge_softness": request.edge_softness,
+            "patch_source_preserved_outside_model_mask": True,
         })
         return InpaintResult(
             request.output,

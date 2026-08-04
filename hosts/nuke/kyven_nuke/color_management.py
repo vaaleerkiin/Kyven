@@ -29,7 +29,12 @@ def set_data_io(node: Any) -> None:
 
 
 def set_interchange_color_io(node: Any) -> None:
-    """Choose an explicit sRGB interchange space for AI image files."""
+    """Choose a texture/input sRGB interchange space for AI image files.
+
+    LaMa consumes ordinary display-encoded 8-bit sRGB pixels. Under ACES, a
+    texture/input space is the reversible interchange transform; an Output or
+    display sRGB transform is not suitable for a model round trip.
+    """
 
     knobs = node.knobs()
     if "raw" in knobs:
@@ -44,11 +49,11 @@ def set_interchange_color_io(node: Any) -> None:
     ranked: list[tuple[int, str]] = []
     for value in values:
         normalized = "".join(character for character in str(value).lower() if character.isalnum())
-        if normalized == "srgb":
+        if normalized == "utilitysrgbtexture":
             ranked.append((0, str(value)))
-        elif normalized == "utilitysrgbtexture":
+        elif "srgb" in normalized and "texture" in normalized and "linear" not in normalized:
             ranked.append((1, str(value)))
-        elif normalized.endswith("srgbtexture"):
+        elif normalized == "srgb":
             ranked.append((2, str(value)))
     if ranked:
         colorspace.setValue(min(ranked)[1])

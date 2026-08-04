@@ -49,11 +49,11 @@ class NukeColorManagementTests(unittest.TestCase):
     def test_missing_color_controls_is_supported(self) -> None:
         set_data_io(_Node())
 
-    def test_interchange_prefers_shared_srgb_texture_space(self) -> None:
+    def test_interchange_prefers_texture_srgb_over_output_srgb(self) -> None:
         raw = _Knob(True)
         colorspace = _Knob(
             "default",
-            ["Output - sRGB", "ACES - ACEScg", "Utility - sRGB - Texture"],
+            ["sRGB", "Output - sRGB", "ACES - ACEScg", "Utility - sRGB - Texture"],
         )
         set_interchange_color_io(_Node(raw=raw, colorspace=colorspace))
         self.assertIs(raw.value, False)

@@ -10,10 +10,11 @@ Write and Read nodes. OCIO/ACES therefore never applies a display or color-space
 RGB values before they are copied into alpha: black remains `0.0`, white remains `1.0`, and soft
 mask values round-trip unchanged apart from the selected file format's numeric precision.
 
-Inpaint color caches use one explicit sRGB interchange colorspace for both the internal Source
-Write and Result/Patch Reads. The generated patch is then composited over the original Source inside
-Nuke, in the project's working space. This preserves the untouched ACES/HDR source and avoids a
-different file-type default producing a visible color seam. Public Inpaint alpha comes directly
+Inpaint color caches use an explicit texture/input sRGB interchange colorspace for both the internal
+Source Write and Result/Patch Reads. Under ACES, `Utility - sRGB - Texture` is preferred over an
+Output/display sRGB transform. The generated patch is then composited over the original Source
+inside Nuke, in the project's working space. This preserves the untouched ACES/HDR source and avoids
+a different file-type default producing a visible color seam. Public Inpaint alpha comes directly
 from the Nuke mask graph rather than from cached RGB, while the cached blend mask carries the exact
 inward feather used for the generated patch. The feather keeps the original Source on the mask
 boundary and starts the transition farther inside, preventing bright or dark colour fringes.
@@ -229,8 +230,9 @@ Typical files include exported source frames, displayed `matte.%04d.png`, CPU-pr
 `refine_mask.%04d.png`, `refined_matte.%04d.png`, exact processed trimaps, and lightweight
 `trimap_preview` files under their own UUID folder. Inpaint adds source, mask, and full-format
 `inpaint_result.%04d.png`, `inpaint_patch.%04d.png`, and the effective Inpaint-mask files. Inpaint
-outputs include opaque Result, default Result + Mask Alpha, Result Premult, uncomposited Generated
-Patch, Difference, and Source.
+outputs include opaque Result, default Result + Mask Alpha, Result Premult, Generated Patch,
+Difference, and Source. Generated Patch preserves exact Source RGB outside the binary model mask;
+this prevents LaMa's whole-ROI prediction from appearing as a shifted rectangular patch.
 Disable **Preprocess Input Mask** to use the untouched soft input for compositing; the preview still
 shows the unavoidable binary mask supplied to LaMa. **Preview Model Mask** is the only live mask
 override and reacts to Threshold and Model Grow natively inside Nuke without disk I/O, a server

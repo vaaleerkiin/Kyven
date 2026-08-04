@@ -45,6 +45,17 @@ MASK_INPUT = 0
 SOURCE_INPUT = 1
 
 
+def _wire_patch_over_source(merge: Any, patch: Any, source: Any) -> None:
+    """Wire Nuke Merge2 as foreground A over background B.
+
+    Merge2 input 0 is B (background) and input 1 is A (foreground).
+    Reversing them makes the opaque Source hide the generated patch entirely.
+    """
+
+    merge.setInput(0, source)
+    merge.setInput(1, patch)
+
+
 def _ensure_input_order(node: Any) -> None:
     """Keep Source on the left connector and Mask on the right without swapping media."""
 
@@ -273,8 +284,7 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         result_composite = nuke.toNode("KyvenResultComposite")
         if result_composite is None:
             result_composite = nuke.nodes.Merge2(name="KyvenResultComposite", operation="over")
-        result_composite.setInput(0, patch_premult)
-        result_composite.setInput(1, source)
+        _wire_patch_over_source(result_composite, patch_premult, source)
         result_opaque.setInput(0, result_composite)
         result_mask_alpha = nuke.toNode("KyvenResultSourceAlpha")
         if result_mask_alpha is None:
@@ -829,7 +839,7 @@ def create_inpaint_node() -> Any:
     _add_section(nuke, node, "output_section", "OUTPUT")
     _add_knob(nuke, node, nuke.Enumeration_Knob("output_mode", "Output", list(INPAINT_OUTPUT_MODES)))
     node["output_mode"].setValue(1)
-    _add_knob(nuke, node, nuke.Text_Knob("output_help", "", "Result is opaque RGB with an inward-softened edge. Result + Mask Alpha and Result Premult use the exact mask sent to LaMa. Generated Patch is uncomposited model RGB."))
+    _add_knob(nuke, node, nuke.Text_Knob("output_help", "", "Result is opaque RGB with an inward-softened edge. Result + Mask Alpha and Result Premult use the exact mask sent to LaMa. Generated Patch preserves Source RGB outside that mask."))
     uid = nuke.String_Knob("kyven_uuid", "UUID"); uid.setValue(uuid.uuid4().hex); uid.setVisible(False); node.addKnob(uid)
     _add_section(nuke, node, "cache_section", "CACHE")
     folder = nuke.String_Knob("cache_location", "Cache Folder"); folder.setFlag(nuke.READ_ONLY); folder.setValue(str(_cache_root(node))); _add_knob(nuke, node, folder)
@@ -947,7 +957,7 @@ def upgrade_selected_inpaint_node() -> None:
     if "output_help" in node.knobs():
         node["output_help"].setValue(
             "Result is opaque RGB with an inward-softened edge. Result + Mask Alpha and Result "
-            "Premult use the exact mask sent to LaMa. Generated Patch is uncomposited model RGB."
+            "Premult use the exact mask sent to LaMa. Generated Patch preserves Source RGB outside that mask."
         )
     if "kyven_status" in node.knobs():
         node["kyven_status"].setValue("Inpaint UI upgraded. Cached results were preserved.")

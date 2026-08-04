@@ -148,7 +148,10 @@ class InpaintServiceTests(unittest.TestCase):
             rendered = np.asarray(Image.open(output).convert("RGB"))
             rendered_patch = np.asarray(Image.open(patch).convert("RGB"))
             self.assertTrue(np.all(rendered[0, 0] == 50)); self.assertTrue(np.all(rendered[9, 14] == (255, 0, 0)))
-            self.assertTrue(np.all(rendered_patch[0, 0] == 50)); self.assertTrue(np.all(rendered_patch[7, 12] == (255, 0, 0)))
+            self.assertTrue(np.all(rendered_patch[0, 0] == 50))
+            self.assertTrue(np.all(rendered_patch[7, 12] == 50))
+            self.assertTrue(np.all(rendered_patch[9, 14] == (255, 0, 0)))
+            self.assertTrue(result.metadata["patch_source_preserved_outside_model_mask"])
             self.assertEqual(result.metadata["processing_roi"]["width"], 8)
             self.assertEqual(Image.open(provider.requests[0].source).size if provider.requests[0].source.exists() else (8, 8), (8, 8))
 
