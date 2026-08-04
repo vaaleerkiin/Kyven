@@ -10,6 +10,8 @@ sys.path.insert(0, str(NUKE_ROOT))
 
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 from kyven_nuke.inpaint_node import (
+    CATTERY_DEFAULT_INPUT_COLORSPACE,
+    CATTERY_MODEL_COLORSPACE,
     INPAINT_OUTPUT_MODES,
     _wire_generated_patch,
     _wire_patch_over_source,
@@ -61,6 +63,10 @@ from kyven_nuke.runtime import _listener_pids, _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_inpaint_matches_cattery_lama_color_defaults(self) -> None:
+        self.assertEqual(CATTERY_DEFAULT_INPUT_COLORSPACE, "Linear")
+        self.assertEqual(CATTERY_MODEL_COLORSPACE, "sRGB")
+
     def test_generated_patch_uses_composited_live_source_and_mask(self) -> None:
         class Copy:
             def __init__(self) -> None:
@@ -278,6 +284,8 @@ class NukePayloadTests(unittest.TestCase):
         self.assertTrue(affects_live_result("positive_point_3", "segment"))
         self.assertTrue(affects_live_result("prompt_box", "segment"))
         self.assertTrue(affects_live_result("processing_roi", "refine"))
+        self.assertTrue(affects_live_result("in_colorspace", "inpaint"))
+        self.assertFalse(affects_live_result("input_color_space", "inpaint"))
         self.assertFalse(affects_live_result("foreground_radius", "refine"))
         self.assertFalse(affects_live_result("max_hole_area", "segment"))
         self.assertFalse(affects_live_result("output_mode", "segment"))

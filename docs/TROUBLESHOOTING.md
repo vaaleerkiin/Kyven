@@ -102,10 +102,9 @@ the active internal Read, including its frame range. If files were deleted exter
 
 1. Upgrade the selected node with `Kyven > Upgrade Selected Inpaint Node`.
 2. Delete that node's old cache; cached patches retain the transfer used when they were rendered.
-3. Process once with **LaMa Input Color = sRGB Texture**.
-4. If the ROI boundary remains under the project's OCIO configuration, choose
-   **Linear / Working (Raw)** and process again. Source Write and Result/Patch Reads will then bypass
-   OCIO symmetrically.
+3. Keep the Cattery-compatible default **Input Colorspace = Linear** and process again.
+4. If the incoming pixels are in another space, select that exact Nuke colorspace. Kyven converts
+   it to `sRGB` before LaMa and converts the result from `sRGB` back to the selected space.
 
 Generated Patch is rebuilt from the live Nuke Source and never reads returned RGB outside the binary model mask. If a rectangular boundary is
 still visible after a fresh render, confirm that Nuke is not displaying an older cached Read.

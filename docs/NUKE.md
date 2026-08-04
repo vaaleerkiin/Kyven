@@ -10,17 +10,14 @@ Write and Read nodes. OCIO/ACES therefore never applies a display or color-space
 RGB values before they are copied into alpha: black remains `0.0`, white remains `1.0`, and soft
 mask values round-trip unchanged apart from the selected file format's numeric precision.
 
-Inpaint color caches use an explicit texture/input sRGB interchange colorspace for both the internal
-Source Write and Result/Patch Reads. Under ACES, `Utility - sRGB - Texture` is preferred over an
-Output/display sRGB transform. The generated patch is then composited over the original Source
-inside Nuke, in the project's working space. This preserves the untouched ACES/HDR source and avoids
-a different file-type default producing a visible color seam. Public Inpaint alpha comes directly
+Inpaint mirrors Cattery LaMa's native Nuke color graph: `Input Colorspace -> sRGB` before inference
+and `sRGB -> Input Colorspace` afterward, with **Linear** selected by default. The linked
+**Input Colorspace** knob exposes the same choices as Nuke's Colorspace node. The intervening cache
+Write and Reads are raw, preventing an extra file transform. The generated patch is then composited
+over the original Source inside Nuke. Public Inpaint alpha comes directly
 from the Nuke mask graph rather than from cached RGB, while the cached blend mask carries the exact
 inward feather used for the generated patch. The feather keeps the original Source on the mask
 boundary and starts the transition farther inside, preventing bright or dark colour fringes.
-The Inpaint **LaMa Input Color** control can switch the same Write and Reads to
-`Linear / Working (Raw)` when the plate is already prepared as linear model input or the project's
-OCIO configuration does not provide a reversible sRGB texture transform.
 
 ## Portable install
 

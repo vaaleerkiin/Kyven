@@ -10,7 +10,7 @@ from typing import Any
 
 from kyven_nuke.branding import add_node_branding
 from kyven_nuke.client import NukeKyvenClientError
-from kyven_nuke.color_management import configure_ai_color_io, match_color_io, set_data_io
+from kyven_nuke.color_management import set_data_io
 from kyven_nuke.node import (
     _add_knob,
     _add_section,
@@ -41,6 +41,8 @@ INPAINT_OUTPUT_MODES = (
     "Difference",
     "Source",
 )
+CATTERY_DEFAULT_INPUT_COLORSPACE = "Linear"
+CATTERY_MODEL_COLORSPACE = "sRGB"
 MASK_INPUT = 0
 SOURCE_INPUT = 1
 
@@ -63,34 +65,46 @@ def _wire_generated_patch(copy: Any, result: Any, mask: Any) -> None:
     copy.setInput(1, mask)
 
 
-def _uses_linear_input(node: Any) -> bool:
-    return (
-        "input_color_space" in node.knobs()
-        and int(node["input_color_space"].getValue()) == 1
-    )
+def _set_colorspace(node: Any, knob_name: str, value: str) -> None:
+    if node is None or knob_name not in node.knobs():
+        return
+    try:
+        node[knob_name].setValue(value)
+    except (TypeError, ValueError):
+        return
 
 
-def _configure_color_read(node: Any, source_writer: Any, read: Any) -> None:
-    if _uses_linear_input(node):
-        set_data_io(read)
-    else:
-        match_color_io(source_writer, read)
+def _input_colorspace(node: Any) -> str:
+    input_transform = _inside(node, "KyvenInputToSRGB")
+    if input_transform is None or "colorspace_in" not in input_transform.knobs():
+        return CATTERY_DEFAULT_INPUT_COLORSPACE
+    return str(input_transform["colorspace_in"].value())
+
+
+def _configure_color_read(read: Any) -> None:
+    # The explicit Colorspace nodes own the transform, exactly like Cattery
+    # LaMa. Cache files themselves are always raw sRGB model pixels.
+    set_data_io(read)
 
 
 def _configure_color_io(node: Any) -> None:
-    """Apply the artist-selected LaMa interchange transfer to Write and Reads."""
+    """Mirror Cattery LaMa's selected-space -> sRGB -> selected-space graph."""
 
     source_writer = _inside(node, "KyvenInpaintSourceWrite")
     if source_writer is None:
         return
-    configure_ai_color_io(
-        source_writer,
-        (
-            _inside(node, "KyvenResultRead"),
-            _inside(node, "KyvenPatchRead"),
-        ),
-        linear=_uses_linear_input(node),
-    )
+    selected = _input_colorspace(node)
+    input_transform = _inside(node, "KyvenInputToSRGB")
+    _set_colorspace(input_transform, "colorspace_out", CATTERY_MODEL_COLORSPACE)
+    for name in ("KyvenResultFromSRGB", "KyvenPatchFromSRGB"):
+        transform = _inside(node, name)
+        _set_colorspace(transform, "colorspace_in", CATTERY_MODEL_COLORSPACE)
+        _set_colorspace(transform, "colorspace_out", selected)
+    set_data_io(source_writer)
+    for name in ("KyvenResultRead", "KyvenPatchRead"):
+        read = _inside(node, name)
+        if read is not None:
+            set_data_io(read)
 
 
 def _ensure_input_order(node: Any) -> None:
@@ -179,9 +193,7 @@ def _set_result(node: Any, path: Path, first: int | None = None, last: int | Non
             nuke.toNode("KyvenResultSwitch").setInput(1, read)
         else:
             read["file"].setValue(_nuke_file_path(path))
-        source_writer = nuke.toNode("KyvenInpaintSourceWrite")
-        if source_writer is not None:
-            _configure_color_read(node, source_writer, read)
+        _configure_color_read(read)
         if first is not None and last is not None:
             for name, value in (("first", first), ("last", last), ("origfirst", first), ("origlast", last)):
                 if name in read.knobs(): read[name].setValue(value)
@@ -189,6 +201,7 @@ def _set_result(node: Any, path: Path, first: int | None = None, last: int | Non
         nuke.toNode("KyvenResultSwitch")["which"].setValue(1)
     finally:
         node.end()
+    _ensure_inpaint_preview_graph(node)
 
 
 def _set_processed_mask(node: Any, path: Path, first: int | None = None, last: int | None = None) -> None:
@@ -221,9 +234,7 @@ def _set_patch(node: Any, path: Path, first: int | None = None, last: int | None
             patch_switch.setInput(1, read)
         else:
             read["file"].setValue(_nuke_file_path(path))
-        source_writer = nuke.toNode("KyvenInpaintSourceWrite")
-        if source_writer is not None:
-            _configure_color_read(node, source_writer, read)
+        _configure_color_read(read)
         if first is not None and last is not None:
             for name, value in (("first", first), ("last", last), ("origfirst", first), ("origlast", last)):
                 if name in read.knobs():
@@ -233,6 +244,7 @@ def _set_patch(node: Any, path: Path, first: int | None = None, last: int | None
         patch_switch["which"].setValue(1)
     finally:
         node.end()
+    _ensure_inpaint_preview_graph(node)
 
 
 def _ensure_inpaint_preview_graph(node: Any) -> None:
@@ -264,6 +276,25 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
             source.setXpos(-120)
         if mask is not None:
             mask.setXpos(120)
+        input_to_srgb = nuke.toNode("KyvenInputToSRGB")
+        created_input_transform = input_to_srgb is None
+        if input_to_srgb is None:
+            input_to_srgb = nuke.nodes.Colorspace(name="KyvenInputToSRGB")
+        input_to_srgb.setInput(0, source)
+        if created_input_transform:
+            _set_colorspace(
+                input_to_srgb,
+                "colorspace_in",
+                CATTERY_DEFAULT_INPUT_COLORSPACE,
+            )
+        _set_colorspace(input_to_srgb, "colorspace_out", CATTERY_MODEL_COLORSPACE)
+        if "knobChanged" in input_to_srgb.knobs():
+            input_to_srgb["knobChanged"].setValue(
+                'selected = nuke.thisNode()["colorspace_in"].value()\n'
+                'for name in ("KyvenResultFromSRGB", "KyvenPatchFromSRGB"):\n'
+                '    target = nuke.toNode(name)\n'
+                '    if target is not None: target["colorspace_out"].setValue(selected)'
+            )
         result_switch = nuke.toNode("KyvenResultSwitch")
         result_opaque = nuke.toNode("KyvenResultOpaque")
         if result_opaque is None:
@@ -275,6 +306,27 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         if patch_switch is None:
             patch_switch = nuke.nodes.Switch(name="KyvenPatchSwitch")
             patch_switch.setInput(0, source)
+        selected_colorspace = str(input_to_srgb["colorspace_in"].value())
+        result_from_srgb = nuke.toNode("KyvenResultFromSRGB")
+        if result_from_srgb is None:
+            result_from_srgb = nuke.nodes.Colorspace(name="KyvenResultFromSRGB")
+        _set_colorspace(result_from_srgb, "colorspace_in", CATTERY_MODEL_COLORSPACE)
+        _set_colorspace(result_from_srgb, "colorspace_out", selected_colorspace)
+        result_read = nuke.toNode("KyvenResultRead")
+        if result_read is not None:
+            set_data_io(result_read)
+            result_from_srgb.setInput(0, result_read)
+            result_switch.setInput(1, result_from_srgb)
+        patch_from_srgb = nuke.toNode("KyvenPatchFromSRGB")
+        if patch_from_srgb is None:
+            patch_from_srgb = nuke.nodes.Colorspace(name="KyvenPatchFromSRGB")
+        _set_colorspace(patch_from_srgb, "colorspace_in", CATTERY_MODEL_COLORSPACE)
+        _set_colorspace(patch_from_srgb, "colorspace_out", selected_colorspace)
+        patch_read = nuke.toNode("KyvenPatchRead")
+        if patch_read is not None:
+            set_data_io(patch_read)
+            patch_from_srgb.setInput(0, patch_read)
+            patch_switch.setInput(1, patch_from_srgb)
         threshold = nuke.toNode("KyvenModelMaskThreshold")
         if threshold is None:
             threshold = nuke.nodes.Expression(name="KyvenModelMaskThreshold")
@@ -358,11 +410,14 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
             set_data_io(processed_mask_read)
         source_writer = nuke.toNode("KyvenInpaintSourceWrite")
         if source_writer is not None:
-            configure_ai_color_io(
-                source_writer,
-                (nuke.toNode("KyvenResultRead"), nuke.toNode("KyvenPatchRead")),
-                linear=_uses_linear_input(node),
-            )
+            set_data_io(source_writer)
+            combined = nuke.toNode("KyvenInpaintCombined")
+            if combined is not None:
+                combined.setInput(0, input_to_srgb)
+        for read_name in ("KyvenResultRead", "KyvenPatchRead"):
+            read = nuke.toNode(read_name)
+            if read is not None:
+                set_data_io(read)
         if difference is not None:
             difference.setInput(0, result_composite)
             difference.setInput(1, source)
@@ -672,7 +727,7 @@ def knob_changed() -> None:
         "mask_grow",
     } and _inside(node, "KyvenInpaintModelMaskWrite") is None:
         _ensure_inpaint_preview_graph(node)
-    if knob_name == "input_color_space":
+    if knob_name == "in_colorspace":
         _configure_color_io(node)
     if knob_name in {
         "inputChange",
@@ -749,17 +804,15 @@ def _apply_model_labels(node_name: str, labels: list[str]) -> None:
 
 def _ensure_input_color_control(node: Any) -> None:
     nuke = _nuke()
-    if "input_color_space" not in node.knobs():
-        _add_knob(
-            nuke,
-            node,
-            nuke.Enumeration_Knob(
-                "input_color_space",
-                "LaMa Input Color",
-                ["sRGB Texture", "Linear / Working (Raw)"],
-            ),
-        )
-    _place_knob_after(node, "input_color_space", "model")
+    if "input_color_space" in node.knobs():
+        node.removeKnob(node["input_color_space"])
+    if "in_colorspace" not in node.knobs():
+        colorspace = nuke.Link_Knob("in_colorspace", "Input Colorspace")
+        colorspace.setTooltip("Define the colorspace that the input image is in.")
+        colorspace.makeLink("KyvenInputToSRGB", "colorspace_in")
+        _add_knob(nuke, node, colorspace)
+    _place_knob_after(node, "in_colorspace", "model")
+    _configure_color_io(node)
 
 
 def _ensure_inpaint_mask_sliders(node: Any) -> None:
@@ -877,7 +930,6 @@ def create_inpaint_node() -> Any:
     _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 25</font>'))
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
-    _ensure_input_color_control(node)
     _add_knob(nuke, node, nuke.Enumeration_Knob("profile", "Memory Profile", ["low_memory", "balanced", "quality"])); node["profile"].setValue(1)
     _add_knob(nuke, node, nuke.PyScript_Knob("refresh_models", "Refresh Models", "kyven_nuke.inpaint_node.refresh_models()"))
     _add_knob(nuke, node, nuke.PyScript_Knob("open_model_manager", "Model Manager...", "kyven_nuke.model_manager.show_model_manager()"), start_line=False)
@@ -942,6 +994,7 @@ def create_inpaint_node() -> Any:
         if "datatype" in sw.knobs(): sw["datatype"].setValue("8 bit")
     finally: node.end()
     _ensure_inpaint_preview_graph(node)
+    _ensure_input_color_control(node)
     reset = source
     if reset is not None: node["processing_roi"].setValue([0, 0, float(reset.width()), float(reset.height())])
     node["processing_roi"].setVisible(False)
@@ -963,10 +1016,10 @@ def upgrade_selected_inpaint_node() -> None:
     isolated_cache = _cache_root(node)
     if "cache_location" in node.knobs():
         node["cache_location"].setValue(str(isolated_cache))
-    _ensure_input_color_control(node)
     _ensure_inpaint_mask_sliders(node)
     _ensure_refinement_controls(node)
     _ensure_inpaint_preview_graph(node)
+    _ensure_input_color_control(node)
     if "refresh_models" not in node.knobs():
         _add_knob(
             nuke,
@@ -1025,7 +1078,8 @@ def upgrade_selected_inpaint_node() -> None:
     if "output_help" in node.knobs():
         node["output_help"].setValue(
             "Result is opaque RGB with an inward-softened edge. Result + Mask Alpha and Result "
-            "Premult use the exact mask sent to LaMa. Generated Patch preserves Source RGB outside that mask."
+            "Premult use the exact mask sent to LaMa. Generated Patch is rebuilt from the live "
+            "Nuke Source and only uses returned RGB inside that mask."
         )
     if "kyven_status" in node.knobs():
         node["kyven_status"].setValue("Inpaint UI upgraded. Cached results were preserved.")
