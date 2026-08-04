@@ -61,9 +61,9 @@ Cancellation and progress reporting remain active during every refinement iterat
 
 | Crop Mode | Behavior |
 | --- | --- |
-| **Auto** | Finds mask bounds and adds Context Padding; recommended default |
+| **Auto** | Finds mask bounds and adds Context Padding; optional performance optimization |
 | **Manual** | Uses the animatable Viewer ROI supplied by the artist |
-| **Full** | Sends the complete input format to the provider |
+| **Full** | Sends the complete input format to the provider; Cattery-compatible default |
 
 The ROI is an optimization crop, not a visible output crop. Kyven translates the mask into crop
 coordinates, processes it, and pastes the result back into the original full-size frame.
@@ -75,10 +75,10 @@ frame, which is convenient but may vary the context seen by a frame-independent 
 
 | Control | Default | Purpose |
 | --- | ---: | --- |
-| **Threshold** | 0.5 | Converts soft gray input pixels into the binary mask required by LaMa |
-| **Model Mask Grow** | 12 px | Removes the old antialiased object edge from model input |
-| **Edge Color Match** | 1.0 | Aligns the patch RGB to clean pixels around the mask |
-| **Result Edge Softness** | 6 px | Feathers the final RGB inward to hide a hard LaMa seam |
+| **Threshold** | 0 | Matches Cattery's `alpha > 0` binary-mask rule |
+| **Model Mask Grow** | 0 px | Optional expansion or erosion after thresholding |
+| **Edge Color Match** | 0 | Optional Kyven-only boundary correction; disabled for Cattery parity |
+| **Result Edge Softness** | 0 px | Optional inward feather; disabled for Cattery parity |
 
 Threshold affects only gray pixels. A mask containing only pure black and white looks identical at
 every threshold between those two values. Lower Threshold includes more gray pixels; higher
@@ -114,8 +114,8 @@ stabilization in the current node.
 
 | Output | Result |
 | --- | --- |
-| **Result** | Final reconstructed RGB with opaque alpha |
-| **Result + Mask Alpha** | Final RGB carrying the effective Inpaint mask in alpha; default |
+| **Result** | Final reconstructed RGB with opaque alpha; default |
+| **Result + Mask Alpha** | Final RGB carrying the effective Inpaint mask in alpha |
 | **Result Premult** | Result + Mask Alpha after Premult |
 | **Generated Patch** | Full-format RGB rebuilt in Nuke from the live Source, with returned generated pixels only inside the binary model mask; use its alpha for an external Merge |
 | **Difference** | Absolute change between Result and Source |

@@ -334,7 +334,9 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         for index, channel in enumerate(("r", "g", "b", "a")):
             expression = (
                 "parent.preprocess_mask ? "
-                f"((parent.invert_mask ? 1-{channel} : {channel}) >= parent.mask_threshold) "
+                f"(parent.mask_threshold <= 0 ? "
+                f"((parent.invert_mask ? 1-{channel} : {channel}) > 0) : "
+                f"((parent.invert_mask ? 1-{channel} : {channel}) >= parent.mask_threshold)) "
                 f": ({channel} >= 0.5)"
             )
             knob_name = f"expr{index}"
@@ -841,10 +843,10 @@ def _ensure_inpaint_mask_sliders(node: Any) -> None:
     _place_knob_after(node, "preprocess_mask", "mask_channel")
     _place_knob_after(node, "preview_model_mask", "preprocess_mask")
     node["preview_model_mask"].clearFlag(nuke.STARTLINE)
-    _ensure_double_slider(node, "mask_threshold", "Threshold", 0, 1, 0.5)
-    _ensure_double_slider(node, "mask_grow", "Model Mask Grow (px)", -128, 128, 12)
-    _ensure_double_slider(node, "edge_color_match", "Edge Color Match", 0, 1, 1)
-    _ensure_double_slider(node, "edge_softness", "Result Edge Softness (px)", 0, 32, 6)
+    _ensure_double_slider(node, "mask_threshold", "Threshold", 0, 1, 0)
+    _ensure_double_slider(node, "mask_grow", "Model Mask Grow (px)", -128, 128, 0)
+    _ensure_double_slider(node, "edge_color_match", "Edge Color Match", 0, 1, 0)
+    _ensure_double_slider(node, "edge_softness", "Result Edge Softness (px)", 0, 32, 0)
     _place_knob_after(node, "edge_softness", "edge_color_match")
     preprocess = bool(node["preprocess_mask"].value())
     for name in ("invert_mask", "mask_threshold", "mask_grow"):
@@ -938,10 +940,13 @@ def _repair_inpaint_interface(node: Any) -> None:
 
     if "kyven" not in node.knobs():
         node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint"))
-    add(nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 25</font>'))
+    add(nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 26</font>'))
     if "model_section" not in node.knobs():
         _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
-    add(nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
+    if "model" not in node.knobs():
+        model = nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS))
+        model.setValue(1)
+        add(model)
     _ensure_input_color_control(node)
     profile = nuke.Enumeration_Knob("profile", "Memory Profile", ["low_memory", "balanced", "quality"])
     if "profile" not in node.knobs():
@@ -970,7 +975,10 @@ def _repair_inpaint_interface(node: Any) -> None:
 
     if "roi_section" not in node.knobs():
         _add_section(nuke, node, "roi_section", "PROCESSING ROI / MODEL CROP")
-    add(nuke.Enumeration_Knob("crop_mode", "Crop Mode", ["auto", "manual", "full"]))
+    if "crop_mode" not in node.knobs():
+        crop_mode = nuke.Enumeration_Knob("crop_mode", "Crop Mode", ["auto", "manual", "full"])
+        crop_mode.setValue(2)
+        add(crop_mode)
     if "context_padding" not in node.knobs():
         padding = nuke.Int_Knob("context_padding", "Context Padding (px)")
         padding.setRange(0, 1024)
@@ -999,7 +1007,7 @@ def _repair_inpaint_interface(node: Any) -> None:
         _add_section(nuke, node, "output_section", "OUTPUT")
     if "output_mode" not in node.knobs():
         output_mode = nuke.Enumeration_Knob("output_mode", "Output", list(INPAINT_OUTPUT_MODES))
-        output_mode.setValue(1)
+        output_mode.setValue(0)
         add(output_mode)
     add(nuke.Text_Knob("output_help", "", "Result is opaque RGB with an inward-softened edge. Result + Mask Alpha and Result Premult use the exact mask sent to LaMa. Generated Patch is rebuilt from the live Nuke Source and only uses returned RGB inside that mask."))
 
@@ -1033,13 +1041,26 @@ def _repair_inpaint_interface(node: Any) -> None:
     node["knobChanged"].setValue("kyven_nuke.inpaint_node.knob_changed()")
 
 
+def _apply_cattery_inference_defaults(node: Any) -> None:
+    """Migrate API 25 nodes to the unmodified Cattery LaMa inference path."""
+
+    for name in ("mask_threshold", "mask_grow", "edge_color_match", "edge_softness"):
+        if name in node.knobs():
+            node[name].setValue(0)
+    if "crop_mode" in node.knobs():
+        node["crop_mode"].setValue("full")
+    if "output_mode" in node.knobs():
+        node["output_mode"].setValue(0)
+
+
 def create_inpaint_node() -> Any:
     nuke = _nuke(); selected = nuke.selectedNodes(); source = selected[0] if selected else None; mask = selected[1] if len(selected) > 1 else None
     node = nuke.nodes.Group(name="KyvenInpaint"); node.setInput(SOURCE_INPUT, source); node.setInput(MASK_INPUT, mask)
     node["label"].setValue("[value kyven_status]"); node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint")); add_node_branding(node, nuke)
-    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 25</font>'))
+    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 26</font>'))
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
+    node["model"].setValue(1)
     _ensure_input_color_control(node)
     _add_knob(nuke, node, nuke.Enumeration_Knob("profile", "Memory Profile", ["low_memory", "balanced", "quality"])); node["profile"].setValue(1)
     _add_knob(nuke, node, nuke.PyScript_Knob("refresh_models", "Refresh Models", "kyven_nuke.inpaint_node.refresh_models()"))
@@ -1055,6 +1076,7 @@ def create_inpaint_node() -> Any:
     _add_knob(nuke, node, nuke.Text_Knob("mask_help", "", "When Preprocess is enabled, LaMa receives Invert + Threshold + Model Grow. Preview Model Mask shows that exact mask. Result Edge Softness removes hard RGB seams without changing the model mask or output alpha."))
     _add_section(nuke, node, "roi_section", "PROCESSING ROI / MODEL CROP")
     _add_knob(nuke, node, nuke.Enumeration_Knob("crop_mode", "Crop Mode", ["auto", "manual", "full"]))
+    node["crop_mode"].setValue(2)
     padding = nuke.Int_Knob("context_padding", "Context Padding (px)"); padding.setRange(0, 1024); padding.setValue(128); _add_knob(nuke, node, padding)
     _add_knob(nuke, node, nuke.BBox_Knob("processing_roi", "Manual ROI"))
     _add_knob(nuke, node, nuke.PyScript_Knob("reset_roi", "Reset ROI to Source", "kyven_nuke.inpaint_node.reset_roi_to_input()"))
@@ -1068,7 +1090,7 @@ def create_inpaint_node() -> Any:
     _add_knob(nuke, node, nuke.PyScript_Knob("process_range", "Process Frame Range", "kyven_nuke.inpaint_node.process_frame_range()"))
     _add_section(nuke, node, "output_section", "OUTPUT")
     _add_knob(nuke, node, nuke.Enumeration_Knob("output_mode", "Output", list(INPAINT_OUTPUT_MODES)))
-    node["output_mode"].setValue(1)
+    node["output_mode"].setValue(0)
     _add_knob(nuke, node, nuke.Text_Knob("output_help", "", "Result is opaque RGB with an inward-softened edge. Result + Mask Alpha and Result Premult use the exact mask sent to LaMa. Generated Patch is rebuilt from the live Nuke Source and only uses returned RGB inside that mask."))
     uid = nuke.String_Knob("kyven_uuid", "UUID"); uid.setValue(uuid.uuid4().hex); uid.setVisible(False); node.addKnob(uid)
     _add_section(nuke, node, "cache_section", "CACHE")
@@ -1125,7 +1147,10 @@ def upgrade_selected_inpaint_node() -> None:
     if not has_inpaint_graph:
         nuke.message("The selected Group is not a Kyven Inpaint node.")
         return
+    legacy_api = "kyven_title" not in node.knobs() or "API 26" not in str(node["kyven_title"].value())
     _repair_inpaint_interface(node)
+    if legacy_api:
+        _apply_cattery_inference_defaults(node)
     isolated_cache = _cache_root(node)
     if "cache_location" in node.knobs():
         node["cache_location"].setValue(str(isolated_cache))
@@ -1180,7 +1205,7 @@ def upgrade_selected_inpaint_node() -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br>'
-            '<font color="#91a3b0">LaMa | Source + Mask | API 25</font>'
+            '<font color="#91a3b0">LaMa | Source + Mask | API 26</font>'
         )
     if "mask_help" in node.knobs():
         node["mask_help"].setValue(

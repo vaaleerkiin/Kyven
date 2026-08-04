@@ -299,7 +299,7 @@ class JobManager:
     @staticmethod
     def inpaint_request_from_payload(
         payload: dict[str, Any],
-        default_model_id: str = "lama-2025jan-onnx",
+        default_model_id: str = "big-lama-native",
     ) -> InpaintRequest:
         source = Path(str(payload["source"]))
         mask = Path(str(payload["mask"]))
@@ -321,13 +321,13 @@ class JobManager:
             patch_output=patch_output,
             provider_id=str(payload.get("model_id", default_model_id)),
             profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
-            crop_mode=str(payload.get("crop_mode", "auto")),
+            crop_mode=str(payload.get("crop_mode", "full")),
             roi=JobManager._box_from_payload(payload, "roi"),
             context_padding=int(payload.get("context_padding", 128)),
-            mask_grow=int(payload.get("mask_grow", 12)),
-            edge_color_match=float(payload.get("edge_color_match", 1.0)),
-            edge_softness=float(payload.get("edge_softness", 6.0)),
-            mask_threshold=float(payload.get("mask_threshold", 0.5)),
+            mask_grow=int(payload.get("mask_grow", 0)),
+            edge_color_match=float(payload.get("edge_color_match", 0.0)),
+            edge_softness=float(payload.get("edge_softness", 0.0)),
+            mask_threshold=float(payload.get("mask_threshold", 0.0)),
             invert_mask=bool(payload.get("invert_mask", False)),
             mask_channel=str(payload.get("mask_channel", "luminance")),
             processing_size=int(payload.get("processing_size", 0)),

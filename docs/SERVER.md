@@ -14,7 +14,7 @@ kyven serve \
 ```
 
 This example uses the CLI default port `8765`. The Nuke adapter launches its managed server on
-`18787`; do not override that port in the Nuke workflow.
+`18788`; do not override that port in the Nuke workflow.
 
 The token is generated atomically when missing. Host adapters read it from the configured file;
 it must not be committed or logged.
@@ -113,7 +113,7 @@ fields participate in the deterministic cache key. The worker reports progress a
 cancellation during each refinement iteration.
 Empty masks return Source unchanged without loading a model.
 
-API version 25 is the current Nuke/server contract. `GET /v1/jobs/{id}` returns `progress`
+API version 26 is the current Nuke/server contract. `GET /v1/jobs/{id}` returns `progress`
 (0.0-1.0) and `progress_message`. Segment video requests may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
 returned masks to the original dimensions. Restart Nuke after updating Kyven so the adapter does not

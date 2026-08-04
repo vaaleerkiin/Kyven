@@ -24,7 +24,7 @@ from kyven.segment.providers.registry import ProviderRegistry
 from kyven.server.jobs import JobManager
 
 MAX_REQUEST_BYTES = 1024 * 1024
-SERVER_API_VERSION = 25
+SERVER_API_VERSION = 26
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,7 +185,7 @@ def _handler_type(
                     self._send(HTTPStatus.ACCEPTED, {"job_id": job_id, "status": "queued"})
                     return
                 if path == "/v1/jobs/inpaint":
-                    model_id = str(payload.get("model_id", "lama-2025jan-onnx"))
+                    model_id = str(payload.get("model_id", "big-lama-native"))
                     if catalog.get(model_id).task != "inpaint":
                         raise KyvenError(ErrorCode.INVALID_REQUEST, "The selected model is not an inpaint model.")
                     job_id = manager.submit_inpaint(payload)

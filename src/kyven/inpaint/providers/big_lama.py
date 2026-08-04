@@ -15,6 +15,18 @@ from kyven.inpaint.providers.base import InpaintProvider
 from kyven.inpaint.refinement import refine_big_lama
 
 
+def symmetric_modulo_padding(width: int, height: int, modulo: int = 8) -> tuple[int, int, int, int]:
+    """Return Cattery LaMa's left, right, top, bottom reflect padding."""
+
+    padded_width = (width + modulo - 1) // modulo * modulo
+    padded_height = (height + modulo - 1) // modulo * modulo
+    left = (padded_width - width + 1) // 2
+    right = padded_width - width - left
+    top = (padded_height - height + 1) // 2
+    bottom = padded_height - height - top
+    return left, right, top, bottom
+
+
 class BigLamaProvider(InpaintProvider):
     """Run the full resolution-robust Big-LaMa generator through TorchScript."""
 
@@ -83,12 +95,14 @@ class BigLamaProvider(InpaintProvider):
 
         with Image.open(request.source) as source_file, Image.open(request.mask) as mask_file:
             image = np.asarray(source_file.convert("RGB"), dtype=np.float32) / 255.0
-            mask = (np.asarray(mask_file.convert("L"), dtype=np.uint8) >= 128).astype(np.float32)
+            # Cattery's exported wrapper uses alpha > 0, not a 0.5 cutoff.
+            mask = (np.asarray(mask_file.convert("L"), dtype=np.uint8) > 0).astype(np.float32)
         height, width = mask.shape
-        padded_height = (height + 7) // 8 * 8
-        padded_width = (width + 7) // 8 * 8
-        image = np.pad(image, ((0, padded_height - height), (0, padded_width - width), (0, 0)), mode="reflect")
-        mask = np.pad(mask, ((0, padded_height - height), (0, padded_width - width)), mode="constant")
+        left, right, top, bottom = symmetric_modulo_padding(width, height)
+        padded_height = height + top + bottom
+        padded_width = width + left + right
+        image = np.pad(image, ((top, bottom), (left, right), (0, 0)), mode="reflect")
+        mask = np.pad(mask, ((top, bottom), (left, right)), mode="constant")
         image_tensor = torch.from_numpy(np.transpose(image, (2, 0, 1))[None]).to(self._device)
         mask_tensor = torch.from_numpy(mask[None, None]).to(self._device)
         refined = request.quality_mode == "refined"
@@ -135,12 +149,21 @@ class BigLamaProvider(InpaintProvider):
                 technical_detail=str(exc),
                 suggested_action="Retry with Standard quality or a smaller Auto ROI.",
             ) from exc
-        rgb = result[0, :, :height, :width].permute(1, 2, 0).detach().float().cpu().numpy()
+        rgb = (
+            result[0, :, top : top + height, left : left + width]
+            .permute(1, 2, 0)
+            .detach()
+            .float()
+            .cpu()
+            .numpy()
+        )
         return InpaintPrediction(
             rgb=np.clip(rgb * 255.0, 0, 255).astype(np.uint8),
             metadata={
                 "device": self._device,
                 "model_input": [padded_width, padded_height],
+                "padding": [left, right, top, bottom],
+                "mask_rule": "alpha > 0",
                 "native_resolution": True,
                 "quality_mode": request.quality_mode,
                 "refinement_steps": request.refinement_steps if refined else 0,

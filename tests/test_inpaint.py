@@ -10,6 +10,7 @@ from PIL import Image
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
 from kyven.inpaint.models import InpaintCapabilities, InpaintPrediction, InpaintRequest
+from kyven.inpaint.providers.big_lama import symmetric_modulo_padding
 from kyven.inpaint.refinement import pyramid_sizes, refine_big_lama
 from kyven.inpaint.service import InpaintService, _inward_feather_alpha
 from kyven.segment.models import BoxPrompt
@@ -38,6 +39,10 @@ class FakeInpaintProvider:
 
 
 class InpaintServiceTests(unittest.TestCase):
+    def test_big_lama_padding_matches_cattery_symmetric_wrapper(self) -> None:
+        self.assertEqual(symmetric_modulo_padding(303, 225), (1, 0, 4, 3))
+        self.assertEqual(symmetric_modulo_padding(2048, 1080), (0, 0, 0, 0))
+
     def test_edge_softness_softens_only_inside_model_mask(self) -> None:
         mask = np.zeros((31, 31), dtype=np.uint8)
         mask[5:26, 5:26] = 255
@@ -144,7 +149,7 @@ class InpaintServiceTests(unittest.TestCase):
             Image.fromarray(np.full((20, 30, 3), 50, dtype=np.uint8)).save(source)
             pixels = np.zeros((20, 30), dtype=np.uint8); pixels[8:12, 13:17] = 255; Image.fromarray(pixels).save(mask)
             provider = FakeInpaintProvider()
-            result = InpaintService(self._registry(provider)).run(InpaintRequest(source, mask, output, patch_output=patch, provider_id="fake", context_padding=2, mask_grow=0, edge_color_match=0, edge_softness=0))
+            result = InpaintService(self._registry(provider)).run(InpaintRequest(source, mask, output, patch_output=patch, provider_id="fake", crop_mode="auto", context_padding=2, mask_grow=0, edge_color_match=0, edge_softness=0))
             rendered = np.asarray(Image.open(output).convert("RGB"))
             rendered_patch = np.asarray(Image.open(patch).convert("RGB"))
             self.assertTrue(np.all(rendered[0, 0] == 50)); self.assertTrue(np.all(rendered[9, 14] == (255, 0, 0)))

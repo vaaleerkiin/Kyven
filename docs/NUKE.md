@@ -257,7 +257,7 @@ Kyven returns a readable error before inference when that budget is exceeded.
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18787` and requires API 25. A
+The adapter starts an external hidden Python process on `127.0.0.1:18788` and requires API 26. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 
