@@ -109,6 +109,10 @@ the active internal Read, including its frame range. If files were deleted exter
 Generated Patch is rebuilt from the live Nuke Source and never reads returned RGB outside the binary model mask. If a rectangular boundary is
 still visible after a fresh render, confirm that Nuke is not displaying an older cached Read.
 
+If an Inpaint node upgraded from commit `f490ff6` shows only **Model** and **Input Colorspace**, reload
+the current Kyven plugin and run `Kyven > Upgrade Selected Inpaint Node` again. The upgrader detects
+the surviving internal Inpaint graph and reconstructs every missing control without deleting it.
+
 ## Useful files
 
 | Path | Purpose |
