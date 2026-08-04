@@ -74,6 +74,23 @@ def _set_colorspace(node: Any, knob_name: str, value: str) -> None:
         return
 
 
+def _colorspace_has_error(value: object) -> bool:
+    return str(value).strip().lower().startswith("error:")
+
+
+def _restore_native_input_colorspace(nuke: Any, transform: Any) -> None:
+    """Reset an invalid explicit name to Nuke's native Colorspace default."""
+
+    knob = transform["colorspace_in"]
+    if not _colorspace_has_error(knob.value()):
+        return
+    probe = nuke.nodes.Colorspace(name="KyvenColorspaceDefaultProbe")
+    try:
+        knob.setValue(probe["colorspace_in"].getValue())
+    finally:
+        nuke.delete(probe)
+
+
 def _input_colorspace(node: Any) -> str:
     input_transform = _inside(node, "KyvenInputToSRGB")
     if input_transform is None or "colorspace_in" not in input_transform.knobs():
@@ -277,16 +294,13 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         if mask is not None:
             mask.setXpos(120)
         input_to_srgb = nuke.toNode("KyvenInputToSRGB")
-        created_input_transform = input_to_srgb is None
         if input_to_srgb is None:
             input_to_srgb = nuke.nodes.Colorspace(name="KyvenInputToSRGB")
         input_to_srgb.setInput(0, source)
-        if created_input_transform:
-            _set_colorspace(
-                input_to_srgb,
-                "colorspace_in",
-                CATTERY_DEFAULT_INPUT_COLORSPACE,
-            )
+        # Cattery leaves colorspace_in untouched. Nuke then supplies its
+        # configuration-aware native Linear/working default. Explicitly
+        # assigning the display label "Linear" is invalid in some OCIO configs.
+        _restore_native_input_colorspace(nuke, input_to_srgb)
         _set_colorspace(input_to_srgb, "colorspace_out", CATTERY_MODEL_COLORSPACE)
         if "knobChanged" in input_to_srgb.knobs():
             input_to_srgb["knobChanged"].setValue(

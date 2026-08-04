@@ -13,6 +13,7 @@ from kyven_nuke.inpaint_node import (
     CATTERY_DEFAULT_INPUT_COLORSPACE,
     CATTERY_MODEL_COLORSPACE,
     INPAINT_OUTPUT_MODES,
+    _colorspace_has_error,
     _wire_generated_patch,
     _wire_patch_over_source,
 )
@@ -66,6 +67,8 @@ class NukePayloadTests(unittest.TestCase):
     def test_inpaint_matches_cattery_lama_color_defaults(self) -> None:
         self.assertEqual(CATTERY_DEFAULT_INPUT_COLORSPACE, "Linear")
         self.assertEqual(CATTERY_MODEL_COLORSPACE, "sRGB")
+        self.assertTrue(_colorspace_has_error("Error: (Linear) not found"))
+        self.assertFalse(_colorspace_has_error("Linear"))
 
     def test_generated_patch_uses_composited_live_source_and_mask(self) -> None:
         class Copy:
