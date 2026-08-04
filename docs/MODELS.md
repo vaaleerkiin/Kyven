@@ -64,27 +64,8 @@ LaMa ONNX is downloaded from a pinned OpenCV Hugging Face revision and runs thro
 Big-LaMa Native is the resolution-robust TorchScript model derived from the original LaMa project;
 unlike the fast export it does not shrink every ROI into a fixed 512 x 512 canvas. Both downloads
 are pinned by exact byte size and SHA-256, use Apache-2.0 model code/weights, and permit commercial
-use. PowerPaint is intentionally not included: its roughly 15 GB multi-file runtime conflicts with
-Kyven's portable, efficient installation target.
+use.
 
-## Generative Inpaint catalog
-
-| Model ID | Display name | Download | Hardware guidance |
-| --- | --- | ---: | --- |
-| `sdxl-inpainting-1.0` | SDXL Inpainting 1.0 | ~7 GB FP16 subset | 8 GB+ with Low Memory; 12 GB+ preferred |
-
-SDXL is optional and belongs to the separate Generative Inpaint node. Its Diffusers repository is
-pinned to revision `115134f363124c53c7d878647567d04daf26e41e`; Kyven downloads only FP16 pipeline
-components. The model uses CreativeML Open RAIL++-M, not Kyven's Apache-2.0 code license. The user
-must review and accept the model terms, including use restrictions, before installation. See
-[Generative Inpaint](GENERATIVE_INPAINT.md).
-
-## Planned provider families
-
-Depth is a roadmap item and is not yet part of the catalog or installer. Planned Depth
-work currently favors commercially safe Small variants for interactive and temporal processing;
-non-commercial Base/Large checkpoints must not appear as safe defaults.
-
-See [Kyven Tools vision and roadmap](ROADMAP.md) for candidate models and proposed controls. Adding
-a name to that roadmap does not make a checkpoint approved: catalog inclusion still requires a
-pinned source, license metadata, byte size, SHA-256, commercial-use status, and hardware guidance.
+Big-LaMa's `Refined` quality mode uses the same verified checkpoint. It performs multi-scale feature
+optimization and therefore changes runtime and memory use, not the catalog download. Standard is the
+portable default; Refined is best used on a tight ROI with an 8 GB GPU or as a slow CPU fallback.

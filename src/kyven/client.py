@@ -104,10 +104,6 @@ class KyvenClient:
         response = self._request("POST", "/v1/jobs/inpaint", payload)
         return str(response["job_id"])
 
-    def submit_generative_inpaint(self, payload: dict[str, Any]) -> str:
-        response = self._request("POST", "/v1/jobs/generative-inpaint", payload)
-        return str(response["job_id"])
-
     def preview_trimap(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request(
             "POST",

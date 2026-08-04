@@ -12,6 +12,7 @@ from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
 from kyven.inpaint.models import InpaintCapabilities, InpaintPrediction, InpaintRequest
 from kyven.inpaint.providers.base import InpaintProvider
+from kyven.inpaint.refinement import refine_big_lama
 
 
 class BigLamaProvider(InpaintProvider):
@@ -29,7 +30,7 @@ class BigLamaProvider(InpaintProvider):
         return InpaintCapabilities(
             provider_id="big-lama-native",
             display_name="Big-LaMa Native",
-            provider_version="1",
+            provider_version="2",
             model_checksum=self._expected_checksum,
             license_name="Apache-2.0",
             license_url="https://github.com/advimman/lama/blob/main/LICENSE",
@@ -65,6 +66,8 @@ class BigLamaProvider(InpaintProvider):
         self._device = "cuda" if use_cuda else "cpu"
         try:
             self._model = torch.jit.load(str(self._checkpoint), map_location=self._device).eval()
+            for parameter in self._model.parameters():
+                parameter.requires_grad_(False)
         except Exception as exc:
             raise KyvenError(
                 ErrorCode.MODEL_NOT_FOUND,
@@ -88,18 +91,50 @@ class BigLamaProvider(InpaintProvider):
         mask = np.pad(mask, ((0, padded_height - height), (0, padded_width - width)), mode="constant")
         image_tensor = torch.from_numpy(np.transpose(image, (2, 0, 1))[None]).to(self._device)
         mask_tensor = torch.from_numpy(mask[None, None]).to(self._device)
-        cancellation.report_progress(0.45, "Big-LaMa native inpainting")
+        refined = request.quality_mode == "refined"
+        if refined and height * width > {
+            "low_memory": 700_000,
+            "balanced": 1_500_000,
+            "quality": 2_500_000,
+        }[request.profile.value]:
+            raise KyvenError(
+                ErrorCode.INFERENCE_FAILED,
+                "The ROI is too large for the selected Big-LaMa Refined memory profile.",
+                suggested_action="Use Auto ROI, reduce the ROI, or select Standard quality.",
+            )
+        cancellation.report_progress(
+            0.45,
+            "Big-LaMa refinement" if refined else "Big-LaMa native inpainting",
+        )
         try:
-            with torch.inference_mode():
-                result = model(image_tensor, mask_tensor)
+            if refined:
+                result = refine_big_lama(
+                    model,
+                    image_tensor,
+                    mask_tensor,
+                    steps=request.refinement_steps,
+                    strength=request.refinement_strength,
+                    max_scales=request.refinement_scales,
+                    cancellation=cancellation,
+                )
+            else:
+                with torch.inference_mode():
+                    result = model(image_tensor, mask_tensor)
         except RuntimeError as exc:
             if "out of memory" in str(exc).lower():
+                if self._device == "cuda":
+                    torch.cuda.empty_cache()
                 raise KyvenError(
                     ErrorCode.INFERENCE_FAILED,
                     "Big-LaMa ran out of GPU memory for this ROI.",
                     suggested_action="Use Auto ROI, reduce the ROI, or choose the low_memory profile.",
                 ) from exc
-            raise
+            raise KyvenError(
+                ErrorCode.INFERENCE_FAILED,
+                "Big-LaMa inference failed.",
+                technical_detail=str(exc),
+                suggested_action="Retry with Standard quality or a smaller Auto ROI.",
+            ) from exc
         rgb = result[0, :, :height, :width].permute(1, 2, 0).detach().float().cpu().numpy()
         return InpaintPrediction(
             rgb=np.clip(rgb * 255.0, 0, 255).astype(np.uint8),
@@ -107,6 +142,9 @@ class BigLamaProvider(InpaintProvider):
                 "device": self._device,
                 "model_input": [padded_width, padded_height],
                 "native_resolution": True,
+                "quality_mode": request.quality_mode,
+                "refinement_steps": request.refinement_steps if refined else 0,
+                "refinement_scales": request.refinement_scales if refined else 0,
             },
         )
 

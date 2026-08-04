@@ -87,7 +87,7 @@ def _match_patch_color(
     return matched, [round(float(value), 3) for value in offset]
 
 
-def _inward_feather_alpha(mask: np.ndarray, radius: int) -> np.ndarray:
+def _inward_feather_alpha(mask: np.ndarray, radius: float) -> np.ndarray:
     """Feather inward while keeping Source on the mask boundary.
 
     Clipping a Gaussian to the binary mask leaves the first inside pixel about
@@ -99,7 +99,7 @@ def _inward_feather_alpha(mask: np.ndarray, radius: int) -> np.ndarray:
     binary = (np.asarray(mask, dtype=np.uint8) >= 128).astype(np.float32)
     if radius <= 0:
         return binary[..., None]
-    inset = max(1, round(float(radius) / 2.0))
+    inset = max(1, round(radius / 2.0))
     protected = np.asarray(
         Image.fromarray((binary * 255).astype(np.uint8), mode="L").filter(
             ImageFilter.MinFilter(mask_filter_size(inset))
@@ -108,11 +108,12 @@ def _inward_feather_alpha(mask: np.ndarray, radius: int) -> np.ndarray:
     )
     blurred = np.asarray(
         Image.fromarray(protected, mode="L").filter(
-            ImageFilter.GaussianBlur(radius=max(0.5, float(radius) / 4.0))
+            ImageFilter.GaussianBlur(radius=max(0.5, radius / 4.0))
         ),
         dtype=np.float32,
     ) / 255.0
-    return (blurred * binary)[..., None]
+    inward = blurred * binary
+    return inward[..., None]
 
 
 class InpaintService:
@@ -210,6 +211,12 @@ class InpaintService:
 
         provider = self._registry.activate(request.provider_id)
         capabilities = provider.capabilities
+        if request.quality_mode == "refined" and capabilities.provider_id != "big-lama-native":
+            raise KyvenError(
+                ErrorCode.INVALID_REQUEST,
+                "Big-LaMa Refined requires the Big-LaMa Native model.",
+                suggested_action="Select Big-LaMa Native or switch Quality Mode to Standard.",
+            )
         token.report_progress(0.12, "Preparing inpaint crop")
         with tempfile.TemporaryDirectory(prefix="kyven-inpaint-") as directory:
             root = Path(directory)
@@ -232,12 +239,12 @@ class InpaintService:
             original_crop,
             inference_mask,
             request.edge_color_match,
-            match_boundary=request.generation_mode == "clean_plate",
+            match_boundary=True,
         )
-        if not request.preprocess_mask and request.seam_blend <= 0:
+        if not request.preprocess_mask:
             alpha = (merge_crop_pixels.astype(np.float32) / 255.0)[..., None]
         else:
-            alpha = _inward_feather_alpha(merge_crop_pixels, request.seam_blend)
+            alpha = _inward_feather_alpha(merge_crop_pixels, request.edge_softness)
         full_merge_mask = np.zeros_like(mask_pixels, dtype=np.float32)
         full_merge_mask[region.y0 : region.y1, region.x0 : region.x1] = alpha[..., 0]
         if request.mask_output is not None:
@@ -257,6 +264,7 @@ class InpaintService:
             "processing_roi": region.metadata(),
             "crop_mode": request.crop_mode,
             "edge_color_offset": color_offset,
+            "edge_softness": request.edge_softness,
         })
         return InpaintResult(
             request.output,

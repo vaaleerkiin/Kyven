@@ -6,7 +6,7 @@
 ## Context
 
 Artists have different hardware. Segment currently has four SAM 2.1 sizes, and Refine will have
-multiple ViTMatte sizes. Hard-coding one checkpoint into a Nuke or Fusion node would prevent
+multiple ViTMatte sizes. Hard-coding one checkpoint into a Nuke node would prevent
 hardware choice, complicate upgrades, and couple host scripts to model implementations.
 
 ## Decision

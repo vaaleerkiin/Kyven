@@ -593,6 +593,7 @@ def _cache_root(node: Any) -> Path:
 
 
 def _cache_root_path(node: Any) -> Path:
+    _ensure_unique_cache_uuid(node)
     cache_root = config.cache_dir().resolve()
     node_id = str(node["kyven_uuid"].value()).strip()
     if not node_id:
@@ -601,6 +602,42 @@ def _cache_root_path(node: Any) -> Path:
     if target.parent != cache_root:
         raise RuntimeError("Kyven node cache path is outside the configured cache directory.")
     return target
+
+
+def _ensure_unique_cache_uuid(node: Any) -> bool:
+    """Give a copied Kyven Group its own cache before it reads or writes files."""
+
+    if not hasattr(node, "knobs") or "kyven_uuid" not in node.knobs():
+        return False
+    node_id = str(node["kyven_uuid"].value()).strip()
+    if not node_id:
+        node_id = uuid.uuid4().hex
+        node["kyven_uuid"].setValue(node_id)
+    try:
+        node_name = str(node.fullName())
+        candidates = _nuke().allNodes("Group", recurseGroups=True)
+    except (AttributeError, RuntimeError):
+        return False
+    duplicate = any(
+        str(candidate.fullName()) != node_name
+        and "kyven_uuid" in candidate.knobs()
+        and str(candidate["kyven_uuid"].value()).strip() == node_id
+        for candidate in candidates
+    )
+    if not duplicate:
+        return False
+
+    node["kyven_uuid"].setValue(uuid.uuid4().hex)
+    # A pasted Group can also contain Reads pointing at the original node cache.
+    # Disconnect them immediately so it cannot display the other node's result.
+    _disconnect_cached_matte(node)
+    if "cache_location" in node.knobs():
+        node["cache_location"].setValue(str(_cache_root_path(node)))
+    elif "cache_folder" in node.knobs():
+        node["cache_folder"].setValue(str(_cache_root_path(node)))
+    if "kyven_status" in node.knobs():
+        node["kyven_status"].setValue("Copied node isolated: a new cache was assigned.")
+    return True
 
 
 def create_read_from_current_matte() -> None:
@@ -631,7 +668,7 @@ def create_read_from_current_matte() -> None:
     read["label"].setValue("Kyven cached matte")
     read.setXpos(node.xpos() + 140)
     read.setYpos(node.ypos() + 120)
-    node["kyven_status"].setValue(f"Created Read: {read.name()}")
+    node["kyven_status"].setValue(f"Created Matte Read: {read.name()}")
 
 
 def delete_node_cache() -> None:
@@ -1288,7 +1325,7 @@ def _restyle_node_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 22</font>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 25</font>'
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
@@ -1582,7 +1619,7 @@ def create_segment_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 22</font>',
+            '<font color="#91a3b0">SAM 2 | Local inference | API 25</font>',
         ),
     )
 

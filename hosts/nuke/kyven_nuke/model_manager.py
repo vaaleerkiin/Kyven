@@ -173,7 +173,7 @@ def _refresh_all_nodes():
         return
     by_task = {
         task: [model for model in models if model.get("task") == task]
-        for task in ("segment", "refine", "inpaint", "generative_inpaint")
+        for task in ("segment", "refine", "inpaint")
     }
     for node in nuke.allNodes("Group"):
         if "model" not in node.knobs():

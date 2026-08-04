@@ -8,11 +8,11 @@ while Kyven restores the result to the untouched full input format.
 
 ```text
 Source --------------------------> Kyven Inpaint (input 0)
-Roto / Paint / Segment mask -----> Kyven Inpaint (input 1)
+Paint / Segment mask -----------> Kyven Inpaint (input 1)
 ```
 
-Input 0 supplies RGB and the alpha preserved by the default Result output. Input 1 defines pixels
-to remove. Choose Alpha or Red with **Mask Input Channel** and use **Invert Input Mask** when the mask
+Input 0 supplies Source RGB. Input 1 defines pixels to remove and supplies the default output alpha.
+Choose Alpha or Red with **Mask Input Channel** and use **Invert Input Mask** when the mask
 convention is reversed.
 
 ## Choosing a model
@@ -24,6 +24,24 @@ convention is reversed.
 
 Start with LaMa ONNX while positioning the mask and ROI. Switch to Big-LaMa Native when a large ROI
 loses visible texture detail at the fast model's fixed input size.
+
+### Big-LaMa Refined
+
+When Big-LaMa Native is selected, **Quality Mode** offers `Standard` and `Refined`. Refined is not a
+third model: it reuses the installed `big-lama.pt` and optimizes the generator's internal features
+from a coarse image pyramid back to native ROI resolution. It adds no model download.
+
+| Control | Default | Effect |
+| --- | ---: | --- |
+| **Refinement Steps** | 15 | Optimization iterations at each higher-resolution scale |
+| **Refinement Strength** | 1.0 | Learning-rate multiplier; reduce it if refinement over-corrects texture |
+| **Refinement Scales** | 3 | Number of coarse-to-native pyramid levels, where the ROI is large enough |
+
+Refined is intended for final-quality stills or selected hero frames. It is much slower than
+Standard, particularly on CPU, and uses gradients during inference. On an 8 GB GPU, use Auto ROI
+and keep the crop close to the repair. Kyven refuses a crop that exceeds the selected Memory
+Profile's refinement budget instead of allowing a worker crash; reduce the ROI or use Standard.
+Cancellation and progress reporting remain active during every refinement iteration.
 
 ## Processing ROI
 
@@ -46,6 +64,7 @@ frame, which is convenient but may vary the context seen by a frame-independent 
 | **Threshold** | 0.5 | Converts soft gray input pixels into the binary mask required by LaMa |
 | **Model Mask Grow** | 12 px | Removes the old antialiased object edge from model input |
 | **Edge Color Match** | 1.0 | Aligns the patch RGB to clean pixels around the mask |
+| **Result Edge Softness** | 6 px | Feathers the final RGB inward to hide a hard LaMa seam |
 
 Threshold affects only gray pixels. A mask containing only pure black and white looks identical at
 every threshold between those two values. Lower Threshold includes more gray pixels; higher
@@ -60,7 +79,9 @@ repeat this temporary preview option.
 `Preprocess Input Mask` is enabled by default. In this mode Invert, Threshold, and Model Mask Grow
 prepare both the model input and the Result composite. Disable preprocessing to bypass Invert,
 Threshold, and Grow; the original input mask is then used for compositing while LaMa still performs
-its mandatory binary conversion. For custom edge treatment, select **Generated Patch** and combine it with Source using
+its mandatory binary conversion. Result Edge Softness never expands outside the mask and does not
+alter Preview Model Mask or the alpha in Result + Mask Alpha / Result Premult. For fully custom edge
+treatment, set it to 0, select **Generated Patch**, and combine it with Source using
 ordinary Nuke mask-processing nodes and Merge.
 
 ## Processing modes
@@ -90,6 +111,9 @@ stabilization in the current node.
 Every Inpaint node stores exported inputs, the exact `inpaint_model_mask.%04d.png` seen in preview,
 `inpaint_result.%04d.png`, the full-format
 `inpaint_patch.%04d.png`, and its effective Inpaint mask under its UUID folder.
+When a Kyven Group is copied or pasted, the first cache operation detects the duplicated UUID,
+assigns a new folder to that node, and disconnects inherited cached Reads. Two Inpaint nodes cannot
+therefore overwrite or display each other's newly rendered result.
 
 - **Create Result Read** creates a normal Nuke Read for the cached frame or sequence.
 - **Delete Node Cache** removes only this Inpaint node's generated files.

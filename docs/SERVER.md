@@ -1,8 +1,7 @@
 # Kyven Tools Server
 
-Kyven Server is the shared execution layer for the Kyven Tools toolkit. It isolates PyTorch, CUDA,
-model loading, and task-specific inference from Nuke, Fusion, and Resolve. Segment, Refine, and
-Inpaint are implemented APIs; planned tools such as Depth must extend the provider/job system
+Kyven Server is the shared execution layer for Kyven. It isolates PyTorch, CUDA, model loading, and
+task-specific inference from Nuke. Segment, Refine, and Inpaint extend the same provider/job system
 instead of placing inference inside a host adapter. The server binds only to `127.0.0.1` and
 requires a random bearer token on every endpoint.
 
@@ -92,28 +91,28 @@ trimap is black outside the ROI because those pixels were not sent to ViTMatte.
 ### Inpaint fields
 
 `source`, `mask`, and `output` are absolute paths. `patch_output` optionally persists the full-format
-uncomposited model RGB and `mask_output` optionally persists the clean soft input mask used by the
-default Result composite. `crop_mode` is `auto`, `manual`, or `full`; manual mode uses `roi`, while
+uncomposited model RGB and `mask_output` optionally persists the exact mask supplied to LaMa.
+`crop_mode` is `auto`, `manual`, or `full`; manual mode uses `roi`, while
 auto mode uses `context_padding`. `mask_grow`, `mask_threshold`, `invert_mask`, and `mask_channel`
 control the binary model mask. `preprocess_mask=false` bypasses invert, threshold, and grow while
 still performing the binary conversion required by LaMa. The CPU preview endpoint writes only the
 exact model mask to `output`.
 `edge_color_match` (0-1) corrects a local RGB offset measured in clean pixels around the generated
 area, reducing visible patch boundaries without changing pixels outside the processed mask.
+`edge_softness` (0-32 px) feathers the final RGB composite inward without changing the exact model
+mask written to alpha. This removes hard LaMa patch seams while leaving every pixel outside the mask
+untouched.
+`quality_mode` is `standard` or `refined`. Refined is valid only for `big-lama-native` and accepts
+`refinement_steps` (1-30), `refinement_strength` (0.1-2.0), and `refinement_scales` (2-4). These
+fields participate in the deterministic cache key. The worker reports progress and checks
+cancellation during each refinement iteration.
 Empty masks return Source unchanged without loading a model.
 
-### Generative Inpaint fields
-
-`POST /v1/jobs/generative-inpaint` accepts all Inpaint fields and requires a
-`generative_inpaint` catalog model. It additionally accepts `prompt`, `negative_prompt`, `seed`,
-`steps` (1-100), `guidance_scale` (0-20), `strength` (0.01 to below 1.0), `low_memory`, and
-`render_quality` (`preview` or `final`), `generation_mode` (`clean_plate` or `replace`), and
-`seam_blend` (0-128 px). SDXL uses the same authoritative exported Model Mask and
-source-safe ROI composite as classic Inpaint.
-
-API version 22 adds Clean Plate prompting, inward-only seam blending, and boundary color matching.
-API version 21 adds the separate optional SDXL Generative Inpaint job and pinned repository model
-downloads. API version 20 makes the enabled Inpaint preprocessing mask authoritative for LaMa inference, final
+API version 25 is the current host contract and adds the current Inpaint contract. API version 24 isolates caches for
+copied Nuke Groups, rejects stale cross-node async results, and
+adds inward-only result edge softness. API version 23 added optional
+multi-scale Big-LaMa feature refinement without another checkpoint. API version 22 added boundary
+color matching. API version 20 makes the enabled Inpaint preprocessing mask authoritative for LaMa inference, final
 RGB compositing, and Mask Alpha/Premult outputs. It also migrates Nuke groups to Source-left and
 Mask-right connectors without swapping the connected media. API version 19 removed the server round
 trip from Inpaint mask preview. Nuke evaluates Threshold,
@@ -132,5 +131,5 @@ rerunning a model. It also retains detailed Segment and Refine progress stages a
 persisted `trimap_output`. `GET /v1/jobs/{id}` returns `progress` (0.0-1.0) and
 `progress_message`. A video request may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
-returned masks to the original dimensions. The Nuke adapter uses versioned port `18785` to avoid
+returned masks to the original dimensions. The Nuke adapter uses versioned port `18787` to avoid
 connecting to stale API processes during development.

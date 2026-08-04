@@ -2,7 +2,7 @@
 
 ## Project mission
 
-Build Kyven Tools as a production-oriented, local, modular AI toolkit for node-based compositing. Segment and Refine are the first tools, not the boundary of the product. Nuke is the first host. Fusion and DaVinci Resolve support must remain possible without rewriting the backend.
+Build Kyven as a production-oriented, local toolkit for Segment, Refine, and Inpaint in Nuke.
 
 ## Read first
 
@@ -18,7 +18,7 @@ The Project Bible is authoritative unless a newer accepted architecture decision
 
 - Baseline support target: 4 GB VRAM and 16 GB RAM.
 - CPU fallback must remain functional.
-- Core backend must not import Nuke, Fusion or Resolve APIs.
+- Core backend must not import Nuke APIs.
 - Host adapters must not implement model inference.
 - Each model family must be behind a provider interface.
 - Disabled providers must not be loaded.
@@ -110,7 +110,7 @@ Use synthetic or redistributable fixtures only.
 
 ## Scope discipline
 
-Do not implement roadmap tools such as Depth, Inpaint, relighting, generative fill, or spline extraction until the project owner explicitly starts that vertical slice. Their planned architecture and licensing constraints belong in `docs/ROADMAP.md`.
+Do not add product areas beyond Segment, Refine, and Inpaint without explicit project-owner approval.
 
 ## Definition of done for a task
 

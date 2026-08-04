@@ -15,7 +15,7 @@ Source --------------------> Kyven Refine (input 0)
 Source -> Kyven Segment ---> Kyven Refine (input 1)
 ```
 
-Input 0 is the original RGB image. Input 1 is normally any mask with useful alpha: Segment, Roto,
+Input 0 is the original RGB image. Input 1 is normally any mask with useful alpha: Segment, Keyer,
 Keyer, Paint, or a corrected combination of those nodes.
 `Mask Input Channel` defaults to Alpha; choose Red for a grayscale RGB mask or artist trimap.
 

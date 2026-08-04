@@ -90,9 +90,34 @@ def _payload(node: Any, source: Any, source_path: Path, mask_path: Path, model_m
             if "edge_color_match" in node.knobs()
             else 1.0
         ),
+        edge_softness=(
+            float(node["edge_softness"].value())
+            if "edge_softness" in node.knobs()
+            else 6.0
+        ),
         mask_threshold=float(node["mask_threshold"].value()),
         invert_mask=bool(node["invert_mask"].value()), mask_channel=mask_channel, processing_size=0,
         preprocess_mask=bool(node["preprocess_mask"].value()),
+        quality_mode=(
+            "refined"
+            if "quality_mode" in node.knobs() and int(node["quality_mode"].getValue()) == 1
+            else "standard"
+        ),
+        refinement_steps=(
+            int(node["refinement_steps"].value())
+            if "refinement_steps" in node.knobs()
+            else 15
+        ),
+        refinement_strength=(
+            float(node["refinement_strength"].value())
+            if "refinement_strength" in node.knobs()
+            else 1.0
+        ),
+        refinement_scales=(
+            int(node["refinement_scales"].value())
+            if "refinement_scales" in node.knobs()
+            else 3
+        ),
     )
 
 
@@ -308,9 +333,12 @@ def _apply(
     processed_mask: Path,
     patch: Path,
     display_name: str = "Inpaint",
+    expected_job_id: str | None = None,
 ) -> None:
     node = _nuke().toNode(node_name)
     if node is None: return
+    if expected_job_id is not None and str(node["kyven_job_id"].value()) != expected_job_id:
+        return
     _set_busy(node_name, False)
     if job["status"] != "succeeded":
         _set_status(node_name, f"{display_name} failed: {_job_error_text(job)}")
@@ -378,7 +406,7 @@ def process_current_frame_for_node(
     def work() -> None:
         try:
             client = ensure_server(); job_id = getattr(client, submit_method)(payload)
-            _nuke().executeInMainThread(lambda: node["kyven_job_id"].setValue(job_id))
+            _nuke().executeInMainThread(_set_node_job_id, args=(node_name, job_id))
             last_contact = time.monotonic()
             while True:
                 try:
@@ -408,7 +436,7 @@ def process_current_frame_for_node(
                 time.sleep(0.15)
             _nuke().executeInMainThread(
                 _apply,
-                args=(node_name, job, output_path, processed_mask_path, patch_path, display_name),
+                args=(node_name, job, output_path, processed_mask_path, patch_path, display_name, job_id),
             )
         except Exception as exc:  # noqa: BLE001
             _nuke().executeInMainThread(_set_busy, args=(node_name, False))
@@ -473,7 +501,7 @@ def process_frame_range_for_node(
                 if cancelled:
                     break
                 job_id = getattr(client, submit_method)(payload)
-                _nuke().executeInMainThread(lambda value=job_id: node["kyven_job_id"].setValue(value))
+                _nuke().executeInMainThread(_set_node_job_id, args=(node_name, job_id))
                 job = client.wait(job_id)
                 if job["status"] != "succeeded":
                     error = job.get("error") or {}; raise RuntimeError(error.get("message", job["status"]))
@@ -483,16 +511,41 @@ def process_frame_range_for_node(
                 args=(node_name,),
             )
             if not cancelled:
-                _nuke().executeInMainThread(_set_result, args=(node, output_pattern, first, last))
-                _nuke().executeInMainThread(_set_processed_mask, args=(node, processed_mask_pattern, first, last))
-                _nuke().executeInMainThread(_set_patch, args=(node, patch_pattern, first, last))
-                _nuke().executeInMainThread(_set_status, args=(node_name, f"{display_name} range ready: {first}-{last}"))
+                _nuke().executeInMainThread(
+                    _apply_range,
+                    args=(node_name, output_pattern, processed_mask_pattern, patch_pattern, first, last, job_id, display_name),
+                )
         except Exception as exc:  # noqa: BLE001
             _nuke().executeInMainThread(_set_status, args=(node_name, f"{display_name} range failed: {exc}"))
         finally:
             _nuke().executeInMainThread(_finish_progress, args=(node_name,))
             _nuke().executeInMainThread(_set_busy, args=(node_name, False))
     threading.Thread(target=work, name=f"kyven-{display_name.lower().replace(' ', '-')}-range", daemon=True).start()
+
+
+def _set_node_job_id(node_name: str, job_id: str) -> None:
+    node = _nuke().toNode(node_name)
+    if node is not None:
+        node["kyven_job_id"].setValue(job_id)
+
+
+def _apply_range(
+    node_name: str,
+    output: Path,
+    processed_mask: Path,
+    patch: Path,
+    first: int,
+    last: int,
+    expected_job_id: str,
+    display_name: str,
+) -> None:
+    node = _nuke().toNode(node_name)
+    if node is None or str(node["kyven_job_id"].value()) != expected_job_id:
+        return
+    _set_result(node, output, first, last)
+    _set_processed_mask(node, processed_mask, first, last)
+    _set_patch(node, patch, first, last)
+    _set_status(node_name, f"{display_name} range ready: {first}-{last}")
 
 
 def process_frame_range() -> None:
@@ -575,11 +628,24 @@ def knob_changed() -> None:
             processed_mask["which"].setValue(0)
     node["processing_roi"].setVisible(str(node["crop_mode"].value()) == "manual")
     node["context_padding"].setVisible(str(node["crop_mode"].value()) == "auto")
+    big_lama = int(node["model"].getValue()) == 1
+    if knob_name == "model" and not big_lama and "quality_mode" in node.knobs():
+        node["quality_mode"].setValue(0)
+    refined = (
+        big_lama
+        and "quality_mode" in node.knobs()
+        and int(node["quality_mode"].getValue()) == 1
+    )
+    if "quality_mode" in node.knobs():
+        node["quality_mode"].setVisible(big_lama)
+    for name in ("refinement_steps", "refinement_strength", "refinement_scales", "refinement_help"):
+        if name in node.knobs():
+            node[name].setVisible(refined)
     if knob_name == "model":
         if int(node["model"].getValue()) == 0:
             node["model_help"].setValue("Fast: fixed 512 x 512 model input, CPU-friendly and best for Live. Use a tight Auto ROI for more detail.")
         else:
-            node["model_help"].setValue("Quality: native ROI resolution (padded only to a multiple of 8). Better detail, but slower and uses more memory.")
+            node["model_help"].setValue("Quality: native ROI resolution. Choose Refined for slow multi-scale feature optimization on the same Big-LaMa model.")
     preprocess = bool(node["preprocess_mask"].value()) if "preprocess_mask" in node.knobs() else True
     for name in ("invert_mask", "mask_threshold", "mask_grow"):
         if name in node.knobs():
@@ -645,10 +711,58 @@ def _ensure_inpaint_mask_sliders(node: Any) -> None:
     _ensure_double_slider(node, "mask_threshold", "Threshold", 0, 1, 0.5)
     _ensure_double_slider(node, "mask_grow", "Model Mask Grow (px)", -128, 128, 12)
     _ensure_double_slider(node, "edge_color_match", "Edge Color Match", 0, 1, 1)
+    _ensure_double_slider(node, "edge_softness", "Result Edge Softness (px)", 0, 32, 6)
+    _place_knob_after(node, "edge_softness", "edge_color_match")
     preprocess = bool(node["preprocess_mask"].value())
     for name in ("invert_mask", "mask_threshold", "mask_grow"):
         if name in node.knobs():
             node[name].setVisible(preprocess)
+
+
+def _ensure_refinement_controls(node: Any) -> None:
+    """Add the optional Big-LaMa feature-refinement controls to new and upgraded nodes."""
+
+    nuke = _nuke()
+    if "quality_mode" not in node.knobs():
+        quality = nuke.Enumeration_Knob("quality_mode", "Quality Mode", ["Standard", "Refined"])
+        _add_knob(nuke, node, quality)
+    if "refinement_steps" not in node.knobs():
+        steps = nuke.Int_Knob("refinement_steps", "Refinement Steps")
+        steps.setRange(1, 30)
+        steps.setValue(15)
+        _add_knob(nuke, node, steps)
+    if "refinement_strength" not in node.knobs():
+        _ensure_double_slider(node, "refinement_strength", "Refinement Strength", 0.1, 2.0, 1.0)
+    if "refinement_scales" not in node.knobs():
+        scales = nuke.Int_Knob("refinement_scales", "Refinement Scales")
+        scales.setRange(2, 4)
+        scales.setValue(3)
+        _add_knob(nuke, node, scales)
+    if "refinement_help" not in node.knobs():
+        _add_knob(
+            nuke,
+            node,
+            nuke.Text_Knob(
+                "refinement_help",
+                "",
+                "Refined reuses Big-LaMa and optimizes features from coarse to native ROI detail. It is much slower; use a tight Auto ROI. No extra model is downloaded.",
+            ),
+        )
+    previous = "model_help"
+    for name in (
+        "quality_mode",
+        "refinement_steps",
+        "refinement_strength",
+        "refinement_scales",
+        "refinement_help",
+    ):
+        _place_knob_after(node, name, previous)
+        previous = name
+    big_lama = int(node["model"].getValue()) == 1
+    refined = big_lama and int(node["quality_mode"].getValue()) == 1
+    node["quality_mode"].setVisible(big_lama)
+    for name in ("refinement_steps", "refinement_strength", "refinement_scales", "refinement_help"):
+        node[name].setVisible(refined)
 
 
 def _restyle_inpaint_cache(node: Any) -> None:
@@ -684,7 +798,7 @@ def create_inpaint_node() -> Any:
     nuke = _nuke(); selected = nuke.selectedNodes(); source = selected[0] if selected else None; mask = selected[1] if len(selected) > 1 else None
     node = nuke.nodes.Group(name="KyvenInpaint"); node.setInput(SOURCE_INPUT, source); node.setInput(MASK_INPUT, mask)
     node["label"].setValue("[value kyven_status]"); node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint")); add_node_branding(node, nuke)
-    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 22</font>'))
+    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 25</font>'))
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
     _add_knob(nuke, node, nuke.Enumeration_Knob("profile", "Memory Profile", ["low_memory", "balanced", "quality"])); node["profile"].setValue(1)
@@ -692,12 +806,13 @@ def create_inpaint_node() -> Any:
     _add_knob(nuke, node, nuke.PyScript_Knob("open_model_manager", "Model Manager...", "kyven_nuke.model_manager.show_model_manager()"), start_line=False)
     size = nuke.Int_Knob("processing_size", "Processing Size"); size.setValue(512); size.setVisible(False); node.addKnob(size)
     _add_knob(nuke, node, nuke.Text_Knob("model_help", "", "Fast: fixed 512 x 512 model input, CPU-friendly and best for Live. Use a tight Auto ROI for more detail."))
+    _ensure_refinement_controls(node)
     _add_section(nuke, node, "mask_section", "MASK")
     _add_knob(nuke, node, nuke.Enumeration_Knob("mask_channel", "Mask Input Channel", ["Alpha", "Red"]))
     preprocess = nuke.Boolean_Knob("preprocess_mask", "Preprocess Input Mask"); preprocess.setValue(True); _add_knob(nuke, node, preprocess)
     invert = nuke.Boolean_Knob("invert_mask", "Invert Input Mask"); _add_knob(nuke, node, invert)
     _ensure_inpaint_mask_sliders(node)
-    _add_knob(nuke, node, nuke.Text_Knob("mask_help", "", "When Preprocess is enabled, LaMa receives Invert + Threshold + Model Grow. When disabled, those controls are bypassed. Preview Model Mask shows the mask supplied to LaMa."))
+    _add_knob(nuke, node, nuke.Text_Knob("mask_help", "", "When Preprocess is enabled, LaMa receives Invert + Threshold + Model Grow. Preview Model Mask shows that exact mask. Result Edge Softness removes hard RGB seams without changing the model mask or output alpha."))
     _add_section(nuke, node, "roi_section", "PROCESSING ROI / MODEL CROP")
     _add_knob(nuke, node, nuke.Enumeration_Knob("crop_mode", "Crop Mode", ["auto", "manual", "full"]))
     padding = nuke.Int_Knob("context_padding", "Context Padding (px)"); padding.setRange(0, 1024); padding.setValue(128); _add_knob(nuke, node, padding)
@@ -714,7 +829,7 @@ def create_inpaint_node() -> Any:
     _add_section(nuke, node, "output_section", "OUTPUT")
     _add_knob(nuke, node, nuke.Enumeration_Knob("output_mode", "Output", list(INPAINT_OUTPUT_MODES)))
     node["output_mode"].setValue(1)
-    _add_knob(nuke, node, nuke.Text_Knob("output_help", "", "Result is opaque RGB. Result + Mask Alpha uses the effective Inpaint mask and is the default. Result Premult applies that mask. Generated Patch is the uncomposited model RGB."))
+    _add_knob(nuke, node, nuke.Text_Knob("output_help", "", "Result is opaque RGB with an inward-softened edge. Result + Mask Alpha and Result Premult use the exact mask sent to LaMa. Generated Patch is uncomposited model RGB."))
     uid = nuke.String_Knob("kyven_uuid", "UUID"); uid.setValue(uuid.uuid4().hex); uid.setVisible(False); node.addKnob(uid)
     _add_section(nuke, node, "cache_section", "CACHE")
     folder = nuke.String_Knob("cache_location", "Cache Folder"); folder.setFlag(nuke.READ_ONLY); folder.setValue(str(_cache_root(node))); _add_knob(nuke, node, folder)
@@ -768,7 +883,11 @@ def upgrade_selected_inpaint_node() -> None:
     if "create_result_read" not in node.knobs() or "kyven_uuid" not in node.knobs():
         nuke.message("The selected Group is not a Kyven Inpaint node.")
         return
+    isolated_cache = _cache_root(node)
+    if "cache_location" in node.knobs():
+        node["cache_location"].setValue(str(isolated_cache))
     _ensure_inpaint_mask_sliders(node)
+    _ensure_refinement_controls(node)
     _ensure_inpaint_preview_graph(node)
     if "refresh_models" not in node.knobs():
         _add_knob(
@@ -817,19 +936,18 @@ def upgrade_selected_inpaint_node() -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br>'
-            '<font color="#91a3b0">LaMa | Source + Mask | API 22</font>'
+            '<font color="#91a3b0">LaMa | Source + Mask | API 25</font>'
         )
     if "mask_help" in node.knobs():
         node["mask_help"].setValue(
-            "When Preprocess is enabled, LaMa receives Invert + Threshold + Model Grow. When "
-            "disabled, those controls are bypassed. Preview Model Mask shows the mask supplied "
-            "to LaMa."
+            "When Preprocess is enabled, LaMa receives Invert + Threshold + Model Grow. Preview "
+            "Model Mask shows that exact mask. Result Edge Softness removes hard RGB seams "
+            "without changing the model mask or output alpha."
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
-            "Result is opaque RGB. Result + Mask Alpha uses the effective Inpaint mask and is "
-            "the default. Result Premult applies that mask. Generated Patch is the uncomposited "
-            "model RGB."
+            "Result is opaque RGB with an inward-softened edge. Result + Mask Alpha and Result "
+            "Premult use the exact mask sent to LaMa. Generated Patch is uncomposited model RGB."
         )
     if "kyven_status" in node.knobs():
         node["kyven_status"].setValue("Inpaint UI upgraded. Cached results were preserved.")
