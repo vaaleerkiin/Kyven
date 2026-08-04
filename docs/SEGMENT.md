@@ -7,7 +7,7 @@ is never sent to the model as a prompt.
 ## Current pipeline
 
 ```text
-Nuke / Fusion / CLI adapter
+Nuke / CLI adapter
           |
           v
 SegmentRequest
@@ -76,7 +76,7 @@ ranges, SAM 2 video tracking with progress/ETA/cancellation, four output modes, 
 and cache cleanup. Video points are sampled on the key frame while the animated ROI is sampled for
 each frame and reconstructed into full-resolution coordinates. Remaining Segment work
 includes multi-key-frame corrections, resumable per-frame metadata, explicit out-of-memory retry
-profiles, broader host testing, and Fusion/Resolve adapters.
+profiles, and broader host testing.
 
 New Segment nodes default to `Source + Alpha`. Updating an older Group through
 `Kyven > Upgrade Selected Segment Node` preserves its prompts, UUID, input, and cached matte.

@@ -12,6 +12,19 @@ from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
 from kyven.inpaint.models import InpaintCapabilities, InpaintPrediction, InpaintRequest
 from kyven.inpaint.providers.base import InpaintProvider
+from kyven.inpaint.refinement import refine_big_lama
+
+
+def symmetric_modulo_padding(width: int, height: int, modulo: int = 8) -> tuple[int, int, int, int]:
+    """Return Cattery LaMa's left, right, top, bottom reflect padding."""
+
+    padded_width = (width + modulo - 1) // modulo * modulo
+    padded_height = (height + modulo - 1) // modulo * modulo
+    left = (padded_width - width + 1) // 2
+    right = padded_width - width - left
+    top = (padded_height - height + 1) // 2
+    bottom = padded_height - height - top
+    return left, right, top, bottom
 
 
 class BigLamaProvider(InpaintProvider):
@@ -29,7 +42,7 @@ class BigLamaProvider(InpaintProvider):
         return InpaintCapabilities(
             provider_id="big-lama-native",
             display_name="Big-LaMa Native",
-            provider_version="1",
+            provider_version="2",
             model_checksum=self._expected_checksum,
             license_name="Apache-2.0",
             license_url="https://github.com/advimman/lama/blob/main/LICENSE",
@@ -65,6 +78,8 @@ class BigLamaProvider(InpaintProvider):
         self._device = "cuda" if use_cuda else "cpu"
         try:
             self._model = torch.jit.load(str(self._checkpoint), map_location=self._device).eval()
+            for parameter in self._model.parameters():
+                parameter.requires_grad_(False)
         except Exception as exc:
             raise KyvenError(
                 ErrorCode.MODEL_NOT_FOUND,
@@ -80,33 +95,79 @@ class BigLamaProvider(InpaintProvider):
 
         with Image.open(request.source) as source_file, Image.open(request.mask) as mask_file:
             image = np.asarray(source_file.convert("RGB"), dtype=np.float32) / 255.0
-            mask = (np.asarray(mask_file.convert("L"), dtype=np.uint8) >= 128).astype(np.float32)
+            # Cattery's exported wrapper uses alpha > 0, not a 0.5 cutoff.
+            mask = (np.asarray(mask_file.convert("L"), dtype=np.uint8) > 0).astype(np.float32)
         height, width = mask.shape
-        padded_height = (height + 7) // 8 * 8
-        padded_width = (width + 7) // 8 * 8
-        image = np.pad(image, ((0, padded_height - height), (0, padded_width - width), (0, 0)), mode="reflect")
-        mask = np.pad(mask, ((0, padded_height - height), (0, padded_width - width)), mode="constant")
+        left, right, top, bottom = symmetric_modulo_padding(width, height)
+        padded_height = height + top + bottom
+        padded_width = width + left + right
+        image = np.pad(image, ((top, bottom), (left, right), (0, 0)), mode="reflect")
+        mask = np.pad(mask, ((top, bottom), (left, right)), mode="constant")
         image_tensor = torch.from_numpy(np.transpose(image, (2, 0, 1))[None]).to(self._device)
         mask_tensor = torch.from_numpy(mask[None, None]).to(self._device)
-        cancellation.report_progress(0.45, "Big-LaMa native inpainting")
+        refined = request.quality_mode == "refined"
+        if refined and height * width > {
+            "low_memory": 700_000,
+            "balanced": 1_500_000,
+            "quality": 2_500_000,
+        }[request.profile.value]:
+            raise KyvenError(
+                ErrorCode.INFERENCE_FAILED,
+                "The ROI is too large for the selected Big-LaMa Refined memory profile.",
+                suggested_action="Use Auto ROI, reduce the ROI, or select Standard quality.",
+            )
+        cancellation.report_progress(
+            0.45,
+            "Big-LaMa refinement" if refined else "Big-LaMa native inpainting",
+        )
         try:
-            with torch.inference_mode():
-                result = model(image_tensor, mask_tensor)
+            if refined:
+                result = refine_big_lama(
+                    model,
+                    image_tensor,
+                    mask_tensor,
+                    steps=request.refinement_steps,
+                    strength=request.refinement_strength,
+                    max_scales=request.refinement_scales,
+                    cancellation=cancellation,
+                )
+            else:
+                with torch.inference_mode():
+                    result = model(image_tensor, mask_tensor)
         except RuntimeError as exc:
             if "out of memory" in str(exc).lower():
+                if self._device == "cuda":
+                    torch.cuda.empty_cache()
                 raise KyvenError(
                     ErrorCode.INFERENCE_FAILED,
                     "Big-LaMa ran out of GPU memory for this ROI.",
                     suggested_action="Use Auto ROI, reduce the ROI, or choose the low_memory profile.",
                 ) from exc
-            raise
-        rgb = result[0, :, :height, :width].permute(1, 2, 0).detach().float().cpu().numpy()
+            raise KyvenError(
+                ErrorCode.INFERENCE_FAILED,
+                "Big-LaMa inference failed.",
+                technical_detail=str(exc),
+                suggested_action="Retry with Standard quality or a smaller Auto ROI.",
+            ) from exc
+        rgb = (
+            result[0, :, top : top + height, left : left + width]
+            .permute(1, 2, 0)
+            .detach()
+            .float()
+            .cpu()
+            .numpy()
+        )
         return InpaintPrediction(
             rgb=np.clip(rgb * 255.0, 0, 255).astype(np.uint8),
             metadata={
                 "device": self._device,
                 "model_input": [padded_width, padded_height],
+                "padding": [left, right, top, bottom],
+                "mask_rule": "alpha > 0",
                 "native_resolution": True,
+                "quality_mode": request.quality_mode,
+                "refinement_steps": request.refinement_steps if refined else 0,
+                "refinement_scales": request.refinement_scales if refined else 0,
             },
         )
 

@@ -7,12 +7,10 @@ and long-running inference outside the Nuke process. Results are returned as ord
 sequences that remain usable without a live model connection.
 
 > **Local-first and suitable for commercial work.** Kyven's code can be used commercially under
-> Apache-2.0. Inference stays local and source media is not uploaded. Model licenses are separate:
-> permissive models are production-friendly, while optional SDXL requires acceptance of OpenRAIL++
-> and compliance with its use restrictions.
+> Apache-2.0. Inference stays local and source media is not uploaded. The currently shipped SAM 2,
+> ViTMatte and LaMa catalog entries use commercially permissive licenses.
 >
-> **Project status:** active pre-alpha. Segment, Refine, Inpaint, and Generative Inpaint are working in Nuke on Windows.
-> Fusion and DaVinci Resolve adapters, Depth, and additional utilities are planned.
+> **Project status:** active pre-alpha. Segment, Refine, and Inpaint are working in Nuke on Windows.
 
 ## Tools available today
 
@@ -21,7 +19,6 @@ sequences that remain usable without a live model connection.
 | **Kyven Segment** | Source + Viewer prompts | Binary object masks and video propagation | SAM 2.1 Tiny / Small / Base+ / Large |
 | **Kyven Refine** | Source + mask or trimap | Soft alpha refinement and trimap inspection | ViTMatte Small / Base |
 | **Kyven Inpaint** | Source + removal mask | ROI-aware object removal and clean-up | LaMa ONNX Fast / Big-LaMa Native |
-| **Kyven Generative Inpaint** | Source + removal mask + prompt | Prompt-guided reconstruction | SDXL Inpainting 1.0 (optional) |
 
 All new nodes default to a compositing-friendly **Source + Alpha** or **Source + Refined Alpha**
 output where applicable.
@@ -84,7 +81,6 @@ Replace `D:/Kyven` with your repository location, restart Nuke, then open:
 Nodes > Kyven > Segment
 Nodes > Kyven > Refine
 Nodes > Kyven > Inpaint
-Nodes > Kyven > Generative Inpaint (SDXL)
 ```
 
 The installer deliberately does not edit `init.py` for the user.
@@ -107,7 +103,7 @@ touching node caches or source media.
 | Maximum Refine quality | ViTMatte Base | 8 GB+ with tiling | 96.7 M parameters; slower and heavier |
 | Fast Inpaint / Live | LaMa ONNX Fast | CPU, no GPU required | Fixed 512 × 512 model input |
 | Detailed Inpaint | Big-LaMa Native | 4 GB+ or CPU | Native ROI detail, slower |
-| Prompt-guided Inpaint | SDXL Inpainting | 8 GB+ with Low Memory | ~7 GB optional download; OpenRAIL++ |
+| Final-quality Inpaint | Big-LaMa Refined | 8 GB with a tight ROI; CPU is supported but slow | Multi-scale feature optimization |
 
 Install a specific model non-interactively:
 
@@ -130,29 +126,21 @@ See [Model selection and safety](docs/MODELS.md) for exact downloads, licenses, 
 
 ### Refine
 
-1. Connect the original Source to input 0 and a coarse mask to input 1.
-2. Leave **Generate Trimap from Mask** enabled for Segment, Roto, Keyer, or Paint masks.
+1. Connect the original Source to the left **Source** connector (input 1) and a coarse mask to the
+   right **Mask** connector (input 0).
+2. Leave **Generate Trimap from Mask** enabled for Segment, Keyer, or Paint masks.
 3. Adjust the immediate CPU trimap preview, then process a frame or range with ViTMatte.
 4. Inspect the refined alpha, exact trimap, Source + Alpha, or cutout outputs.
 
 ### Inpaint
 
-1. Connect Source to input 0 and the removal mask to input 1.
+1. Connect Source to the left **Source** connector (input 1) and the removal mask to the right
+   **Mask** connector (input 0).
 2. Use Auto ROI for most shots; it crops around the mask plus Context Padding.
 3. Use LaMa ONNX for fast iteration or Big-LaMa Native when the 512 input loses detail.
 4. Use Model Grow and Edge Color Match to avoid missed edges and local color offsets.
-
-### Generative Inpaint
-
-Use the separate node when LaMa cannot invent the required structure. Describe the replacement in
-Prompt, keep Low Memory enabled on an 8 GB GPU, iterate in Preview, then switch to Final. It reuses
-Inpaint mask preprocessing, ROI, cache, range, progress, cancellation, and output modes. See
-[Generative Inpaint](docs/GENERATIVE_INPAINT.md).
-
-For object removal, leave **Mode = Remove / Clean Plate**. It applies background-only prompting,
-excludes new foreground objects, matches boundary color, and blends the generated RGB inward at the
-mask edge. **Raw Patch** is diagnostic and may show the rectangular ROI boundary; use **Result** or
-**Result + Mask Alpha** for the finished image.
+5. For a final still or selected hero frames, choose Big-LaMa Native and set Quality Mode to Refined.
+   Refinement reuses the same model, adds no download, and is intentionally much slower.
 
 ## Cache controls
 
@@ -180,8 +168,8 @@ are reused. Existing Groups can then be updated without changing their UUID or c
 - Inference is local by default; the server binds only to `127.0.0.1`.
 - Model downloads are pinned and verified before activation.
 - Project code may be used commercially under the Apache-2.0 license.
-- Every catalog entry includes source and license metadata. Optional restricted models require
-  explicit acceptance; commercial use always remains subject to the individual model license.
+- Every catalog entry includes source, checksum, license, and commercial-use metadata. Review the
+  individual model license before distributing a production setup.
 - Model weights are downloaded during installation and are not committed to this repository.
 
 Review [Third-party notices](THIRD_PARTY_NOTICES.md) before distribution in a production pipeline.
@@ -195,12 +183,10 @@ Review [Third-party notices](THIRD_PARTY_NOTICES.md) before distribution in a pr
 | [Segment](docs/SEGMENT.md) | SAM prompts, ROI, tracking, CLI, and architecture |
 | [Refine](docs/REFINE.md) | ViTMatte, trimap preview, tiling, and outputs |
 | [Inpaint](docs/INPAINT.md) | LaMa models, ROI, edge-safe blending, outputs, and cache |
-| [Generative Inpaint](docs/GENERATIVE_INPAINT.md) | SDXL prompts, masks, memory, outputs, and license |
 | [Models](docs/MODELS.md) | Catalog, hardware guidance, verification, and licenses |
 | [Troubleshooting](docs/TROUBLESHOOTING.md) | Startup, CUDA, ROI, Read, cache, and log problems |
 | [Server API](docs/SERVER.md) | Authenticated endpoints and request fields |
 | [Benchmarks](docs/BENCHMARKS.md) | Development hardware observations |
-| [Roadmap](docs/ROADMAP.md) | Depth, utilities, host adapters, and future work |
 
 ## Repository map
 
@@ -208,7 +194,7 @@ Review [Third-party notices](THIRD_PARTY_NOTICES.md) before distribution in a pr
 Kyven
 ├── src/kyven/       server, providers, model catalog, CLI
 ├── hosts/nuke/      Nuke adapter and Group-node builders
-├── docs/            user, technical, and roadmap documentation
+├── docs/            user and technical documentation
 ├── tests/           host-neutral and adapter tests
 ├── models/          locally installed weights (not committed)
 └── .runtime/        local logs and generated caches (not committed)

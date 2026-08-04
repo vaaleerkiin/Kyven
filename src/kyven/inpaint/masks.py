@@ -38,6 +38,10 @@ def prepare_inpaint_masks(
     if not preprocess:
         return np.where(source >= 128, 255, 0).astype(np.uint8), source.copy()
     interpreted = 255 - source if invert else source
-    binary = np.where(interpreted >= round(float(threshold) * 255.0), 255, 0).astype(np.uint8)
+    cutoff = round(float(threshold) * 255.0)
+    # Cattery LaMa treats every non-zero alpha sample as masked. Preserve the
+    # normal >= cutoff behavior for explicit thresholds above zero.
+    selected = interpreted > 0 if cutoff <= 0 else interpreted >= cutoff
+    binary = np.where(selected, 255, 0).astype(np.uint8)
     model_mask = grow_mask(binary, int(model_grow))
     return model_mask, interpreted.copy()

@@ -44,7 +44,6 @@ def point(x: float, nuke_y: float, image_height: int, label: str) -> dict[str, A
         "label": label,
     }
 
-
 def roi_box(
     box: tuple[float, float, float, float],
     image_height: int,
@@ -209,11 +208,15 @@ def inpaint_payload(
     model_index: int, profile: str,
     image_width: int, image_height: int, crop_mode: str,
     roi: tuple[float, float, float, float], context_padding: int,
-    mask_grow: int, edge_color_match: float,
+    mask_grow: int, edge_color_match: float, edge_softness: float,
     mask_threshold: float,
     invert_mask: bool, mask_channel: str,
     processing_size: int,
     preprocess_mask: bool = True,
+    quality_mode: str = "standard",
+    refinement_steps: int = 15,
+    refinement_strength: float = 1.0,
+    refinement_scales: int = 3,
 ) -> dict[str, Any]:
     return {
         "source": source,
@@ -229,9 +232,14 @@ def inpaint_payload(
         "context_padding": int(context_padding),
         "mask_grow": int(mask_grow),
         "edge_color_match": float(edge_color_match),
+        "edge_softness": float(edge_softness),
         "mask_threshold": float(mask_threshold),
         "invert_mask": bool(invert_mask),
         "mask_channel": mask_channel,
         "processing_size": int(processing_size),
         "preprocess_mask": bool(preprocess_mask),
+        "quality_mode": quality_mode,
+        "refinement_steps": int(refinement_steps),
+        "refinement_strength": float(refinement_strength),
+        "refinement_scales": int(refinement_scales),
     }

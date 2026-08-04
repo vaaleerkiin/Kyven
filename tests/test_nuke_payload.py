@@ -10,7 +10,12 @@ sys.path.insert(0, str(NUKE_ROOT))
 
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 from kyven_nuke.inpaint_node import (
+    CATTERY_DEFAULT_INPUT_COLORSPACE,
+    CATTERY_MODEL_COLORSPACE,
     INPAINT_OUTPUT_MODES,
+    _colorspace_has_error,
+    _wire_generated_patch,
+    _wire_patch_over_source,
 )
 from kyven_nuke.inpaint_node import (
     MASK_INPUT as INPAINT_MASK_INPUT,
@@ -26,6 +31,7 @@ from kyven_nuke.node import (
     OUTPUT_MODES,
     _cache_root_path,
     _ensure_double_slider,
+    _ensure_unique_cache_uuid,
     _job_error_text,
     _nuke_file_path,
     _path_for_frame,
@@ -58,6 +64,44 @@ from kyven_nuke.runtime import _listener_pids, _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_inpaint_matches_cattery_lama_color_defaults(self) -> None:
+        self.assertEqual(CATTERY_DEFAULT_INPUT_COLORSPACE, "Linear")
+        self.assertEqual(CATTERY_MODEL_COLORSPACE, "sRGB")
+        self.assertTrue(_colorspace_has_error("Error: (Linear) not found"))
+        self.assertFalse(_colorspace_has_error("Linear"))
+
+    def test_generated_patch_uses_composited_live_source_and_mask(self) -> None:
+        class Copy:
+            def __init__(self) -> None:
+                self.inputs = {}
+
+            def setInput(self, index, node) -> None:
+                self.inputs[index] = node
+
+        copy = Copy()
+        result = object()
+        mask = object()
+        _wire_generated_patch(copy, result, mask)
+
+        self.assertIs(copy.inputs[0], result)
+        self.assertIs(copy.inputs[1], mask)
+
+    def test_inpaint_result_wires_generated_patch_over_source(self) -> None:
+        class Merge:
+            def __init__(self) -> None:
+                self.inputs = {}
+
+            def setInput(self, index, node) -> None:
+                self.inputs[index] = node
+
+        merge = Merge()
+        patch = object()
+        source = object()
+        _wire_patch_over_source(merge, patch, source)
+
+        self.assertIs(merge.inputs[0], source)
+        self.assertIs(merge.inputs[1], patch)
+
     def test_two_input_groups_migrate_source_left_without_swapping_media(self) -> None:
         class Knob:
             def __init__(self, value):
@@ -201,9 +245,9 @@ class NukePayloadTests(unittest.TestCase):
 
     def test_listener_pid_parser_uses_only_exact_listening_port(self) -> None:
         output = """
-          TCP    127.0.0.1:18785    0.0.0.0:0    LISTENING    17020
+          TCP    127.0.0.1:18788    0.0.0.0:0    LISTENING    17020
           TCP    127.0.0.1:18777    0.0.0.0:0    LISTENING    999
-          TCP    127.0.0.1:18785    127.0.0.1:50000    TIME_WAIT    0
+          TCP    127.0.0.1:18788    127.0.0.1:50000    TIME_WAIT    0
         """
 
         self.assertEqual(_listener_pids(output), (17020,))
@@ -243,11 +287,12 @@ class NukePayloadTests(unittest.TestCase):
         self.assertTrue(affects_live_result("positive_point_3", "segment"))
         self.assertTrue(affects_live_result("prompt_box", "segment"))
         self.assertTrue(affects_live_result("processing_roi", "refine"))
+        self.assertTrue(affects_live_result("in_colorspace", "inpaint"))
+        self.assertFalse(affects_live_result("input_color_space", "inpaint"))
         self.assertFalse(affects_live_result("foreground_radius", "refine"))
         self.assertFalse(affects_live_result("max_hole_area", "segment"))
         self.assertFalse(affects_live_result("output_mode", "segment"))
         self.assertFalse(affects_live_result("output_mode", "refine"))
-
     def test_refine_payload_translates_roi_and_trimap_controls(self) -> None:
         payload = refine_payload(
             source="D:/source.png",
@@ -340,6 +385,46 @@ class NukePayloadTests(unittest.TestCase):
         ):
             _cache_root_path(Node())
 
+    def test_copied_kyven_node_receives_an_isolated_cache_uuid(self) -> None:
+        class Knob:
+            def __init__(self, value: str = "") -> None:
+                self._value = value
+
+            def value(self) -> str:
+                return self._value
+
+            def setValue(self, value: str) -> None:
+                self._value = value
+
+        class Node:
+            def __init__(self, name: str, node_id: str) -> None:
+                self._name = name
+                self._knobs = {"kyven_uuid": Knob(node_id)}
+
+            def fullName(self) -> str:
+                return self._name
+
+            def knobs(self) -> dict[str, Knob]:
+                return self._knobs
+
+            def __getitem__(self, name: str) -> Knob:
+                return self._knobs[name]
+
+        original = Node("KyvenInpaint", "shared")
+        copied = Node("KyvenInpaint1", "shared")
+        fake_nuke = mock.Mock()
+        fake_nuke.allNodes.return_value = [original, copied]
+        with (
+            mock.patch("kyven_nuke.node._nuke", return_value=fake_nuke),
+            mock.patch("kyven_nuke.node._disconnect_cached_matte") as disconnect,
+        ):
+            changed = _ensure_unique_cache_uuid(copied)
+
+        self.assertTrue(changed)
+        self.assertEqual(original["kyven_uuid"].value(), "shared")
+        self.assertNotEqual(copied["kyven_uuid"].value(), "shared")
+        disconnect.assert_called_once_with(copied)
+
     def test_output_modes_match_internal_switch_inputs(self) -> None:
         self.assertEqual(
             OUTPUT_MODES,
@@ -377,7 +462,7 @@ class NukePayloadTests(unittest.TestCase):
             model_index=0, profile="balanced",
             image_width=1920, image_height=1080, crop_mode="manual",
             roi=(10, 20, 300, 400), context_padding=96, mask_grow=-2,
-            edge_color_match=0.75, mask_threshold=0.25,
+            edge_color_match=0.75, edge_softness=9, mask_threshold=0.25,
             invert_mask=True, mask_channel="alpha", processing_size=0,
         )
         self.assertEqual(payload["model_id"], "lama-2025jan-onnx")
@@ -389,9 +474,14 @@ class NukePayloadTests(unittest.TestCase):
         self.assertNotIn("blend_grow", payload)
         self.assertNotIn("mask_feather", payload)
         self.assertEqual(payload["edge_color_match"], 0.75)
+        self.assertEqual(payload["edge_softness"], 9.0)
         self.assertEqual(payload["mask_channel"], "alpha")
         self.assertTrue(payload["invert_mask"])
         self.assertTrue(payload["preprocess_mask"])
+        self.assertEqual(payload["quality_mode"], "standard")
+        self.assertEqual(payload["refinement_steps"], 15)
+        self.assertEqual(payload["refinement_strength"], 1.0)
+        self.assertEqual(payload["refinement_scales"], 3)
 
     def test_video_payload_uses_key_frame_and_cpu_offload(self) -> None:
         payload = segment_video_payload(

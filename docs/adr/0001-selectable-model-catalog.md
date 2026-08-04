@@ -5,8 +5,9 @@
 
 ## Context
 
-Artists have different hardware. Segment currently has four SAM 2.1 sizes, and Refine will have
-multiple ViTMatte sizes. Hard-coding one checkpoint into a Nuke or Fusion node would prevent
+Artists have different hardware. Segment has four SAM 2.1 sizes, Refine has two ViTMatte sizes,
+and Inpaint offers fast fixed-resolution and native-resolution LaMa providers. Hard-coding one
+checkpoint into a Nuke node would prevent
 hardware choice, complicate upgrades, and couple host scripts to model implementations.
 
 ## Decision
@@ -19,8 +20,8 @@ The UI displays all catalog choices. Hardware warnings inform but do not block t
 one provider for a task stays resident by default; selecting another variant unloads the previous
 one before inference.
 
-Segment and Refine have independent selections. Their public node and API contracts remain model
-neutral.
+Segment, Refine, and Inpaint have independent selections. Their public node and API contracts remain
+model-neutral.
 
 ## Consequences
 

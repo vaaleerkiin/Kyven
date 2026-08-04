@@ -8,6 +8,7 @@ import os
 import secrets
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from kyven.errors import ErrorCode, KyvenError
@@ -99,15 +100,15 @@ def build_parser() -> argparse.ArgumentParser:
     inpaint.add_argument("--input", required=True, type=Path)
     inpaint.add_argument("--mask", required=True, type=Path)
     inpaint.add_argument("--output", required=True, type=Path)
-    inpaint.add_argument("--model", default="lama-2025jan-onnx", choices=_model_ids("inpaint"))
+    inpaint.add_argument("--model", default="big-lama-native", choices=_model_ids("inpaint"))
     _add_runtime_options(inpaint)
     inpaint.add_argument("--profile", default="balanced", choices=tuple(p.value for p in ExecutionProfile))
     inpaint.add_argument("--crop-mode", default="auto", choices=("auto", "manual", "full"))
     inpaint.add_argument("--roi", type=_box)
     inpaint.add_argument("--context-padding", default=128, type=int)
-    inpaint.add_argument("--mask-grow", default=12, type=int)
-    inpaint.add_argument("--edge-color-match", default=1.0, type=float)
-    inpaint.add_argument("--mask-threshold", default=0.5, type=float)
+    inpaint.add_argument("--mask-grow", default=0, type=int)
+    inpaint.add_argument("--edge-color-match", default=0.0, type=float)
+    inpaint.add_argument("--mask-threshold", default=0.0, type=float)
     inpaint.add_argument("--invert-mask", action="store_true")
     inpaint.add_argument("--no-mask-preprocess", action="store_true")
     inpaint.add_argument("--processed-mask-output", type=Path)
@@ -281,7 +282,39 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         if args.command == "models" and args.model_command == "download":
-            path = catalog.download(args.model_id, args.models_dir)
+            started = time.monotonic()
+            last_report = 0.0
+            highest_downloaded = 0
+
+            def report(downloaded: int, total: int) -> None:
+                nonlocal highest_downloaded, last_report
+                now = time.monotonic()
+                highest_downloaded = max(highest_downloaded, int(downloaded))
+                if now - last_report < 1.0 and highest_downloaded < total:
+                    return
+                last_report = now
+                elapsed = int(now - started)
+                if highest_downloaded > 1:
+                    percent = min(99.9, highest_downloaded / max(1, total) * 100.0)
+                    message = (
+                        f"Downloading {args.model_id}: {percent:5.1f}% "
+                        f"({highest_downloaded / 1_000_000_000:.2f}/"
+                        f"{total / 1_000_000_000:.2f} GB, {elapsed}s)"
+                    )
+                else:
+                    message = (
+                        f"Downloading {args.model_id}: staging Hugging Face/Xet chunks "
+                        f"({elapsed}s elapsed)"
+                    )
+                sys.stderr.write(f"\r{message:<110}")
+                sys.stderr.flush()
+
+            path = catalog.download(
+                args.model_id,
+                args.models_dir,
+                progress=report,
+            )
+            sys.stderr.write("\n")
             print(json.dumps({"model_id": args.model_id, "path": str(path)}, indent=2))
             return 0
     except KyvenError as exc:

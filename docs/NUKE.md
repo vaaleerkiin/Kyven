@@ -1,19 +1,20 @@
 # Kyven Tools for Nuke
 
 The Nuke adapter exposes independent Kyven Tools operations as native-looking Group nodes. The
-current Segment, Refine, Inpaint, and Generative Inpaint nodes export frames to the local Kyven Server and read cached results
-back into the graph. Future Depth nodes will reuse the same host/server boundary and
-per-node cache conventions. Nuke remains responsive while server inference runs.
+current Segment, Refine, and Inpaint nodes export frames to the local Kyven Server and read cached
+results back into the graph. They use the same host/server boundary and per-node cache conventions.
+Nuke remains responsive while server inference runs.
 
 All Kyven mask, matte, and trimap cache files are explicitly marked as **raw data** on both Nuke
 Write and Read nodes. OCIO/ACES therefore never applies a display or color-space transform to mask
 RGB values before they are copied into alpha: black remains `0.0`, white remains `1.0`, and soft
 mask values round-trip unchanged apart from the selected file format's numeric precision.
 
-Inpaint color caches use one explicit sRGB interchange colorspace for both the internal Source
-Write and Result/Patch Reads. The generated patch is then composited over the original Source inside
-Nuke, in the project's working space. This preserves the untouched ACES/HDR source and avoids a
-different file-type default producing a visible color seam. Public Inpaint alpha comes directly
+Inpaint mirrors Cattery LaMa's native Nuke color graph: `Input Colorspace -> sRGB` before inference
+and `sRGB -> Input Colorspace` afterward, with **Linear** selected by default. The linked
+**Input Colorspace** knob exposes the same choices as Nuke's Colorspace node. The intervening cache
+Write and Reads are raw, preventing an extra file transform. The generated patch is then composited
+over the original Source inside Nuke. Public Inpaint alpha comes directly
 from the Nuke mask graph rather than from cached RGB, while the cached blend mask carries the exact
 inward feather used for the generated patch. The feather keeps the original Source on the mask
 boundary and starts the transition farther inside, preventing bright or dark colour fringes.
@@ -45,23 +46,13 @@ nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 
 The adapter discovers the repository from its own installed plugin path, so the folder may be placed
 anywhere. `KYVEN_ROOT` is only an optional override for custom deployments. Restart Nuke and choose
-`Kyven > Segment`, `Kyven > Refine`, `Kyven > Inpaint`, or `Kyven > Generative Inpaint (SDXL)` from the Nodes menu.
+`Kyven > Segment`, `Kyven > Refine`, or `Kyven > Inpaint` from the Nodes menu.
 
 Use `Kyven > Model Manager...` at any time to install or remove a trusted catalog checkpoint. The
 same button appears in every Kyven node. Downloads show progress and become available only after
 exact size and SHA-256 verification; model removal does not delete rendered caches.
-Pinned repository models use a fixed audited revision instead of a single-file checksum.
-
-## Generative Inpaint workflow
-
-The separate SDXL node reuses classic Inpaint's Source/Mask inputs, immediate Model Mask Preview,
-ROI, output modes, frame/range processing, cache, progress, and cancellation. It adds Prompt,
-Negative Prompt, Seed, Steps, Guidance, Strength, Preview/Final quality, and Low Memory. SDXL is an
-optional ~7 GB model and is not loaded by classic LaMa Inpaint. See
-[Generative Inpaint](GENERATIVE_INPAINT.md).
-Clean Plate is the removal default. It rejects new foreground subjects and uses inward-only Seam
-Blend plus boundary color matching. `Raw Patch (shows ROI seams)` is intentionally diagnostic;
-finished composites should use Result, Result + Mask Alpha, or Result Premult.
+Repository-backed downloads use audited revisions, while every single-file checkpoint is verified
+against its exact expected size and SHA-256.
 
 ## Kyven branding and project link
 
@@ -78,7 +69,8 @@ Use Stop followed by Start after updating Kyven or when a stale worker remains i
 
 For a focused control-by-control guide, see [Kyven Inpaint](INPAINT.md).
 
-Connect Source to input 0 and a removal mask to input 1. Choose Alpha or Red for the mask channel.
+Connect Source to the left **Source** connector (input 1) and a removal mask to the right **Mask**
+connector (input 0). Choose Alpha or Red for the mask channel.
 `Auto` Crop Mode finds the model-mask bounds and adds Context Padding; `Manual` exposes an
 animatable ROI; `Full` sends the complete frame. Grow gives the model enough area to replace object
 edges. `Model Mask Grow` affects what LaMa replaces; negative values erode. Threshold converts soft
@@ -91,6 +83,11 @@ effective detail without stretching the shot. Big-LaMa Native instead preserves 
 is preferable when the fixed input loses texture detail. New nodes combine Source RGB and Mask alpha into one
 uncompressed TIFF export, avoiding the previous double graph evaluation. Live follows timeline and control changes; range mode queues independent frames and may
 flicker on difficult footage because LaMa is not a temporal model.
+
+With Big-LaMa Native selected, `Quality Mode = Refined` runs coarse-to-native feature optimization
+using the same checkpoint. Steps, Strength, and Scales appear only in that mode. Refined adds no
+download, reports every iteration in the progress window, and is intended for final-quality frames;
+use a tight Auto ROI on an 8 GB GPU. Standard remains the fast and memory-safe default.
 
 After updating Kyven, select an existing node and use the matching command:
 
@@ -233,8 +230,10 @@ Typical files include exported source frames, displayed `matte.%04d.png`, CPU-pr
 `refine_mask.%04d.png`, `refined_matte.%04d.png`, exact processed trimaps, and lightweight
 `trimap_preview` files under their own UUID folder. Inpaint adds source, mask, and full-format
 `inpaint_result.%04d.png`, `inpaint_patch.%04d.png`, and the effective Inpaint-mask files. Inpaint
-outputs include opaque Result, default Result + Mask Alpha, Result Premult, uncomposited Generated
-Patch, Difference, and Source.
+outputs include opaque Result, default Result + Mask Alpha, Result Premult, Generated Patch,
+Difference, and Source. Generated Patch is rebuilt from the live Nuke Source and only takes returned
+RGB inside the binary model mask;
+this prevents LaMa's whole-ROI prediction from appearing as a shifted rectangular patch.
 Disable **Preprocess Input Mask** to use the untouched soft input for compositing; the preview still
 shows the unavoidable binary mask supplied to LaMa. **Preview Model Mask** is the only live mask
 override and reacts to Threshold and Model Grow natively inside Nuke without disk I/O, a server
@@ -246,6 +245,10 @@ so it is the better Live option. `Big-LaMa Native` processes the selected ROI at
 repairs. The default Model Grow 12 removes antialiased object edges from the model input. `Edge Color Match` aligns the patch with nearby
 clean RGB; lower it only when deliberate brightness changes inside the repaired area are desired.
 
+Big-LaMa Native also exposes Standard and Refined quality. Refined optimizes bottleneck features over
+up to four pyramid scales. It is slower, uses more memory, and has a profile-dependent ROI budget;
+Kyven returns a readable error before inference when that budget is exceeded.
+
 - `Create Matte Read` creates a normal Nuke Read pointing to the current cached matte or sequence.
 - `Create Result Read` does the same for an Inpaint result, including a rendered frame range.
 - `Delete Node Cache` disconnects and removes only the current node's cache after confirmation.
@@ -254,7 +257,7 @@ clean RGB; lower it only when deliberate brightness changes inside the repaired 
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18785` and requires API 22. A
+The adapter starts an external hidden Python process on `127.0.0.1:18788` and requires API 26. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

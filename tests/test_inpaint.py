@@ -7,8 +7,11 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from kyven.cancellation import CancellationToken
+from kyven.errors import ErrorCode, KyvenError
 from kyven.inpaint.models import InpaintCapabilities, InpaintPrediction, InpaintRequest
-from kyven.inpaint.providers.sdxl import _model_size
+from kyven.inpaint.providers.big_lama import symmetric_modulo_padding
+from kyven.inpaint.refinement import pyramid_sizes, refine_big_lama
 from kyven.inpaint.service import InpaintService, _inward_feather_alpha
 from kyven.segment.models import BoxPrompt
 from kyven.segment.providers.registry import ProviderRegistry
@@ -36,11 +39,11 @@ class FakeInpaintProvider:
 
 
 class InpaintServiceTests(unittest.TestCase):
-    def test_sdxl_model_size_preserves_aspect_and_uses_quality_resolution(self) -> None:
-        self.assertEqual(_model_size((400, 200), 1024), (1024, 512))
-        self.assertEqual(_model_size((1920, 1080), 768), (768, 432))
+    def test_big_lama_padding_matches_cattery_symmetric_wrapper(self) -> None:
+        self.assertEqual(symmetric_modulo_padding(303, 225), (1, 0, 4, 3))
+        self.assertEqual(symmetric_modulo_padding(2048, 1080), (0, 0, 0, 0))
 
-    def test_seam_blend_softens_only_inside_model_mask(self) -> None:
+    def test_edge_softness_softens_only_inside_model_mask(self) -> None:
         mask = np.zeros((31, 31), dtype=np.uint8)
         mask[5:26, 5:26] = 255
         alpha = _inward_feather_alpha(mask, 8)[..., 0]
@@ -50,7 +53,7 @@ class InpaintServiceTests(unittest.TestCase):
         self.assertLess(float(alpha[9, 15]), 1.0)
         self.assertGreater(float(alpha[15, 15]), 0.95)
 
-    def test_cached_mask_contains_the_exact_seam_blend_alpha(self) -> None:
+    def test_cached_mask_contains_the_exact_edge_softness_alpha(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source.png"
@@ -71,7 +74,7 @@ class InpaintServiceTests(unittest.TestCase):
                     provider_id="fake",
                     crop_mode="full",
                     mask_grow=0,
-                    seam_blend=8,
+                    edge_softness=8,
                     edge_color_match=0,
                 )
             )
@@ -82,7 +85,7 @@ class InpaintServiceTests(unittest.TestCase):
             self.assertLess(int(cached[5, 15]), 255)
             self.assertGreater(int(cached[15, 15]), 240)
 
-    def test_generative_parameters_are_validated_and_cached(self) -> None:
+    def test_refinement_parameters_are_validated_cached_and_parsed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source.png"
@@ -91,34 +94,51 @@ class InpaintServiceTests(unittest.TestCase):
             Image.new("RGB", (8, 8), "gray").save(source)
             Image.new("L", (8, 8), 255).save(mask)
             request = InpaintRequest(
-                source, mask, output, provider_id="sdxl-inpainting-1.0",
-                prompt="remove the sign", negative_prompt="text", seed=42,
-                steps=18, guidance_scale=5.5, strength=0.95,
-                render_quality="preview",
-                generation_mode="clean_plate",
-                seam_blend=16,
+                source, mask, output, provider_id="big-lama-native",
+                quality_mode="refined", refinement_steps=18,
+                refinement_strength=0.75, refinement_scales=3,
             )
             request.validate()
             canonical = request.canonical()
-            self.assertEqual(canonical["prompt"], "remove the sign")
-            self.assertEqual(canonical["seed"], 42)
-            self.assertEqual(canonical["render_quality"], "preview")
-            self.assertEqual(canonical["generation_mode"], "clean_plate")
-            self.assertEqual(canonical["seam_blend"], 16)
+            self.assertEqual(canonical["quality_mode"], "refined")
+            self.assertEqual(canonical["refinement_steps"], 18)
+            self.assertEqual(canonical["refinement_strength"], 0.75)
 
             parsed = JobManager.inpaint_request_from_payload(
                 {
                     "source": str(source.resolve()),
                     "mask": str(mask.resolve()),
                     "output": str(output.resolve()),
-                    "prompt": "new wall",
-                    "seed": 17,
+                    "quality_mode": "refined",
+                    "refinement_steps": 9,
                 },
-                default_model_id="sdxl-inpainting-1.0",
+                default_model_id="big-lama-native",
             )
-            self.assertEqual(parsed.provider_id, "sdxl-inpainting-1.0")
-            self.assertEqual(parsed.prompt, "new wall")
-            self.assertEqual(parsed.seed, 17)
+            self.assertEqual(parsed.provider_id, "big-lama-native")
+            self.assertEqual(parsed.quality_mode, "refined")
+            self.assertEqual(parsed.refinement_steps, 9)
+
+    def test_refinement_pyramid_ends_at_native_size(self) -> None:
+        self.assertEqual(
+            pyramid_sizes(1920, 1080, 3),
+            ((480, 272), (960, 544), (1920, 1080)),
+        )
+        self.assertEqual(pyramid_sizes(320, 180, 4), ((320, 184),))
+
+    def test_refinement_honors_cancellation_before_model_work(self) -> None:
+        token = CancellationToken()
+        token.cancel()
+        with self.assertRaises(KyvenError) as caught:
+            refine_big_lama(
+                None,
+                None,
+                None,
+                steps=15,
+                strength=1.0,
+                max_scales=3,
+                cancellation=token,
+            )
+        self.assertEqual(caught.exception.code, ErrorCode.CANCELLED)
 
     def _registry(self, provider: FakeInpaintProvider) -> ProviderRegistry:
         registry = ProviderRegistry(); registry.register("fake", lambda: provider); return registry
@@ -129,11 +149,14 @@ class InpaintServiceTests(unittest.TestCase):
             Image.fromarray(np.full((20, 30, 3), 50, dtype=np.uint8)).save(source)
             pixels = np.zeros((20, 30), dtype=np.uint8); pixels[8:12, 13:17] = 255; Image.fromarray(pixels).save(mask)
             provider = FakeInpaintProvider()
-            result = InpaintService(self._registry(provider)).run(InpaintRequest(source, mask, output, patch_output=patch, provider_id="fake", context_padding=2, mask_grow=0, edge_color_match=0))
+            result = InpaintService(self._registry(provider)).run(InpaintRequest(source, mask, output, patch_output=patch, provider_id="fake", crop_mode="auto", context_padding=2, mask_grow=0, edge_color_match=0, edge_softness=0))
             rendered = np.asarray(Image.open(output).convert("RGB"))
             rendered_patch = np.asarray(Image.open(patch).convert("RGB"))
             self.assertTrue(np.all(rendered[0, 0] == 50)); self.assertTrue(np.all(rendered[9, 14] == (255, 0, 0)))
-            self.assertTrue(np.all(rendered_patch[0, 0] == 50)); self.assertTrue(np.all(rendered_patch[7, 12] == (255, 0, 0)))
+            self.assertTrue(np.all(rendered_patch[0, 0] == 50))
+            self.assertTrue(np.all(rendered_patch[7, 12] == 50))
+            self.assertTrue(np.all(rendered_patch[9, 14] == (255, 0, 0)))
+            self.assertTrue(result.metadata["patch_source_preserved_outside_model_mask"])
             self.assertEqual(result.metadata["processing_roi"]["width"], 8)
             self.assertEqual(Image.open(provider.requests[0].source).size if provider.requests[0].source.exists() else (8, 8), (8, 8))
 
@@ -194,12 +217,30 @@ class InpaintServiceTests(unittest.TestCase):
             provider = FakeInpaintProvider()
             result = InpaintService(self._registry(provider)).run(InpaintRequest(
                 source, mask, output, provider_id="fake", context_padding=8,
-                mask_grow=0, edge_color_match=1,
+                mask_grow=0, edge_color_match=1, edge_softness=0,
             ))
             rendered = np.asarray(Image.open(output).convert("RGB"))
             np.testing.assert_array_equal(rendered[0, 0], (50, 50, 50))
             np.testing.assert_array_equal(rendered[20, 20], (223, 32, 32))
             self.assertEqual(result.metadata["edge_color_offset"], [-32.0, 32.0, 32.0])
+
+    def test_result_edge_softness_feathers_inward_without_touching_outside(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); source = root / "source.png"; mask = root / "mask.png"
+            output = root / "output.png"
+            Image.fromarray(np.zeros((40, 40, 3), dtype=np.uint8)).save(source)
+            pixels = np.zeros((40, 40), dtype=np.uint8); pixels[10:30, 10:30] = 255
+            Image.fromarray(pixels).save(mask)
+            provider = FakeInpaintProvider()
+            InpaintService(self._registry(provider)).run(InpaintRequest(
+                source, mask, output, provider_id="fake", crop_mode="full",
+                mask_grow=0, edge_color_match=0, edge_softness=4,
+            ))
+            rendered = np.asarray(Image.open(output).convert("RGB"))
+            np.testing.assert_array_equal(rendered[9, 20], (0, 0, 0))
+            self.assertGreater(int(rendered[10, 20, 0]), 0)
+            self.assertLess(int(rendered[10, 20, 0]), 255)
+            self.assertGreater(int(rendered[20, 20, 0]), int(rendered[10, 20, 0]))
 
     def test_disabled_preprocess_preserves_clean_soft_blend_mask(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -267,6 +308,7 @@ class InpaintServiceTests(unittest.TestCase):
                     mask_grow=-128,
                     mask_threshold=1.0,
                     edge_color_match=0,
+                    edge_softness=0,
                 )
             )
 

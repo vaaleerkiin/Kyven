@@ -162,20 +162,6 @@ class ModelCatalog:
                         device=device,
                     ),
                 )
-        from kyven.inpaint.providers.sdxl import SdxlInpaintProvider
-
-        for spec in self.list("generative_inpaint"):
-            registry.register(
-                spec.model_id,
-                lambda spec=spec: SdxlInpaintProvider(
-                    checkpoint=str(spec.path(models_dir)),
-                    device=device,
-                    provider_id=spec.model_id,
-                    display_name=spec.display_name,
-                    license_url=spec.license_url,
-                    minimum_vram_mb=spec.recommended_vram_mb,
-                ),
-            )
         return registry
 
     def download(
@@ -188,12 +174,13 @@ class ModelCatalog:
         spec = self.get(model_id)
         models_dir.mkdir(parents=True, exist_ok=True)
         target = spec.path(models_dir)
+        target.parent.mkdir(parents=True, exist_ok=True)
         if spec.download_type == "huggingface_snapshot":
             return self._download_snapshot(spec, models_dir, target, progress, cancelled)
         if target.is_file() and self._sha256(target) == spec.sha256:
             return target
         descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{spec.filename}-", suffix=".download", dir=models_dir
+            prefix=f".{target.name}-", suffix=".download", dir=target.parent
         )
         os.close(descriptor)
         temporary = Path(temporary_name)
@@ -247,7 +234,7 @@ class ModelCatalog:
             raise KyvenError(
                 ErrorCode.PROVIDER_UNAVAILABLE,
                 "Hugging Face Hub support is not installed.",
-                suggested_action="Run install.ps1 again before installing SDXL.",
+                suggested_action="Run install.ps1 again before installing snapshot models.",
             ) from exc
         temporary = Path(tempfile.mkdtemp(prefix=f".{spec.filename}-", dir=models_dir))
         monitor_stop = threading.Event()

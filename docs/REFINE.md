@@ -11,12 +11,13 @@ from **Kyven > Model Manager...** without rerunning the portable installer.
 ## Nuke graph
 
 ```text
-Source --------------------> Kyven Refine (input 0)
-Source -> Kyven Segment ---> Kyven Refine (input 1)
+Source --------------------> Kyven Refine (input 1, left)
+Source -> Kyven Segment ---> Kyven Refine (input 0, right)
 ```
 
-Input 0 is the original RGB image. Input 1 is normally any mask with useful alpha: Segment, Roto,
-Keyer, Paint, or a corrected combination of those nodes.
+Input 1 is the original RGB image. Input 0 is normally any mask with useful alpha: Segment, Keyer,
+Paint, or a corrected combination of those nodes. The connector labels are the safest guide: Source
+is on the left and Mask is on the right.
 `Mask Input Channel` defaults to Alpha; choose Red for a grayscale RGB mask or artist trimap.
 
 ## Trimap option
@@ -24,7 +25,7 @@ Keyer, Paint, or a corrected combination of those nodes.
 `Generate Trimap from Mask` is enabled by default and is part of Refine, not a separate node.
 Foreground erosion produces definite white foreground, background dilation produces the gray
 unknown band, and pixels outside the band remain definite black background. Disable the option only
-when input 1 is already an artist-created black/gray/white trimap.
+when the Mask input is already an artist-created black/gray/white trimap.
 
 The `Output` selector includes the exact trimap written for ViTMatte:
 
@@ -57,10 +58,10 @@ The cached files for a processed frame are `refine_source`, `refine_mask`, `refi
 refined matte and trimap. `Create Matte Read` creates a Read for the refined matte; use
 the node's trimap output modes to inspect the cached trimap in context.
 
-Trimap preview is independent of ViTMatte. Connecting or changing Input 1, moving to another frame,
-or adjusting `Foreground Erosion`, `Background Dilation`, trimap mode, or ROI immediately rebuilds
-the black/gray/white preview on CPU. The two radius controls are full-width sliders. This preview
-does not load or run ViTMatte; press Process only when the guidance looks correct.
+Trimap preview is independent of ViTMatte. Connecting or changing the Mask input, moving to another
+frame, or adjusting `Foreground Erosion`, `Background Dilation`, trimap mode, or ROI immediately
+rebuilds the black/gray/white preview on CPU. The two radius controls are full-width sliders. This
+preview does not load or run ViTMatte; press Process only when the guidance looks correct.
 
 Processing ROI crops both image and mask before inference, then pastes the refined alpha into the
 full-size coarse mask. Low Memory uses 512 px tiles, Balanced uses 1024 px tiles, and Quality uses a

@@ -36,23 +36,18 @@ class InpaintRequest:
     crop_mode: str = "auto"
     roi: BoxPrompt | None = None
     context_padding: int = 128
-    mask_grow: int = 12
-    edge_color_match: float = 1.0
-    mask_threshold: float = 0.5
+    mask_grow: int = 0
+    edge_color_match: float = 0.0
+    edge_softness: float = 0.0
+    mask_threshold: float = 0.0
     invert_mask: bool = False
     mask_channel: str = "luminance"
     processing_size: int = 0
     preprocess_mask: bool = True
-    prompt: str = ""
-    negative_prompt: str = ""
-    generation_mode: str = "clean_plate"
-    seam_blend: int = 0
-    seed: int = 0
-    steps: int = 25
-    guidance_scale: float = 6.0
-    strength: float = 0.99
-    low_memory: bool = True
-    render_quality: str = "final"
+    quality_mode: str = "standard"
+    refinement_steps: int = 15
+    refinement_strength: float = 1.0
+    refinement_scales: int = 3
 
     def validate(self) -> None:
         for label, path in (("Source", self.source), ("Mask", self.mask)):
@@ -75,28 +70,20 @@ class InpaintRequest:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Mask threshold must be between 0 and 1.")
         if not 0.0 <= self.edge_color_match <= 1.0:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Edge color match must be between 0 and 1.")
+        if not 0.0 <= self.edge_softness <= 32.0:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Result edge softness must be between 0 and 32 pixels.")
         if self.mask_channel not in {"luminance", "alpha"}:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Mask channel must be luminance or alpha.")
         if self.processing_size and self.processing_size < 128:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Processing size must be zero or at least 128 pixels.")
-        if not 1 <= self.steps <= 100:
-            raise KyvenError(ErrorCode.INVALID_REQUEST, "Generative steps must be between 1 and 100.")
-        if not 0.0 <= self.guidance_scale <= 20.0:
-            raise KyvenError(ErrorCode.INVALID_REQUEST, "Guidance scale must be between 0 and 20.")
-        if not 0.01 <= self.strength < 1.0:
-            raise KyvenError(ErrorCode.INVALID_REQUEST, "Generative strength must be at least 0.01 and below 1.0.")
-        if self.render_quality not in {"preview", "final"}:
-            raise KyvenError(ErrorCode.INVALID_REQUEST, "Render quality must be preview or final.")
-        if self.generation_mode not in {"clean_plate", "replace"}:
-            raise KyvenError(
-                ErrorCode.INVALID_REQUEST,
-                "Generation mode must be clean_plate or replace.",
-            )
-        if not 0 <= self.seam_blend <= 128:
-            raise KyvenError(
-                ErrorCode.INVALID_REQUEST,
-                "Seam blend must be between 0 and 128 pixels.",
-            )
+        if self.quality_mode not in {"standard", "refined"}:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Inpaint quality mode must be standard or refined.")
+        if not 1 <= self.refinement_steps <= 30:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Refinement steps must be between 1 and 30.")
+        if not 0.1 <= self.refinement_strength <= 2.0:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Refinement strength must be between 0.1 and 2.0.")
+        if not 2 <= self.refinement_scales <= 4:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Refinement scales must be between 2 and 4.")
 
     def canonical(self) -> dict[str, Any]:
         return {
@@ -107,21 +94,16 @@ class InpaintRequest:
             "context_padding": self.context_padding,
             "mask_grow": self.mask_grow,
             "edge_color_match": self.edge_color_match,
+            "edge_softness": self.edge_softness,
             "mask_threshold": self.mask_threshold,
             "invert_mask": self.invert_mask,
             "mask_channel": self.mask_channel,
             "processing_size": self.processing_size,
             "preprocess_mask": self.preprocess_mask,
-            "prompt": self.prompt,
-            "negative_prompt": self.negative_prompt,
-            "generation_mode": self.generation_mode,
-            "seam_blend": self.seam_blend,
-            "seed": self.seed,
-            "steps": self.steps,
-            "guidance_scale": self.guidance_scale,
-            "strength": self.strength,
-            "low_memory": self.low_memory,
-            "render_quality": self.render_quality,
+            "quality_mode": self.quality_mode,
+            "refinement_steps": self.refinement_steps,
+            "refinement_strength": self.refinement_strength,
+            "refinement_scales": self.refinement_scales,
         }
 
     def cache_key(self, provider_version: str, model_checksum: str) -> str:

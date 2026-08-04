@@ -21,10 +21,13 @@ def affects_live_result(knob_name: str, kind: str) -> bool:
             "processing_roi",
             "tile_size",
             "tile_overlap",
+            "detail_radius",
+            "detail_strength",
         }
     if kind == "inpaint":
         return knob_name in {
-            "model", "profile", "edge_color_match",
+            "model", "profile", "in_colorspace", "quality_mode", "refinement_steps",
+            "refinement_strength", "refinement_scales", "edge_color_match", "edge_softness",
             "crop_mode", "processing_roi", "context_padding",
         }
     return (

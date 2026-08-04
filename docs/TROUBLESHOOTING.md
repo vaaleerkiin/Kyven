@@ -29,28 +29,29 @@ The Nuke adapter launches `python.exe -I -m kyven.server.bootstrap`. On Windows 
 the DLL directory inherited from Nuke before importing PyTorch; this prevents the common
 `c10.dll` / `WinError 1114` startup failure.
 
-Kyven API 22 uses port `18785`. Older development servers may remain on 8765-8769 or 18768-18784,
-but the adapter asks authenticated older servers to unload their models before starting API 22.
+Kyven API 26 uses port `18788`. Older development servers may remain on 8765-8769 or 18768-18787,
+but the adapter asks authenticated older servers to unload their models before starting API 26.
 
 Each Kyven node provides **Stop Server** and **Start Server** next to Status. Use them after updating
 the repository if Nuke is still connected to code loaded before the update. Stop affects only the
-authenticated Kyven service on port `18785`; it does not terminate Nuke or unrelated Python tools.
+authenticated Kyven service on port `18788`; it does not terminate Nuke or unrelated Python tools.
 
 ## Refine fails or returns the coarse mask unchanged
 
-- Connect the original RGB image to input 0 and a mask/trimap to input 1.
-- Keep `Generate Trimap from Mask` enabled for a normal binary Segment or Roto matte.
+- Connect the original RGB image to the left Source connector (input 1) and a mask/trimap to the
+  right Mask connector (input 0).
+- Keep `Generate Trimap from Mask` enabled for a normal binary Segment or painted matte.
 - Disable it only for a true three-state trimap: black background, gray unknown, white foreground.
 - Select Red as `Mask Input Channel` when the mask/trimap is stored in RGB instead of alpha.
 - Increase erosion/dilation to give ViTMatte a wider unknown edge region.
 - Use Low Memory (512 px tiles) when VRAM is limited.
-- After updating from an older API, restart Nuke so it launches the server on port 18785.
+- After updating from an older API, restart Nuke so it launches the server on port 18788.
 
 ## Trimap output is missing or shows only the input mask
 
 - Restart Nuke after updating, select the Refine node, and run
   `Kyven > Upgrade Selected Refine Node`.
-- Connect Input 1. The CPU-only trimap preview should appear without processing a frame or loading
+- Connect the Mask input. The CPU-only trimap preview should appear without processing a frame or loading
   ViTMatte.
 - With Processing ROI enabled, black outside the ROI is expected: ViTMatte did not receive those
   pixels. The refined-alpha output still preserves the coarse mask outside the ROI.
@@ -96,6 +97,21 @@ the active internal Read, including its frame range. If files were deleted exter
 
 `Delete Node Cache` affects one UUID folder. `Delete All Kyven Cache` affects only
 `.runtime/nuke_cache`; it does not remove models, `.venv`, the authentication token, or source media.
+
+## Inpaint Result has a rectangular color shift
+
+1. Upgrade the selected node with `Kyven > Upgrade Selected Inpaint Node`.
+2. Delete that node's old cache; cached patches retain the transfer used when they were rendered.
+3. Keep the Cattery-compatible default **Input Colorspace = Linear** and process again.
+4. If the incoming pixels are in another space, select that exact Nuke colorspace. Kyven converts
+   it to `sRGB` before LaMa and converts the result from `sRGB` back to the selected space.
+
+Generated Patch is rebuilt from the live Nuke Source and never reads returned RGB outside the binary model mask. If a rectangular boundary is
+still visible after a fresh render, confirm that Nuke is not displaying an older cached Read.
+
+If an Inpaint node upgraded from commit `f490ff6` shows only **Model** and **Input Colorspace**, reload
+the current Kyven plugin and run `Kyven > Upgrade Selected Inpaint Node` again. The upgrader detects
+the surviving internal Inpaint graph and reconstructs every missing control without deleting it.
 
 ## Useful files
 
