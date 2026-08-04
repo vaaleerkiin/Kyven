@@ -61,9 +61,9 @@ Cancellation and progress reporting remain active during every refinement iterat
 
 | Crop Mode | Behavior |
 | --- | --- |
-| **Auto** | Finds mask bounds and adds Context Padding; optional performance optimization |
+| **Auto** | Finds mask bounds and adds Context Padding; default |
 | **Manual** | Uses the animatable Viewer ROI supplied by the artist |
-| **Full** | Sends the complete input format to the provider; Cattery-compatible default |
+| **Full** | Sends the complete input format to the provider |
 
 The ROI is an optimization crop, not a visible output crop. Kyven translates the mask into crop
 coordinates, processes it, and pastes the result back into the original full-size frame.

@@ -991,7 +991,7 @@ def _repair_inpaint_interface(node: Any) -> None:
         _add_section(nuke, node, "roi_section", "PROCESSING ROI / MODEL CROP")
     if "crop_mode" not in node.knobs():
         crop_mode = nuke.Enumeration_Knob("crop_mode", "Crop Mode", ["auto", "manual", "full"])
-        crop_mode.setValue(2)
+        crop_mode.setValue(0)
         add(crop_mode)
     if "context_padding" not in node.knobs():
         padding = nuke.Int_Knob("context_padding", "Context Padding (px)")
@@ -1055,14 +1055,14 @@ def _repair_inpaint_interface(node: Any) -> None:
     node["knobChanged"].setValue("kyven_nuke.inpaint_node.knob_changed()")
 
 
-def _apply_cattery_inference_defaults(node: Any) -> None:
-    """Migrate API 25 nodes to the unmodified Cattery LaMa inference path."""
+def _apply_inpaint_api26_defaults(node: Any) -> None:
+    """Migrate API 25 nodes to the corrected LaMa inference defaults."""
 
     for name in ("mask_threshold", "mask_grow", "edge_color_match", "edge_softness"):
         if name in node.knobs():
             node[name].setValue(0)
     if "crop_mode" in node.knobs():
-        node["crop_mode"].setValue("full")
+        node["crop_mode"].setValue("auto")
     if "output_mode" in node.knobs():
         node["output_mode"].setValue(0)
 
@@ -1090,7 +1090,7 @@ def create_inpaint_node() -> Any:
     _add_knob(nuke, node, nuke.Text_Knob("mask_help", "", "When Preprocess is enabled, LaMa receives Invert + Threshold + Model Grow. Preview Model Mask shows that exact mask. Result Edge Softness removes hard RGB seams without changing the model mask or output alpha."))
     _add_section(nuke, node, "roi_section", "PROCESSING ROI / MODEL CROP")
     _add_knob(nuke, node, nuke.Enumeration_Knob("crop_mode", "Crop Mode", ["auto", "manual", "full"]))
-    node["crop_mode"].setValue(2)
+    node["crop_mode"].setValue(0)
     padding = nuke.Int_Knob("context_padding", "Context Padding (px)"); padding.setRange(0, 1024); padding.setValue(128); _add_knob(nuke, node, padding)
     _add_knob(nuke, node, nuke.BBox_Knob("processing_roi", "Manual ROI"))
     _add_knob(nuke, node, nuke.PyScript_Knob("reset_roi", "Reset ROI to Source", "kyven_nuke.inpaint_node.reset_roi_to_input()"))
@@ -1164,7 +1164,7 @@ def upgrade_selected_inpaint_node() -> None:
     legacy_api = "kyven_title" not in node.knobs() or "API 26" not in str(node["kyven_title"].value())
     _repair_inpaint_interface(node)
     if legacy_api:
-        _apply_cattery_inference_defaults(node)
+        _apply_inpaint_api26_defaults(node)
     isolated_cache = _cache_root(node)
     if "cache_location" in node.knobs():
         node["cache_location"].setValue(str(isolated_cache))

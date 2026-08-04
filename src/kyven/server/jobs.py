@@ -321,7 +321,7 @@ class JobManager:
             patch_output=patch_output,
             provider_id=str(payload.get("model_id", default_model_id)),
             profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
-            crop_mode=str(payload.get("crop_mode", "full")),
+            crop_mode=str(payload.get("crop_mode", "auto")),
             roi=JobManager._box_from_payload(payload, "roi"),
             context_padding=int(payload.get("context_padding", 128)),
             mask_grow=int(payload.get("mask_grow", 0)),

@@ -103,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     inpaint.add_argument("--model", default="big-lama-native", choices=_model_ids("inpaint"))
     _add_runtime_options(inpaint)
     inpaint.add_argument("--profile", default="balanced", choices=tuple(p.value for p in ExecutionProfile))
-    inpaint.add_argument("--crop-mode", default="full", choices=("auto", "manual", "full"))
+    inpaint.add_argument("--crop-mode", default="auto", choices=("auto", "manual", "full"))
     inpaint.add_argument("--roi", type=_box)
     inpaint.add_argument("--context-padding", default=128, type=int)
     inpaint.add_argument("--mask-grow", default=0, type=int)

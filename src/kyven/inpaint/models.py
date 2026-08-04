@@ -33,7 +33,7 @@ class InpaintRequest:
     patch_output: Path | None = None
     provider_id: str = "lama-2025jan-onnx"
     profile: ExecutionProfile = ExecutionProfile.BALANCED
-    crop_mode: str = "full"
+    crop_mode: str = "auto"
     roi: BoxPrompt | None = None
     context_padding: int = 128
     mask_grow: int = 0
