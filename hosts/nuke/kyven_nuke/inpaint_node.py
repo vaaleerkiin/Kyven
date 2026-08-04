@@ -10,7 +10,7 @@ from typing import Any
 
 from kyven_nuke.branding import add_node_branding
 from kyven_nuke.client import NukeKyvenClientError
-from kyven_nuke.color_management import match_color_io, set_data_io, set_interchange_color_io
+from kyven_nuke.color_management import configure_ai_color_io, match_color_io, set_data_io
 from kyven_nuke.node import (
     _add_knob,
     _add_section,
@@ -54,6 +54,36 @@ def _wire_patch_over_source(merge: Any, patch: Any, source: Any) -> None:
 
     merge.setInput(0, source)
     merge.setInput(1, patch)
+
+
+def _uses_linear_input(node: Any) -> bool:
+    return (
+        "input_color_space" in node.knobs()
+        and int(node["input_color_space"].getValue()) == 1
+    )
+
+
+def _configure_color_read(node: Any, source_writer: Any, read: Any) -> None:
+    if _uses_linear_input(node):
+        set_data_io(read)
+    else:
+        match_color_io(source_writer, read)
+
+
+def _configure_color_io(node: Any) -> None:
+    """Apply the artist-selected LaMa interchange transfer to Write and Reads."""
+
+    source_writer = _inside(node, "KyvenInpaintSourceWrite")
+    if source_writer is None:
+        return
+    configure_ai_color_io(
+        source_writer,
+        (
+            _inside(node, "KyvenResultRead"),
+            _inside(node, "KyvenPatchRead"),
+        ),
+        linear=_uses_linear_input(node),
+    )
 
 
 def _ensure_input_order(node: Any) -> None:
@@ -144,7 +174,7 @@ def _set_result(node: Any, path: Path, first: int | None = None, last: int | Non
             read["file"].setValue(_nuke_file_path(path))
         source_writer = nuke.toNode("KyvenInpaintSourceWrite")
         if source_writer is not None:
-            match_color_io(source_writer, read)
+            _configure_color_read(node, source_writer, read)
         if first is not None and last is not None:
             for name, value in (("first", first), ("last", last), ("origfirst", first), ("origlast", last)):
                 if name in read.knobs(): read[name].setValue(value)
@@ -186,7 +216,7 @@ def _set_patch(node: Any, path: Path, first: int | None = None, last: int | None
             read["file"].setValue(_nuke_file_path(path))
         source_writer = nuke.toNode("KyvenInpaintSourceWrite")
         if source_writer is not None:
-            match_color_io(source_writer, read)
+            _configure_color_read(node, source_writer, read)
         if first is not None and last is not None:
             for name, value in (("first", first), ("last", last), ("origfirst", first), ("origlast", last)):
                 if name in read.knobs():
@@ -311,11 +341,11 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
             set_data_io(processed_mask_read)
         source_writer = nuke.toNode("KyvenInpaintSourceWrite")
         if source_writer is not None:
-            set_interchange_color_io(source_writer)
-            for read_name in ("KyvenResultRead", "KyvenPatchRead"):
-                color_read = nuke.toNode(read_name)
-                if color_read is not None:
-                    match_color_io(source_writer, color_read)
+            configure_ai_color_io(
+                source_writer,
+                (nuke.toNode("KyvenResultRead"), nuke.toNode("KyvenPatchRead")),
+                linear=_uses_linear_input(node),
+            )
         if difference is not None:
             difference.setInput(0, result_composite)
             difference.setInput(1, source)
@@ -382,6 +412,7 @@ def process_current_frame_for_node(
         return
     if _inside(node, "KyvenInpaintModelMaskWrite") is None:
         _ensure_inpaint_preview_graph(node)
+    _configure_color_io(node)
     _set_busy(node_name, True)
     frame = int(nuke.frame())
     source_path, mask_path, model_mask_path, output_path, processed_mask_path, patch_path = _paths(node, frame)
@@ -477,6 +508,7 @@ def process_frame_range_for_node(
     if last < first: nuke.message("Range Last must be equal to or greater than Range First."); return
     if _inside(node, "KyvenInpaintModelMaskWrite") is None:
         _ensure_inpaint_preview_graph(node)
+    _configure_color_io(node)
     _set_busy(node_name, True)
     root = _cache_root(node); source_pattern = root / "inpaint_source.%04d.tif"; mask_pattern = root / "inpaint_mask.%04d.png"; model_mask_pattern = root / "inpaint_model_mask.%04d.png"; output_pattern = root / "inpaint_result.%04d.png"; processed_mask_pattern = root / "inpaint_processed_mask.%04d.png"; patch_pattern = root / "inpaint_patch.%04d.png"
     source_writer = _inside(node, "KyvenInpaintSourceWrite")
@@ -623,6 +655,8 @@ def knob_changed() -> None:
         "mask_grow",
     } and _inside(node, "KyvenInpaintModelMaskWrite") is None:
         _ensure_inpaint_preview_graph(node)
+    if knob_name == "input_color_space":
+        _configure_color_io(node)
     if knob_name in {
         "inputChange",
         "mask_channel",
@@ -694,6 +728,21 @@ def _apply_model_labels(node_name: str, labels: list[str]) -> None:
         node["model"].setValues(labels)
         node["model"].setValue(min(previous, len(labels) - 1))
         node["kyven_status"].setValue("Inpaint model list refreshed.")
+
+
+def _ensure_input_color_control(node: Any) -> None:
+    nuke = _nuke()
+    if "input_color_space" not in node.knobs():
+        _add_knob(
+            nuke,
+            node,
+            nuke.Enumeration_Knob(
+                "input_color_space",
+                "LaMa Input Color",
+                ["sRGB Texture", "Linear / Working (Raw)"],
+            ),
+        )
+    _place_knob_after(node, "input_color_space", "model")
 
 
 def _ensure_inpaint_mask_sliders(node: Any) -> None:
@@ -811,6 +860,7 @@ def create_inpaint_node() -> Any:
     _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 25</font>'))
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
+    _ensure_input_color_control(node)
     _add_knob(nuke, node, nuke.Enumeration_Knob("profile", "Memory Profile", ["low_memory", "balanced", "quality"])); node["profile"].setValue(1)
     _add_knob(nuke, node, nuke.PyScript_Knob("refresh_models", "Refresh Models", "kyven_nuke.inpaint_node.refresh_models()"))
     _add_knob(nuke, node, nuke.PyScript_Knob("open_model_manager", "Model Manager...", "kyven_nuke.model_manager.show_model_manager()"), start_line=False)
@@ -896,6 +946,7 @@ def upgrade_selected_inpaint_node() -> None:
     isolated_cache = _cache_root(node)
     if "cache_location" in node.knobs():
         node["cache_location"].setValue(str(isolated_cache))
+    _ensure_input_color_control(node)
     _ensure_inpaint_mask_sliders(node)
     _ensure_refinement_controls(node)
     _ensure_inpaint_preview_graph(node)

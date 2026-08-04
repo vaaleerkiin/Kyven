@@ -26,6 +26,18 @@ reversed.
 Start with LaMa ONNX while positioning the mask and ROI. Switch to Big-LaMa Native when a large ROI
 loses visible texture detail at the fast model's fixed input size.
 
+### LaMa input color
+
+**LaMa Input Color** controls the complete Source Write -> model -> Result/Patch Read round trip:
+
+| Mode | Behavior |
+| --- | --- |
+| **sRGB Texture** | Default. Converts the Nuke working space through an input/texture sRGB transform; under ACES, `Utility - sRGB - Texture` is preferred. |
+| **Linear / Working (Raw)** | Bypasses OCIO on both the Source Write and returned Reads. Use when the plate is already prepared for linear LaMa input or when an OCIO configuration produces a rectangular ROI color mismatch. |
+
+Changing this setting requires reprocessing the frame or range. Existing cached Result and Patch
+files were created with the previous transfer and must not be reused for comparison.
+
 ### Big-LaMa Refined
 
 When Big-LaMa Native is selected, **Quality Mode** offers `Standard` and `Refined`. Refined is not a
@@ -123,7 +135,8 @@ therefore overwrite or display each other's newly rendered result.
 
 After updating Kyven, select an existing Inpaint Group and choose
 `Kyven > Upgrade Selected Inpaint Node`. The current Cache controls are added without changing the
-node UUID or deleting an existing result.
+node UUID or deleting an existing result. The upgrade also adds **LaMa Input Color**; delete the old
+node cache and reprocess when changing the color mode.
 
 ## Related documentation
 

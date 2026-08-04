@@ -18,6 +18,9 @@ a different file-type default producing a visible color seam. Public Inpaint alp
 from the Nuke mask graph rather than from cached RGB, while the cached blend mask carries the exact
 inward feather used for the generated patch. The feather keeps the original Source on the mask
 boundary and starts the transition farther inside, preventing bright or dark colour fringes.
+The Inpaint **LaMa Input Color** control can switch the same Write and Reads to
+`Linear / Working (Raw)` when the plate is already prepared as linear model input or the project's
+OCIO configuration does not provide a reversible sRGB texture transform.
 
 ## Portable install
 

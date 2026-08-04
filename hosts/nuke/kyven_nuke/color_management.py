@@ -74,3 +74,18 @@ def match_color_io(source: Any, target: Any) -> None:
         target["colorspace"].setValue(value)
     except (TypeError, ValueError):
         return
+
+
+def configure_ai_color_io(source: Any, targets: tuple[Any, ...], *, linear: bool) -> None:
+    """Configure a symmetric Nuke -> model -> Nuke color round trip."""
+
+    if linear:
+        set_data_io(source)
+        for target in targets:
+            if target is not None:
+                set_data_io(target)
+        return
+    set_interchange_color_io(source)
+    for target in targets:
+        if target is not None:
+            match_color_io(source, target)
