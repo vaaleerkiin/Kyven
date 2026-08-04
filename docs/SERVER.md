@@ -13,6 +13,9 @@ kyven serve \
   --token-file .runtime/server.token
 ```
 
+This example uses the CLI default port `8765`. The Nuke adapter launches its managed server on
+`18787`; do not override that port in the Nuke workflow.
+
 The token is generated atomically when missing. Host adapters read it from the configured file;
 it must not be committed or logged.
 
@@ -90,46 +93,28 @@ trimap is black outside the ROI because those pixels were not sent to ViTMatte.
 
 ### Inpaint fields
 
-`source`, `mask`, and `output` are absolute paths. `patch_output` optionally persists the full-format
-uncomposited model RGB and `mask_output` optionally persists the exact mask supplied to LaMa.
-`crop_mode` is `auto`, `manual`, or `full`; manual mode uses `roi`, while
+`source`, `mask`, and `output` are absolute paths. `model_mask` may point to a precomputed binary
+mask that is supplied to LaMa. `patch_output` optionally persists the full-format uncomposited model
+RGB, while `mask_output` persists the final blend alpha used for the RGB composite. `crop_mode` is
+`auto`, `manual`, or `full`; manual mode uses `roi`, while
 auto mode uses `context_padding`. `mask_grow`, `mask_threshold`, `invert_mask`, and `mask_channel`
 control the binary model mask. `preprocess_mask=false` bypasses invert, threshold, and grow while
 still performing the binary conversion required by LaMa. The CPU preview endpoint writes only the
 exact model mask to `output`.
 `edge_color_match` (0-1) corrects a local RGB offset measured in clean pixels around the generated
 area, reducing visible patch boundaries without changing pixels outside the processed mask.
-`edge_softness` (0-32 px) feathers the final RGB composite inward without changing the exact model
-mask written to alpha. This removes hard LaMa patch seams while leaving every pixel outside the mask
-untouched.
+`edge_softness` (0-32 px) feathers the final RGB composite inward when preprocessing is enabled.
+This removes hard LaMa patch seams while leaving every pixel outside the mask untouched. When
+`preprocess_mask=false`, the original soft input mask is used directly as the blend alpha and edge
+softness is not applied.
 `quality_mode` is `standard` or `refined`. Refined is valid only for `big-lama-native` and accepts
 `refinement_steps` (1-30), `refinement_strength` (0.1-2.0), and `refinement_scales` (2-4). These
 fields participate in the deterministic cache key. The worker reports progress and checks
 cancellation during each refinement iteration.
 Empty masks return Source unchanged without loading a model.
 
-API version 25 is the current host contract and adds the current Inpaint contract. API version 24 isolates caches for
-copied Nuke Groups, rejects stale cross-node async results, and
-adds inward-only result edge softness. API version 23 added optional
-multi-scale Big-LaMa feature refinement without another checkpoint. API version 22 added boundary
-color matching. API version 20 makes the enabled Inpaint preprocessing mask authoritative for LaMa inference, final
-RGB compositing, and Mask Alpha/Premult outputs. It also migrates Nuke groups to Source-left and
-Mask-right connectors without swapping the connected media. API version 19 removed the server round
-trip from Inpaint mask preview. Nuke evaluates Threshold,
-Model Mask Grow, and inversion directly in the node graph and exports that exact mask for inference.
-This keeps multiple Inpaint nodes independent and makes preview changes immediate. API version 18
-removed the internal Blend Mask controls, made preview strictly opt-in, and added a true
-uncomposited Generated Patch output, and serializes concurrent Nuke server startup. It retains the clean-input
-mask bypass and
-selectable fast LaMa ONNX and native-resolution Big-LaMa, edge color matching, the single-file
-Source+Mask export, separate
-binary model/effective composite masks, persisted masks, signed grow/erode,
-aspect-preserving preprocessing, and diagnostic Nuke outputs. It
-retains `/v1/preview/trimap` and `/v1/preview/mask-postprocess`, and adds
-`/v1/preview/inpaint-mask`, so host controls update without
-rerunning a model. It also retains detailed Segment and Refine progress stages and the API 7
-persisted `trimap_output`. `GET /v1/jobs/{id}` returns `progress` (0.0-1.0) and
-`progress_message`. A video request may include `rois`, with exactly one
+API version 25 is the current Nuke/server contract. `GET /v1/jobs/{id}` returns `progress`
+(0.0-1.0) and `progress_message`. Segment video requests may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
-returned masks to the original dimensions. The Nuke adapter uses versioned port `18787` to avoid
-connecting to stale API processes during development.
+returned masks to the original dimensions. Restart Nuke after updating Kyven so the adapter does not
+reuse Python modules from an older API revision.

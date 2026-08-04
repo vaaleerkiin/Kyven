@@ -126,14 +126,16 @@ See [Model selection and safety](docs/MODELS.md) for exact downloads, licenses, 
 
 ### Refine
 
-1. Connect the original Source to input 0 and a coarse mask to input 1.
+1. Connect the original Source to the left **Source** connector (input 1) and a coarse mask to the
+   right **Mask** connector (input 0).
 2. Leave **Generate Trimap from Mask** enabled for Segment, Keyer, or Paint masks.
 3. Adjust the immediate CPU trimap preview, then process a frame or range with ViTMatte.
 4. Inspect the refined alpha, exact trimap, Source + Alpha, or cutout outputs.
 
 ### Inpaint
 
-1. Connect Source to input 0 and the removal mask to input 1.
+1. Connect Source to the left **Source** connector (input 1) and the removal mask to the right
+   **Mask** connector (input 0).
 2. Use Auto ROI for most shots; it crops around the mask plus Context Padding.
 3. Use LaMa ONNX for fast iteration or Big-LaMa Native when the 512 input loses detail.
 4. Use Model Grow and Edge Color Match to avoid missed edges and local color offsets.
@@ -166,8 +168,8 @@ are reused. Existing Groups can then be updated without changing their UUID or c
 - Inference is local by default; the server binds only to `127.0.0.1`.
 - Model downloads are pinned and verified before activation.
 - Project code may be used commercially under the Apache-2.0 license.
-- Every catalog entry includes source and license metadata. Optional restricted models require
-  explicit acceptance; commercial use always remains subject to the individual model license.
+- Every catalog entry includes source, checksum, license, and commercial-use metadata. Review the
+  individual model license before distributing a production setup.
 - Model weights are downloaded during installation and are not committed to this repository.
 
 Review [Third-party notices](THIRD_PARTY_NOTICES.md) before distribution in a production pipeline.

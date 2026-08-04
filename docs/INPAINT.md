@@ -7,13 +7,14 @@ while Kyven restores the result to the untouched full input format.
 ## Nuke graph
 
 ```text
-Source --------------------------> Kyven Inpaint (input 0)
-Paint / Segment mask -----------> Kyven Inpaint (input 1)
+Source --------------------------> Kyven Inpaint (input 1, left)
+Paint / Segment mask -----------> Kyven Inpaint (input 0, right)
 ```
 
-Input 0 supplies Source RGB. Input 1 defines pixels to remove and supplies the default output alpha.
-Choose Alpha or Red with **Mask Input Channel** and use **Invert Input Mask** when the mask
-convention is reversed.
+Input 1 supplies Source RGB. Input 0 defines pixels to remove and supplies the default output alpha.
+The connector labels are the safest guide: Source is on the left and Mask is on the right. Choose
+Alpha or Red with **Mask Input Channel** and use **Invert Input Mask** when the mask convention is
+reversed.
 
 ## Choosing a model
 
@@ -79,9 +80,10 @@ repeat this temporary preview option.
 `Preprocess Input Mask` is enabled by default. In this mode Invert, Threshold, and Model Mask Grow
 prepare both the model input and the Result composite. Disable preprocessing to bypass Invert,
 Threshold, and Grow; the original input mask is then used for compositing while LaMa still performs
-its mandatory binary conversion. Result Edge Softness never expands outside the mask and does not
-alter Preview Model Mask or the alpha in Result + Mask Alpha / Result Premult. For fully custom edge
-treatment, set it to 0, select **Generated Patch**, and combine it with Source using
+its mandatory binary conversion. Result Edge Softness is bypassed in this mode so the original soft
+mask remains exact. With preprocessing enabled, Result Edge Softness never expands outside the mask
+and does not alter Preview Model Mask or the alpha in Result + Mask Alpha / Result Premult. For fully
+custom edge treatment, set it to 0, select **Generated Patch**, and combine it with Source using
 ordinary Nuke mask-processing nodes and Merge.
 
 ## Processing modes

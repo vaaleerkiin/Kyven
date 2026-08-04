@@ -50,7 +50,8 @@ anywhere. `KYVEN_ROOT` is only an optional override for custom deployments. Rest
 Use `Kyven > Model Manager...` at any time to install or remove a trusted catalog checkpoint. The
 same button appears in every Kyven node. Downloads show progress and become available only after
 exact size and SHA-256 verification; model removal does not delete rendered caches.
-Pinned repository models use a fixed audited revision instead of a single-file checksum.
+Repository-backed downloads use audited revisions, while every single-file checkpoint is verified
+against its exact expected size and SHA-256.
 
 ## Kyven branding and project link
 
@@ -67,7 +68,8 @@ Use Stop followed by Start after updating Kyven or when a stale worker remains i
 
 For a focused control-by-control guide, see [Kyven Inpaint](INPAINT.md).
 
-Connect Source to input 0 and a removal mask to input 1. Choose Alpha or Red for the mask channel.
+Connect Source to the left **Source** connector (input 1) and a removal mask to the right **Mask**
+connector (input 0). Choose Alpha or Red for the mask channel.
 `Auto` Crop Mode finds the model-mask bounds and adds Context Padding; `Manual` exposes an
 animatable ROI; `Full` sends the complete frame. Grow gives the model enough area to replace object
 edges. `Model Mask Grow` affects what LaMa replaces; negative values erode. Threshold converts soft

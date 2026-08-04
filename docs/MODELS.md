@@ -13,7 +13,7 @@ stable `model_id`, not a hard-coded Python class or checkpoint path.
 | `sam2.1-large` | SAM 2.1 Large | 224.4 M | 898 MB | 12 GB+ |
 
 The VRAM column is conservative Kyven guidance, not an upstream guarantee. A warning does not
-block selection: the artist may try any installed model and later use the Resource Manager's
+block selection: the artist may try any installed model and later use the Model Manager's
 fallback behavior. On the tested RTX 4070 Laptop GPU with 8,188 MiB, Small is the default.
 
 Only one segmentation model remains resident. Selecting another variant unloads the previous

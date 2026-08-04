@@ -38,7 +38,8 @@ authenticated Kyven service on port `18787`; it does not terminate Nuke or unrel
 
 ## Refine fails or returns the coarse mask unchanged
 
-- Connect the original RGB image to input 0 and a mask/trimap to input 1.
+- Connect the original RGB image to the left Source connector (input 1) and a mask/trimap to the
+  right Mask connector (input 0).
 - Keep `Generate Trimap from Mask` enabled for a normal binary Segment or painted matte.
 - Disable it only for a true three-state trimap: black background, gray unknown, white foreground.
 - Select Red as `Mask Input Channel` when the mask/trimap is stored in RGB instead of alpha.
@@ -50,7 +51,7 @@ authenticated Kyven service on port `18787`; it does not terminate Nuke or unrel
 
 - Restart Nuke after updating, select the Refine node, and run
   `Kyven > Upgrade Selected Refine Node`.
-- Connect Input 1. The CPU-only trimap preview should appear without processing a frame or loading
+- Connect the Mask input. The CPU-only trimap preview should appear without processing a frame or loading
   ViTMatte.
 - With Processing ROI enabled, black outside the ROI is expected: ViTMatte did not receive those
   pixels. The refined-alpha output still preserves the coarse mask outside the ROI.
