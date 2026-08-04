@@ -11,6 +11,7 @@ sys.path.insert(0, str(NUKE_ROOT))
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 from kyven_nuke.inpaint_node import (
     INPAINT_OUTPUT_MODES,
+    _wire_generated_patch,
     _wire_patch_over_source,
 )
 from kyven_nuke.inpaint_node import (
@@ -60,6 +61,22 @@ from kyven_nuke.runtime import _listener_pids, _server_environment
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_generated_patch_uses_composited_live_source_and_mask(self) -> None:
+        class Copy:
+            def __init__(self) -> None:
+                self.inputs = {}
+
+            def setInput(self, index, node) -> None:
+                self.inputs[index] = node
+
+        copy = Copy()
+        result = object()
+        mask = object()
+        _wire_generated_patch(copy, result, mask)
+
+        self.assertIs(copy.inputs[0], result)
+        self.assertIs(copy.inputs[1], mask)
+
     def test_inpaint_result_wires_generated_patch_over_source(self) -> None:
         class Merge:
             def __init__(self) -> None:

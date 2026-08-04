@@ -107,7 +107,7 @@ the active internal Read, including its frame range. If files were deleted exter
    **Linear / Working (Raw)** and process again. Source Write and Result/Patch Reads will then bypass
    OCIO symmetrically.
 
-Generated Patch preserves Source RGB outside the binary model mask. If a rectangular boundary is
+Generated Patch is rebuilt from the live Nuke Source and never reads returned RGB outside the binary model mask. If a rectangular boundary is
 still visible after a fresh render, confirm that Nuke is not displaying an older cached Read.
 
 ## Useful files

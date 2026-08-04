@@ -234,7 +234,8 @@ Typical files include exported source frames, displayed `matte.%04d.png`, CPU-pr
 `trimap_preview` files under their own UUID folder. Inpaint adds source, mask, and full-format
 `inpaint_result.%04d.png`, `inpaint_patch.%04d.png`, and the effective Inpaint-mask files. Inpaint
 outputs include opaque Result, default Result + Mask Alpha, Result Premult, Generated Patch,
-Difference, and Source. Generated Patch preserves exact Source RGB outside the binary model mask;
+Difference, and Source. Generated Patch is rebuilt from the live Nuke Source and only takes returned
+RGB inside the binary model mask;
 this prevents LaMa's whole-ROI prediction from appearing as a shifted rectangular patch.
 Disable **Preprocess Input Mask** to use the untouched soft input for compositing; the preview still
 shows the unavoidable binary mask supplied to LaMa. **Preview Model Mask** is the only live mask

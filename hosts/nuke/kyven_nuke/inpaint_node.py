@@ -56,6 +56,13 @@ def _wire_patch_over_source(merge: Any, patch: Any, source: Any) -> None:
     merge.setInput(1, patch)
 
 
+def _wire_generated_patch(copy: Any, result: Any, mask: Any) -> None:
+    """Expose live-source RGB with the model mask copied into alpha."""
+
+    copy.setInput(0, result)
+    copy.setInput(1, mask)
+
+
 def _uses_linear_input(node: Any) -> bool:
     return (
         "input_color_space" in node.knobs()
@@ -315,6 +322,16 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         if result_composite is None:
             result_composite = nuke.nodes.Merge2(name="KyvenResultComposite", operation="over")
         _wire_patch_over_source(result_composite, patch_premult, source)
+        generated_patch = nuke.toNode("KyvenGeneratedPatch")
+        if generated_patch is None:
+            generated_patch = nuke.nodes.Copy(name="KyvenGeneratedPatch")
+        # Match a native CopyCat/LaMa node: keep the live Nuke Source RGB and
+        # introduce returned RGB only through the effective mask.  Reading a
+        # full rectangular PNG/TIFF round-trip as the public patch can reveal
+        # its transfer-function/quantization difference as an ROI-shaped box.
+        _wire_generated_patch(generated_patch, result_composite, effective_mask)
+        generated_patch["from0"].setValue("rgba.red")
+        generated_patch["to0"].setValue("rgba.alpha")
         result_opaque.setInput(0, result_composite)
         result_mask_alpha = nuke.toNode("KyvenResultSourceAlpha")
         if result_mask_alpha is None:
@@ -353,7 +370,7 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
             output_switch.setInput(0, result_opaque)
             output_switch.setInput(1, result_mask_alpha)
             output_switch.setInput(2, result_premult)
-            output_switch.setInput(3, patch_switch)
+            output_switch.setInput(3, generated_patch)
             output_switch.setInput(4, difference)
             output_switch.setInput(5, source)
             output_switch.setInput(6, model_mask)
@@ -889,7 +906,7 @@ def create_inpaint_node() -> Any:
     _add_section(nuke, node, "output_section", "OUTPUT")
     _add_knob(nuke, node, nuke.Enumeration_Knob("output_mode", "Output", list(INPAINT_OUTPUT_MODES)))
     node["output_mode"].setValue(1)
-    _add_knob(nuke, node, nuke.Text_Knob("output_help", "", "Result is opaque RGB with an inward-softened edge. Result + Mask Alpha and Result Premult use the exact mask sent to LaMa. Generated Patch preserves Source RGB outside that mask."))
+    _add_knob(nuke, node, nuke.Text_Knob("output_help", "", "Result is opaque RGB with an inward-softened edge. Result + Mask Alpha and Result Premult use the exact mask sent to LaMa. Generated Patch is rebuilt from the live Nuke Source and only uses returned RGB inside that mask."))
     uid = nuke.String_Knob("kyven_uuid", "UUID"); uid.setValue(uuid.uuid4().hex); uid.setVisible(False); node.addKnob(uid)
     _add_section(nuke, node, "cache_section", "CACHE")
     folder = nuke.String_Knob("cache_location", "Cache Folder"); folder.setFlag(nuke.READ_ONLY); folder.setValue(str(_cache_root(node))); _add_knob(nuke, node, folder)
