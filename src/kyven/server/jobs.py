@@ -28,6 +28,7 @@ from kyven.segment.models import (
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.segment.service import SegmentService
 from kyven.segment.video import (
+    VideoCorrection,
     VideoDirection,
     VideoSegmentRequest,
     VideoSegmentService,
@@ -195,6 +196,21 @@ class JobManager:
             )
             for item in payload.get("rois", [])
         )
+        corrections = tuple(
+            VideoCorrection(
+                frame=int(item["frame"]),
+                points=tuple(
+                    PointPrompt(
+                        x=float(point["x"]),
+                        y=float(point["y"]),
+                        label=PointLabel(str(point.get("label", "positive"))),
+                    )
+                    for point in item.get("points", [])
+                ),
+                box=JobManager._box_from_payload(item, "box"),
+            )
+            for item in payload.get("corrections", [])
+        )
         return VideoSegmentRequest(
             frames_dir=frames_dir,
             output_pattern=output_pattern,
@@ -202,6 +218,7 @@ class JobManager:
             last_frame=int(payload["last_frame"]),
             key_frame=int(payload["key_frame"]),
             direction=VideoDirection(str(payload.get("direction", "both"))),
+            corrections=corrections,
             points=points,
             box=box,
             roi=roi,

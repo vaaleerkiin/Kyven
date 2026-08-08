@@ -29,8 +29,8 @@ The Nuke adapter launches `python.exe -I -m kyven.server.bootstrap`. On Windows 
 the DLL directory inherited from Nuke before importing PyTorch; this prevents the common
 `c10.dll` / `WinError 1114` startup failure.
 
-Kyven API 26 uses port `18788`. Older development servers may remain on 8765-8769 or 18768-18787,
-but the adapter asks authenticated older servers to unload their models before starting API 26.
+Kyven API 27 uses port `18788`. Older development servers may remain on 8765-8769 or 18768-18787,
+but the adapter asks authenticated older servers to unload their models before starting API 27.
 
 Each Kyven node provides **Stop Server** and **Start Server** next to Status. Use them after updating
 the repository if Nuke is still connected to code loaded before the update. Stop affects only the

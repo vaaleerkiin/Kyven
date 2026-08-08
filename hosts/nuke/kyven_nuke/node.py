@@ -16,6 +16,7 @@ from kyven_nuke.payload import MODEL_LABELS, segment_payload, segment_video_payl
 from kyven_nuke.runtime import ensure_server, stop_server
 
 MAX_PROMPT_POINTS = 32
+MAX_CORRECTION_FRAMES = 32
 OUTPUT_MODES = ("Matte", "Source + Alpha", "Cutout", "Source (Bypass)")
 _range_cancellations: set[str] = set()
 _range_cancel_lock = threading.RLock()
@@ -23,6 +24,7 @@ _progress_tasks: dict[str, Any] = {}
 _progress_lock = threading.RLock()
 _postprocess_lock = threading.RLock()
 _postprocess_revisions: dict[str, int] = {}
+_correction_sync_nodes: set[str] = set()
 
 
 def _nuke() -> Any:
@@ -159,9 +161,16 @@ def sync_prompt_visibility(node: Any | None = None) -> None:
                     knob.setFlag(nuke.STARTLINE)
                 else:
                     knob.clearFlag(nuke.STARTLINE)
-        for button_name in (f"add_{kind}_point", f"remove_{kind}_point"):
-            if button_name in node.knobs():
-                node[button_name].setVisible(enabled)
+            remove_name = f"remove_{kind}_point_{index}"
+            if remove_name in node.knobs():
+                remove = node[remove_name]
+                if visible and not bool(remove.value()):
+                    remove.setValue(True)
+                remove.setVisible(visible)
+        if f"add_{kind}_point" in node.knobs():
+            node[f"add_{kind}_point"].setVisible(enabled)
+        if f"remove_{kind}_point" in node.knobs():
+            node[f"remove_{kind}_point"].setVisible(False)
     node["prompt_box"].setVisible(bool(node["box_enabled"].value()))
     if "max_hole_area" in node.knobs():
         node["max_hole_area"].setVisible(bool(node["fill_holes"].value()))
@@ -169,7 +178,43 @@ def sync_prompt_visibility(node: Any | None = None) -> None:
 
 def prompt_knob_changed() -> None:
     nuke = _nuke()
-    knob_name = nuke.thisKnob().name()
+    knob = nuke.thisKnob()
+    knob_name = knob.name()
+    for kind in ("positive", "negative"):
+        prefix = f"remove_{kind}_point_"
+        if knob_name.startswith(prefix):
+            if knob.Class() == "Boolean_Knob" and not bool(knob.value()):
+                _defer_ui_action(
+                    remove_point,
+                    kind,
+                    int(knob_name.removeprefix(prefix)),
+                    str(nuke.thisNode().fullName()),
+                )
+            return
+    if knob_name.startswith("remove_correction_"):
+        if knob.Class() == "Boolean_Knob" and not bool(knob.value()):
+            _defer_ui_action(
+                remove_correction,
+                int(knob_name.removeprefix("remove_correction_")),
+                str(nuke.thisNode().fullName()),
+            )
+        return
+    if knob_name.startswith("correction_frame_") and knob_name != "correction_frame_count":
+        node = nuke.thisNode()
+        node_name = str(node.fullName())
+        if node_name not in _correction_sync_nodes:
+            _move_correction_frame(
+                node,
+                int(knob_name.removeprefix("correction_frame_")),
+                int(knob.value()),
+            )
+        return
+    if knob_name == "key_frame":
+        node = nuke.thisNode()
+        node_name = str(node.fullName())
+        if node_name not in _correction_sync_nodes:
+            _move_primary_key_frame(node, int(knob.value()))
+        return
     if knob_name in {
         "positive_enabled",
         "negative_enabled",
@@ -185,6 +230,17 @@ def prompt_knob_changed() -> None:
     if "kyven_live_frame" in node.knobs() and affects_live_result(knob_name, "segment"):
         node["kyven_live_frame"].setValue(-2147483647)
         request_live_update(node)
+
+
+def _defer_ui_action(function: Any, *args: Any) -> None:
+    """Run structural knob updates after Nuke finishes the current knobChanged callback."""
+
+    def dispatch() -> None:
+        _nuke().executeInMainThread(function, args=args)
+
+    timer = threading.Timer(0.01, dispatch)
+    timer.daemon = True
+    timer.start()
 
 
 def request_mask_postprocess(node: Any, delay_seconds: float = 0.18) -> None:
@@ -313,23 +369,76 @@ def add_point(kind: str) -> None:
         return
     new_count = count + 1
     knob = node[_point_knob_name(kind, new_count)]
-    previous = node[_point_knob_name(kind, count)].value()
-    knob.setValue([float(previous[0]) + 20.0, float(previous[1]) + 20.0])
+    correction_frames = sorted(
+        _correction_frames(node) | {int(node["key_frame"].value())}
+    )
+    if count:
+        previous_knob = node[_point_knob_name(kind, count)]
+        previous = previous_knob.value()
+    else:
+        previous_knob = None
+        source = node.input(0)
+        previous = (
+            [float(source.width()) / 2.0, float(source.height()) / 2.0]
+            if source is not None
+            else [0.0, 0.0]
+        )
+    # Re-enabling a previously removed control must not destroy its animation curve.
+    if correction_frames:
+        for dimension in range(2):
+            try:
+                knob.clearAnimated(dimension)
+            except (AttributeError, RuntimeError, TypeError):
+                pass
+            knob.setAnimated(dimension)
+        for frame in correction_frames:
+            if previous_knob is None:
+                values = previous
+            else:
+                values = [
+                    float(previous_knob.valueAt(frame, dimension))
+                    for dimension in range(2)
+                ]
+            knob.setValueAt(float(values[0]) + 20.0, frame, 0)
+            knob.setValueAt(float(values[1]) + 20.0, frame, 1)
+    else:
+        offset = 20.0 if count else 0.0
+        knob.setValue([float(previous[0]) + offset, float(previous[1]) + offset])
     node[f"{kind}_point_count"].setValue(new_count)
     sync_prompt_visibility(node)
     node["kyven_status"].setValue(f"Added {kind} point {new_count}.")
 
 
-def remove_point(kind: str) -> None:
+def remove_point(
+    kind: str,
+    index: int | None = None,
+    node_name: str | None = None,
+) -> None:
     nuke = _nuke()
-    node = nuke.thisNode()
-    count = _point_count(node, kind)
-    if count <= 1:
-        node["kyven_status"].setValue(f"Keep at least one {kind} point control.")
+    node = nuke.toNode(node_name) if node_name else nuke.thisNode()
+    if node is None:
         return
+    count = _point_count(node, kind)
+    if count <= 0:
+        return
+    index = count if index is None else int(index)
+    if not 1 <= index <= count:
+        return
+    for position in range(index, count):
+        target = node[_point_knob_name(kind, position)]
+        source = node[_point_knob_name(kind, position + 1)]
+        try:
+            target.fromScript(source.toScript())
+        except (AttributeError, TypeError):
+            target.setValue(source.value())
+    discarded = node[_point_knob_name(kind, count)]
+    try:
+        discarded.clearAnimated()
+    except (AttributeError, TypeError):
+        pass
     node[f"{kind}_point_count"].setValue(count - 1)
     sync_prompt_visibility(node)
-    node["kyven_status"].setValue(f"Removed {kind} point {count}.")
+    node["kyven_status"].setValue(f"Removed {kind} point {index}.")
 
 
 def _set_status(node_name: str, status: str) -> None:
@@ -845,6 +954,21 @@ def reset_prompts_to_input() -> None:
         nuke.message("Connect the Kyven Segment Source input first.")
 
 
+def reset_roi_to_input() -> None:
+    """Reset only Processing ROI, preserving every point and its animation."""
+
+    nuke = _nuke()
+    node = nuke.thisNode()
+    source = node.input(0)
+    if source is None:
+        nuke.message("Connect the Kyven Segment Source input first.")
+        return
+    width = float(source.width())
+    height = float(source.height())
+    node["prompt_box"].setValue([0.0, 0.0, width, height])
+    node["kyven_status"].setValue(f"Processing ROI reset to {int(width)}x{int(height)}.")
+
+
 def process_current_frame(node: Any | None = None, live: bool = False) -> None:
     nuke = _nuke()
     node = node or nuke.thisNode()
@@ -969,8 +1093,275 @@ def set_key_frame_to_current() -> None:
     nuke = _nuke()
     node = nuke.thisNode()
     frame = int(nuke.frame())
-    node["key_frame"].setValue(frame)
-    node["kyven_status"].setValue(f"Key frame set to {frame}.")
+    old_frame = (
+        int(node["key_frame_previous"].value())
+        if "key_frame_previous" in node.knobs()
+        else int(node["key_frame"].value())
+    )
+    _snapshot_correction_prompts(node, frame)
+    if old_frame != frame:
+        _remove_point_keyframes_at(node, old_frame)
+    node_name = str(node.fullName())
+    _correction_sync_nodes.add(node_name)
+    try:
+        node["key_frame"].setValue(frame)
+        if "key_frame_previous" in node.knobs():
+            node["key_frame_previous"].setValue(frame)
+    finally:
+        _correction_sync_nodes.discard(node_name)
+    frames = _correction_frames(node)
+    frames.discard(old_frame)
+    frames.discard(frame)
+    _set_correction_frames(node, frames)
+    node["kyven_status"].setValue(f"Primary key set to {frame}.")
+
+
+def _correction_frames(node: Any) -> set[int]:
+    if "correction_frame_count" in node.knobs():
+        count = int(node["correction_frame_count"].value())
+        return {
+            int(node[f"correction_frame_{index}"].value())
+            for index in range(1, count + 1)
+        }
+    if "correction_frames" not in node.knobs():
+        return set()
+    value = str(node["correction_frames"].value()).strip()
+    try:
+        return {int(item) for item in value.split(",") if item.strip()}
+    except ValueError:
+        return set()
+
+
+def _stored_correction_frames(node: Any) -> list[int]:
+    value = str(node["correction_frames"].value()).strip()
+    try:
+        return sorted(int(item) for item in value.split(",") if item.strip())
+    except ValueError:
+        return []
+
+
+def _point_keyframe_knobs(node: Any) -> list[Any]:
+    return [
+        node[name]
+        for kind in ("positive", "negative")
+        for name in _point_knob_names(kind, MAX_PROMPT_POINTS)
+        if name in node.knobs()
+    ]
+
+
+def _remove_point_keyframes_at(node: Any, frame: int) -> None:
+    for knob in _point_keyframe_knobs(node):
+        for dimension in range(2):
+            try:
+                knob.removeKeyAt(frame, dimension)
+            except (AttributeError, RuntimeError, TypeError):
+                try:
+                    knob.animation(dimension).removeKey(frame)
+                except (AttributeError, RuntimeError, TypeError):
+                    continue
+
+
+def _move_point_keyframes(node: Any, old_frame: int, new_frame: int) -> None:
+    if old_frame == new_frame:
+        return
+    for knob in _point_keyframe_knobs(node):
+        for dimension in range(2):
+            try:
+                value = float(knob.valueAt(old_frame, dimension))
+                animated = bool(knob.isAnimated(dimension))
+            except (AttributeError, RuntimeError, TypeError):
+                continue
+            if not animated:
+                continue
+            try:
+                knob.removeKeyAt(old_frame, dimension)
+            except (AttributeError, RuntimeError, TypeError):
+                try:
+                    knob.animation(dimension).removeKey(old_frame)
+                except (AttributeError, RuntimeError, TypeError):
+                    pass
+            knob.setValueAt(value, new_frame, dimension)
+
+
+def _move_correction_frame(node: Any, index: int, new_frame: int) -> None:
+    frames = _stored_correction_frames(node)
+    if not 1 <= index <= len(frames):
+        return
+    old_frame = frames[index - 1]
+    if old_frame == new_frame:
+        return
+    _move_point_keyframes(node, old_frame, new_frame)
+    frames[index - 1] = new_frame
+    _set_correction_frames(node, set(frames))
+    node["kyven_status"].setValue(
+        f"Correction and point keyframes moved {old_frame} → {new_frame}."
+    )
+
+
+def _move_primary_key_frame(node: Any, new_frame: int) -> None:
+    old_frame = (
+        int(node["key_frame_previous"].value())
+        if "key_frame_previous" in node.knobs()
+        else new_frame
+    )
+    if old_frame == new_frame:
+        return
+    _move_point_keyframes(node, old_frame, new_frame)
+    frames = _correction_frames(node)
+    frames.discard(old_frame)
+    frames.discard(new_frame)
+    if "key_frame_previous" in node.knobs():
+        node["key_frame_previous"].setValue(new_frame)
+    _set_correction_frames(node, frames)
+    node["kyven_status"].setValue(
+        f"Primary key and point keyframes moved {old_frame} → {new_frame}."
+    )
+
+
+def _set_correction_frames(node: Any, frames: set[int]) -> None:
+    ordered = sorted(frames)
+    node["correction_frames"].setValue(",".join(str(frame) for frame in ordered))
+    if "correction_frame_count" in node.knobs():
+        count = min(len(ordered), MAX_CORRECTION_FRAMES)
+        node["correction_frame_count"].setValue(count)
+        node_name = str(node.fullName())
+        _correction_sync_nodes.add(node_name)
+        try:
+            _sync_correction_rows(node, ordered[:count])
+        finally:
+            _correction_sync_nodes.discard(node_name)
+    if "correction_frames_display" in node.knobs():
+        label = ", ".join(str(frame) for frame in ordered) if ordered else "None"
+        node["correction_frames_display"].setValue(f"Correction frames: <b>{label}</b>")
+
+
+def _sync_correction_rows(node: Any, frames: list[int]) -> None:
+    """Update correction rows without removing knobs while the properties panel is open."""
+
+    nuke = _nuke()
+    anchor = "set_key_frame"
+    for index, frame in enumerate(frames, start=1):
+        row_name = f"correction_frame_{index}"
+        remove_name = f"remove_correction_{index}"
+        if row_name not in node.knobs():
+            row = nuke.Int_Knob(row_name, f"Correction {index}")
+            _add_knob(nuke, node, row)
+        else:
+            row = node[row_name]
+        row.setValue(frame)
+        row.setVisible(True)
+        if remove_name in node.knobs() and node[remove_name].Class() != "Boolean_Knob":
+            node.removeKnob(node[remove_name])
+        if remove_name not in node.knobs():
+            remove = _remove_button(
+                nuke,
+                remove_name,
+                f"kyven_nuke.node.remove_correction({index})",
+                "Remove this correction frame",
+            )
+            _add_knob(nuke, node, remove, start_line=False)
+        else:
+            remove = node[remove_name]
+        remove.setLabel("")
+        if not bool(remove.value()):
+            remove.setValue(True)
+        remove.setTooltip("Remove this correction frame")
+        remove.setVisible(True)
+        _place_knob_after(node, row_name, anchor)
+        _place_knob_after(node, remove_name, row_name)
+        anchor = remove_name
+    _place_knob_after(node, "add_correction", anchor)
+    index = len(frames) + 1
+    while f"correction_frame_{index}" in node.knobs():
+        node[f"correction_frame_{index}"].setVisible(False)
+        remove_name = f"remove_correction_{index}"
+        if remove_name in node.knobs():
+            node[remove_name].setVisible(False)
+        index += 1
+    _arrange_tracking_controls(node)
+
+
+def _arrange_tracking_controls(node: Any) -> None:
+    if "add_correction" not in node.knobs():
+        return
+    anchor = "add_correction"
+    for name in ("propagate_backward", "propagate_both", "propagate_forward"):
+        if name in node.knobs():
+            _place_knob_after(node, name, anchor)
+            anchor = name
+
+
+def _snapshot_correction_prompts(node: Any, frame: int) -> None:
+    """Key the current prompt values so each correction retains an independent snapshot."""
+
+    vector_names = [
+        *_point_knob_names("positive", _point_count(node, "positive")),
+        *_point_knob_names("negative", _point_count(node, "negative")),
+    ]
+    for name in vector_names:
+        knob = node[name]
+        values = tuple(knob.value())
+        for index, value in enumerate(values):
+            try:
+                knob.setAnimated(index)
+                knob.setValueAt(float(value), frame, index)
+            except (AttributeError, TypeError):
+                break
+
+
+def add_current_correction() -> None:
+    nuke = _nuke()
+    node = nuke.thisNode()
+    frame = int(nuke.frame())
+    frames = _correction_frames(node)
+    if frame == int(node["key_frame"].value()):
+        _snapshot_correction_prompts(node, frame)
+        node["kyven_status"].setValue(f"Primary key updated at frame {frame}.")
+        return
+    if frame not in frames and len(frames) >= MAX_CORRECTION_FRAMES:
+        node["kyven_status"].setValue(
+            f"Maximum {MAX_CORRECTION_FRAMES} correction frames reached."
+        )
+        return
+    _snapshot_correction_prompts(node, frame)
+    _set_correction_frames(node, frames | {frame})
+    node["kyven_status"].setValue(f"Correction saved at frame {frame}.")
+
+
+def remove_correction(index: int, node_name: str | None = None) -> None:
+    nuke = _nuke()
+    node = nuke.toNode(node_name) if node_name else nuke.thisNode()
+    if node is None:
+        return
+    frames = sorted(_correction_frames(node))
+    if not 1 <= index <= len(frames):
+        return
+    removed = frames.pop(index - 1)
+    _remove_point_keyframes_at(node, removed)
+    _set_correction_frames(node, set(frames))
+    node["kyven_status"].setValue(
+        f"Correction and point keyframes removed at frame {removed}."
+    )
+
+
+def remove_current_correction() -> None:
+    nuke = _nuke()
+    node = nuke.thisNode()
+    frame = int(nuke.frame())
+    frames = _correction_frames(node)
+    if frame in frames:
+        _remove_point_keyframes_at(node, frame)
+        frames.discard(frame)
+    _set_correction_frames(node, frames)
+    node["kyven_status"].setValue(f"Correction removed at frame {frame}.")
+
+
+def clear_corrections() -> None:
+    node = _nuke().thisNode()
+    for frame in _correction_frames(node):
+        _remove_point_keyframes_at(node, frame)
+    _set_correction_frames(node, set())
+    node["kyven_status"].setValue("Correction frames cleared; primary key will still be used.")
 
 
 def propagate_video(direction: str) -> None:
@@ -979,9 +1370,6 @@ def propagate_video(direction: str) -> None:
     source = node.input(0)
     if source is None:
         nuke.message("Kyven Segment requires a Source input.")
-        return
-    if not _has_prompts(node):
-        nuke.message("Enable at least one point on the key frame.")
         return
     if "kyven_busy" in node.knobs() and bool(node["kyven_busy"].value()):
         return
@@ -998,11 +1386,30 @@ def propagate_video(direction: str) -> None:
         nuke.message("Key Frame must be inside Range First/Last.")
         return
 
-    positive_points = _collect_points(node, "positive", key_frame)
-    negative_points = _collect_points(node, "negative", key_frame)
-    if not positive_points and not negative_points:
-        nuke.message("Enable at least one point on the key frame.")
+    correction_frames = _correction_frames(node) | {key_frame}
+    corrections = [
+        {
+            "frame": frame,
+            "positive_points": _collect_points(node, "positive", frame),
+            "negative_points": _collect_points(node, "negative", frame),
+        }
+        for frame in sorted(correction_frames)
+        if first <= frame <= last
+    ]
+    corrections = [
+        correction
+        for correction in corrections
+        if correction["positive_points"] or correction["negative_points"]
+    ]
+    if not corrections:
+        nuke.message("Enable at least one point on a key/correction frame.")
         return
+    primary = next(
+        (correction for correction in corrections if correction["frame"] == key_frame),
+        corrections[0],
+    )
+    positive_points = primary["positive_points"]
+    negative_points = primary["negative_points"]
     roi_enabled = bool(_knob_value_at(node["box_enabled"], key_frame))
     key_roi = _bbox_at(node, key_frame)
     animated_rois: list[tuple[int, tuple[float, float, float, float]]] = []
@@ -1071,6 +1478,7 @@ def propagate_video(direction: str) -> None:
             int(node["max_hole_area"].value()) if "max_hole_area" in node.knobs() else 2_048
         ),
         animated_rois=animated_rois,
+        corrections=corrections,
     )
     node["kyven_status"].setValue("Starting SAM 2 video predictor...")
     threading.Thread(
@@ -1193,6 +1601,16 @@ def _add_knob(nuke: Any, node: Any, knob: Any, *, start_line: bool = True) -> An
     return knob
 
 
+def _remove_button(nuke: Any, name: str, command: str, tooltip: str) -> Any:
+    """Create a compact native square with Nuke's own checked x glyph."""
+
+    del command  # Removal is dispatched centrally from knobChanged.
+    knob = nuke.Boolean_Knob(name, "")
+    knob.setValue(True)
+    knob.setTooltip(tooltip)
+    return knob
+
+
 def _add_section(nuke: Any, node: Any, name: str, title: str) -> None:
     _add_knob(nuke, node, nuke.Text_Knob(name, "", _section_markup(title)))
 
@@ -1290,13 +1708,13 @@ def _restyle_node_ui(node: Any) -> None:
         "remove_positive_point": "- Last Positive",
         "add_negative_point": "+ Negative Point",
         "remove_negative_point": "- Last Negative",
-        "reset_prompts": "Reset Points + ROI to Input",
+        "reset_prompts": "Reset ROI to Input",
         "process_range": "Process Frame Range",
         "cancel": "Cancel",
         "set_key_frame": "Set Current as Key",
-        "propagate_forward": "Forward",
-        "propagate_backward": "Backward",
-        "propagate_both": "Both Directions",
+        "propagate_forward": "Forward →",
+        "propagate_backward": "← Backward",
+        "propagate_both": "↔ Both Directions",
         "create_matte_read": "Create Matte Read",
         "delete_node_cache": "Delete Node Cache",
         "delete_all_cache": "Delete All Kyven Cache",
@@ -1311,8 +1729,8 @@ def _restyle_node_ui(node: Any) -> None:
         "range_last",
         "cancel",
         "set_key_frame",
-        "propagate_backward",
         "propagate_both",
+        "propagate_forward",
         "delete_node_cache",
     }
     for name in same_line:
@@ -1322,10 +1740,14 @@ def _restyle_node_ui(node: Any) -> None:
         node["refresh_models"].setFlag(nuke.STARTLINE)
     if "delete_all_cache" in node.knobs():
         node["delete_all_cache"].setFlag(nuke.STARTLINE)
+    if "propagate_backward" in node.knobs():
+        node["propagate_backward"].setFlag(nuke.STARTLINE)
+    _ensure_processing_layout(node)
+    _arrange_tracking_controls(node)
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 26</font>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 27</font>'
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
@@ -1349,6 +1771,41 @@ def _restyle_node_ui(node: Any) -> None:
             "Live follows timeline and prompt / ROI edits asynchronously.<br>"
             "Disable Live before range or tracking renders."
         )
+
+
+def _ensure_processing_layout(node: Any) -> None:
+    """Group independent current-frame and range actions in reading order."""
+
+    nuke = _nuke()
+    if "current_processing_label" not in node.knobs():
+        _add_knob(
+            nuke,
+            node,
+            nuke.Text_Knob("current_processing_label", "", "<b>CURRENT FRAME</b>"),
+        )
+    if "range_processing_label" not in node.knobs():
+        _add_knob(
+            nuke,
+            node,
+            nuke.Text_Knob("range_processing_label", "", "<b>FRAME RANGE</b>"),
+        )
+    anchor = "live_help" if "live_help" in node.knobs() else "live_mode"
+    for name in (
+        "current_processing_label",
+        "process_frame",
+        "range_processing_label",
+        "range_first",
+        "range_last",
+        "process_range",
+        "cancel",
+    ):
+        if name in node.knobs() and anchor in node.knobs():
+            _place_knob_after(node, name, anchor)
+            anchor = name
+    if "process_range" in node.knobs():
+        node["process_range"].setFlag(nuke.STARTLINE)
+    if "cancel" in node.knobs():
+        node["cancel"].clearFlag(nuke.STARTLINE)
 
 
 def _ensure_output_controls(node: Any) -> None:
@@ -1561,6 +2018,78 @@ def _ensure_server_controls(node: Any) -> None:
     _place_knob_after(node, "stop_server_control", "start_server_control")
 
 
+def _ensure_correction_controls(node: Any) -> None:
+    """Add persistent multi-frame correction controls to new or legacy Segment nodes."""
+
+    nuke = _nuke()
+    saved_frames = _correction_frames(node)
+    saved_frames.discard(int(node["key_frame"].value()))
+    if "key_frame_previous" not in node.knobs():
+        previous = nuke.Int_Knob("key_frame_previous", "Previous Key Frame")
+        previous.setValue(int(node["key_frame"].value()))
+        previous.setVisible(False)
+        node.addKnob(previous)
+    if "correction_frames" not in node.knobs():
+        stored = nuke.String_Knob("correction_frames", "Correction Frames")
+        stored.setVisible(False)
+        node.addKnob(stored)
+    if "correction_frame_count" not in node.knobs():
+        count = nuke.Int_Knob("correction_frame_count", "Correction Count")
+        count.setVisible(False)
+        node.addKnob(count)
+    if "add_correction" not in node.knobs():
+        _add_knob(
+            nuke,
+            node,
+            nuke.PyScript_Knob(
+                "add_correction",
+                "+ Correction at Current Frame",
+                "kyven_nuke.node.add_current_correction()",
+            ),
+        )
+    else:
+        node["add_correction"].setLabel("+ Correction at Current Frame")
+    for legacy_name in ("correction_frames_display", "remove_correction", "clear_corrections"):
+        if legacy_name in node.knobs():
+            node[legacy_name].setVisible(False)
+    if "set_key_frame" in node.knobs():
+        _place_knob_after(node, "add_correction", "set_key_frame")
+    _set_correction_frames(node, saved_frames)
+
+
+def _ensure_point_remove_controls(node: Any) -> None:
+    """Add a per-row remove button without recreating animated point knobs."""
+
+    nuke = _nuke()
+    for kind in ("positive", "negative"):
+        for index, point_name in enumerate(
+            _point_knob_names(kind, MAX_PROMPT_POINTS), start=1
+        ):
+            remove_name = f"remove_{kind}_point_{index}"
+            if remove_name in node.knobs() and node[remove_name].Class() != "Boolean_Knob":
+                node.removeKnob(node[remove_name])
+            if remove_name not in node.knobs():
+                _add_knob(
+                    nuke,
+                    node,
+                    _remove_button(
+                        nuke,
+                        remove_name,
+                        f"kyven_nuke.node.remove_point('{kind}', {index})",
+                        f"Remove {kind} point {index}",
+                    ),
+                    start_line=False,
+                )
+            node[remove_name].setLabel("")
+            if not bool(node[remove_name].value()):
+                node[remove_name].setValue(True)
+            node[remove_name].setTooltip(f"Remove {kind} point {index}")
+            _place_knob_after(node, remove_name, point_name)
+        legacy = f"remove_{kind}_point"
+        if legacy in node.knobs():
+            node[legacy].setVisible(False)
+
+
 def _upgrade_roi_controls(node: Any) -> None:
     """Update legacy prompt-box labels to the Processing ROI terminology."""
     if "box_section" in node.knobs():
@@ -1570,7 +2099,8 @@ def _upgrade_roi_controls(node: Any) -> None:
     if "prompt_box" in node.knobs():
         node["prompt_box"].setLabel("Processing ROI")
     if "reset_prompts" in node.knobs():
-        node["reset_prompts"].setLabel("Reset Points and ROI to Input Size")
+        node["reset_prompts"].setLabel("Reset ROI to Input")
+        node["reset_prompts"].setCommand("kyven_nuke.node.reset_roi_to_input()")
 
 
 def upgrade_selected_segment_node() -> None:
@@ -1588,6 +2118,8 @@ def upgrade_selected_segment_node() -> None:
         _ensure_live_controls(node)
         _ensure_model_manager_control(node)
         _ensure_server_controls(node)
+        _ensure_correction_controls(node)
+        _ensure_point_remove_controls(node)
         _upgrade_roi_controls(node)
         _restyle_node_ui(node)
         sync_prompt_visibility(node)
@@ -1619,7 +2151,7 @@ def create_segment_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 26</font>',
+            '<font color="#91a3b0">SAM 2 | Local inference | API 27</font>',
         ),
     )
 
@@ -1667,6 +2199,17 @@ def create_segment_node() -> Any:
     positive_count.clearFlag(nuke.STARTLINE)
     for index, name in enumerate(_point_knob_names("positive", MAX_PROMPT_POINTS), start=1):
         _add_knob(nuke, node, nuke.XY_Knob(name, f"Positive Point {index}"))
+        _add_knob(
+            nuke,
+            node,
+            _remove_button(
+                nuke,
+                f"remove_positive_point_{index}",
+                f"kyven_nuke.node.remove_point('positive', {index})",
+                f"Remove positive point {index}",
+            ),
+            start_line=False,
+        )
     _add_knob(
         nuke,
         node,
@@ -1696,6 +2239,17 @@ def create_segment_node() -> Any:
     negative_count.clearFlag(nuke.STARTLINE)
     for index, name in enumerate(_point_knob_names("negative", MAX_PROMPT_POINTS), start=1):
         _add_knob(nuke, node, nuke.XY_Knob(name, f"Negative Point {index}"))
+        _add_knob(
+            nuke,
+            node,
+            _remove_button(
+                nuke,
+                f"remove_negative_point_{index}",
+                f"kyven_nuke.node.remove_point('negative', {index})",
+                f"Remove negative point {index}",
+            ),
+            start_line=False,
+        )
     _add_knob(
         nuke,
         node,
@@ -1724,8 +2278,8 @@ def create_segment_node() -> Any:
         node,
         nuke.PyScript_Knob(
             "reset_prompts",
-            "Reset Points + ROI to Input",
-            "kyven_nuke.node.reset_prompts_to_input()",
+            "Reset ROI to Input",
+            "kyven_nuke.node.reset_roi_to_input()",
         ),
     )
     _add_knob(
@@ -1795,6 +2349,7 @@ def create_segment_node() -> Any:
         ),
         start_line=False,
     )
+    _ensure_correction_controls(node)
     _add_knob(
         nuke,
         node,

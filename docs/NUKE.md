@@ -125,7 +125,8 @@ range still opens the normal cancellable progress window.
 
 Positive points identify the object to keep. Negative points remove unwanted areas. Each point type
 has an independent enable toggle, so its Viewer handles and payload can be hidden without deleting
-the saved coordinates. Up to 32 controls are available per type.
+the saved coordinates. Up to 32 controls are available per type. Each visible point has a `×`
+button on its right; deleting a row shifts later points up while preserving their animation curves.
 
 ### Processing ROI
 
@@ -141,8 +142,8 @@ Inverted ROI corners are normalized and coordinates are clamped to the input for
 fully outside ROI falls back to the full frame instead of failing the job.
 
 The final matte always has the source dimensions. A positive point must be inside the ROI;
-negative points outside it are ignored. `Reset Points + ROI to Input` restores the ROI to the input
-format and returns active points near its center.
+negative points outside it are ignored. `Reset ROI to Input` restores only the ROI to the input
+format and preserves all point positions and point animation.
 
 SAM 2 resizes inputs to a fixed encoder resolution. ROI improves focus and effective detail but
 does not guarantee proportional GPU-time or VRAM savings.
@@ -173,7 +174,8 @@ not appropriate.
 2. Place points and optionally limit the Processing ROI.
 3. Click `Set Current as Key`.
 4. Set `Range First` and `Range Last`.
-5. Choose `Forward`, `Backward`, or `Both Directions`.
+5. On later frames, adjust the points and click `+ Correction at Current Frame` to save corrections.
+6. Choose `Forward`, `Backward`, or `Both Directions`.
 
 Nuke exports high-quality temporary JPEG frames. Kyven creates one fresh SAM 2 tracking state,
 offloads frames and state to system RAM, propagates from the key frame, and writes lossless full-size
@@ -181,8 +183,18 @@ PNG mattes. Points are evaluated explicitly on the selected key frame. An animat
 evaluated separately on every frame without moving the timeline or changing its keyframes; Kyven
 crops each frame, normalizes the crop to the key-frame ROI size for tracking, then restores the matte
 to that frame's original full-size coordinates. The native Nuke progress window shows export and
-model stages, percentage, an estimated remaining time, and a Cancel control. Corrections from
-multiple key frames are not implemented yet.
+model stages, percentage, an estimated remaining time, and a Cancel control. Every saved correction
+is sampled from the animated point controls at its frame and added to the same SAM 2 tracking state.
+Saved corrections appear as editable frame rows. Change the frame number directly or click `×` on
+the right to remove that row. Editing the number moves every point keyframe from the old correction
+frame to the new one; removing the row removes those point keyframes. New points immediately receive
+all saved correction keyframes by copying the previous point with a small position offset. Correction
+controls never create keyframes on enable toggles or Processing ROI.
+
+The primary `Key Frame` follows the same point-keyframe rules but remains separate from correction
+rows. Editing its number moves its point keyframes. `Set Current as Key` replaces the previous
+primary key and removes the old primary point keys. New points receive both primary and correction
+keys automatically.
 
 Points are used only to initialize the key frame and are checked only against that frame's ROI.
 Animated ROIs on later frames may move away from the original point; they guide only the per-frame
@@ -257,7 +269,7 @@ Kyven returns a readable error before inference when that budget is exceeded.
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18788` and requires API 26. A
+The adapter starts an external hidden Python process on `127.0.0.1:18788` and requires API 27. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 
@@ -266,7 +278,6 @@ Server output for the latest launch is written to `.runtime/server.log`.
 ## Current limitations
 
 - one object per Segment node;
-- no multi-key-frame tracking corrections yet;
 - range resumption is not implemented yet;
 - Refine is frame-independent and has no temporal propagation yet;
 - the Nuke host adapter has been developed on Windows and still needs broader production testing.

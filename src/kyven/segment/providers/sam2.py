@@ -210,7 +210,6 @@ class Sam2Provider(SegmentationProvider):
             box = np.asarray(
                 [request.box.x0, request.box.y0, request.box.x1, request.box.y1]
             )
-
         try:
             import torch
 
@@ -266,19 +265,6 @@ class Sam2Provider(SegmentationProvider):
         cancellation.raise_if_cancelled()
         cancellation.report_progress(0.10, "Loading SAM 2 video model")
         predictor = self._load_video()
-        point_coords = None
-        point_labels = None
-        if request.points:
-            point_coords = np.asarray([(point.x, point.y) for point in request.points])
-            point_labels = np.asarray(
-                [1 if point.label is PointLabel.POSITIVE else 0 for point in request.points]
-            )
-        box = None
-        if request.box is not None:
-            box = np.asarray(
-                [request.box.x0, request.box.y0, request.box.x1, request.box.y1]
-            )
-
         try:
             import torch
 
@@ -298,14 +284,38 @@ class Sam2Provider(SegmentationProvider):
                     offload_state_to_cpu=request.offload_state_to_cpu,
                     async_loading_frames=True,
                 )
-                predictor.add_new_points_or_box(
-                    inference_state=state,
-                    frame_idx=request.key_index,
-                    obj_id=1,
-                    points=point_coords,
-                    labels=point_labels,
-                    box=box,
-                )
+                for correction in sorted(request.effective_corrections, key=lambda item: item.frame):
+                    point_coords = (
+                        np.asarray([(point.x, point.y) for point in correction.points])
+                        if correction.points
+                        else None
+                    )
+                    point_labels = (
+                        np.asarray([
+                            1 if point.label is PointLabel.POSITIVE else 0
+                            for point in correction.points
+                        ])
+                        if correction.points
+                        else None
+                    )
+                    box = (
+                        np.asarray([
+                            correction.box.x0,
+                            correction.box.y0,
+                            correction.box.x1,
+                            correction.box.y1,
+                        ])
+                        if correction.box is not None
+                        else None
+                    )
+                    predictor.add_new_points_or_box(
+                        inference_state=state,
+                        frame_idx=correction.frame - request.first_frame,
+                        obj_id=1,
+                        points=point_coords,
+                        labels=point_labels,
+                        box=box,
+                    )
                 cancellation.report_progress(0.25, "Propagating masks")
                 passes = []
                 if request.direction in {VideoDirection.BACKWARD, VideoDirection.BOTH}:
@@ -354,6 +364,9 @@ class Sam2Provider(SegmentationProvider):
                 "device": self._resolved_device,
                 "offload_video_to_cpu": request.offload_video_to_cpu,
                 "offload_state_to_cpu": request.offload_state_to_cpu,
+                "correction_frames": [
+                    correction.frame for correction in request.effective_corrections
+                ],
             },
         )
 

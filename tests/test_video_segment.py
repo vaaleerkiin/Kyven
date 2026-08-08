@@ -14,6 +14,7 @@ from kyven.segment.output import write_mask_png_atomic
 from kyven.segment.providers.base import SegmentationProvider
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.segment.video import (
+    VideoCorrection,
     VideoDirection,
     VideoSegmentRequest,
     VideoSegmentResult,
@@ -22,6 +23,75 @@ from kyven.segment.video import (
 
 
 class VideoSegmentRequestTests(unittest.TestCase):
+    def test_multiple_corrections_are_translated_for_each_animated_roi(self) -> None:
+        captured = {}
+
+        class CaptureProvider:
+            def propagate_video(self, request, cancellation):
+                captured["corrections"] = request.corrections
+                outputs = []
+                for index in range(request.last_frame - request.first_frame + 1):
+                    output = request.output_for_index(index)
+                    write_mask_png_atomic(output, np.ones((4, 4), dtype=np.bool_))
+                    outputs.append(output)
+                return VideoSegmentResult(
+                    outputs=tuple(outputs), first_frame=1, last_frame=2,
+                    key_frame=1, direction=request.direction, metadata={},
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            frames = root / "frames"
+            frames.mkdir()
+            Image.new("RGB", (10, 8), "white").save(frames / "00001.jpg")
+            Image.new("RGB", (10, 8), "white").save(frames / "00002.jpg")
+            registry = ProviderRegistry()
+            registry.register("capture", CaptureProvider)
+            request = VideoSegmentRequest(
+                frames_dir=frames,
+                output_pattern=root / "matte.%04d.png",
+                first_frame=1,
+                last_frame=2,
+                key_frame=1,
+                direction=VideoDirection.BOTH,
+                corrections=(
+                    VideoCorrection(1, (PointPrompt(2, 2),)),
+                    VideoCorrection(2, (PointPrompt(6, 4),)),
+                ),
+                rois=(
+                    (1, BoxPrompt(0, 0, 4, 4)),
+                    (2, BoxPrompt(4, 2, 10, 8)),
+                ),
+                provider_id="capture",
+                fill_holes=False,
+            )
+
+            VideoSegmentService(registry).run(request)
+
+        corrections = captured["corrections"]
+        self.assertEqual([item.frame for item in corrections], [1, 2])
+        self.assertEqual((corrections[0].points[0].x, corrections[0].points[0].y), (2, 2))
+        # Frame 2 uses a 6x6 ROI resized to the key ROI's 4x4 tracking size.
+        self.assertAlmostEqual(corrections[1].points[0].x, 4 / 3)
+        self.assertAlmostEqual(corrections[1].points[0].y, 4 / 3)
+
+    def test_duplicate_correction_frames_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            request = VideoSegmentRequest(
+                frames_dir=Path(directory),
+                output_pattern=Path(directory) / "matte.%04d.png",
+                first_frame=1,
+                last_frame=2,
+                key_frame=1,
+                direction=VideoDirection.BOTH,
+                corrections=(
+                    VideoCorrection(1, (PointPrompt(1, 1),)),
+                    VideoCorrection(1, (PointPrompt(2, 2),)),
+                ),
+            )
+            with self.assertRaisesRegex(KyvenError, "duplicate"):
+                request.validate()
+
     def test_key_frame_points_allow_later_animated_roi_to_move_away(self) -> None:
         class AnimatedRoiProvider(SegmentationProvider):
             @property

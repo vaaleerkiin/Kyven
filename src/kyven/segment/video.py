@@ -27,6 +27,15 @@ class VideoDirection(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class VideoCorrection:
+    """Prompts applied to one conditioning frame in a SAM 2 tracking state."""
+
+    frame: int
+    points: tuple[PointPrompt, ...] = ()
+    box: BoxPrompt | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class VideoSegmentRequest:
     frames_dir: Path
     output_pattern: Path
@@ -34,6 +43,7 @@ class VideoSegmentRequest:
     last_frame: int
     key_frame: int
     direction: VideoDirection
+    corrections: tuple[VideoCorrection, ...] = ()
     points: tuple[PointPrompt, ...] = ()
     box: BoxPrompt | None = None
     roi: BoxPrompt | None = None
@@ -62,10 +72,27 @@ class VideoSegmentRequest:
                 code=ErrorCode.INVALID_REQUEST,
                 message="The key frame must be inside the propagation range.",
             )
-        if not self.points and self.box is None:
+        effective_corrections = self.effective_corrections
+        if not effective_corrections:
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
                 message="Video propagation requires at least one point or box prompt.",
+            )
+        correction_frames = [correction.frame for correction in effective_corrections]
+        if len(set(correction_frames)) != len(correction_frames):
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="Video corrections contain duplicate frame entries.",
+            )
+        if any(not self.first_frame <= frame <= self.last_frame for frame in correction_frames):
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="Every correction frame must be inside the propagation range.",
+            )
+        if any(not correction.points and correction.box is None for correction in effective_corrections):
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="Every video correction requires at least one point or box prompt.",
             )
         if "%" not in self.output_pattern.name:
             raise KyvenError(
@@ -102,6 +129,16 @@ class VideoSegmentRequest:
     @property
     def key_index(self) -> int:
         return self.key_frame - self.first_frame
+
+    @property
+    def effective_corrections(self) -> tuple[VideoCorrection, ...]:
+        """Return multi-frame prompts, falling back to the legacy key-frame fields."""
+
+        if self.corrections:
+            return self.corrections
+        if self.points or self.box is not None:
+            return (VideoCorrection(self.key_frame, self.points, self.box),)
+        return ()
 
     def frame_number(self, index: int) -> int:
         return self.first_frame + index
@@ -222,11 +259,36 @@ class VideoSegmentService:
                     frame_roi = BoxPrompt(0, 0, image.width, image.height)
                 regions.append(resolve_region(frame_roi, image.width, image.height))
         key_region = regions[request.key_index]
-        points = translate_points(request.points, key_region)
-        box = translate_box(request.box, key_region)
+
+        def translated_correction(correction: VideoCorrection) -> VideoCorrection:
+            region = regions[correction.frame - request.first_frame]
+            points = translate_points(correction.points, region)
+            box = translate_box(correction.box, region)
+            # Every animated crop is normalized to the key-frame crop size.
+            scale_x = key_region.width / region.width
+            scale_y = key_region.height / region.height
+            points = tuple(replace(point, x=point.x * scale_x, y=point.y * scale_y) for point in points)
+            if box is not None:
+                box = BoxPrompt(
+                    box.x0 * scale_x,
+                    box.y0 * scale_y,
+                    box.x1 * scale_x,
+                    box.y1 * scale_y,
+                )
+            return VideoCorrection(correction.frame, points, box)
+
+        corrections = tuple(translated_correction(item) for item in request.effective_corrections)
+        primary = next((item for item in corrections if item.frame == request.key_frame), corrections[0])
         if all(region.is_full_frame for region in regions):
             result = propagate(
-                replace(request, points=points, box=box, roi=None, rois=()),
+                replace(
+                    request,
+                    corrections=corrections,
+                    points=primary.points,
+                    box=primary.box,
+                    roi=None,
+                    rois=(),
+                ),
                 token,
             )
             metadata = dict(result.metadata)
@@ -263,8 +325,9 @@ class VideoSegmentService:
                 request,
                 frames_dir=cropped_frames,
                 output_pattern=temporary_root / "matte.%04d.png",
-                points=points,
-                box=box,
+                corrections=corrections,
+                points=primary.points,
+                box=primary.box,
                 roi=None,
                 rois=(),
             )

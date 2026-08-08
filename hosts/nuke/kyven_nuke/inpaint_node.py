@@ -954,7 +954,7 @@ def _repair_inpaint_interface(node: Any) -> None:
 
     if "kyven" not in node.knobs():
         node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint"))
-    add(nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 26</font>'))
+    add(nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 27</font>'))
     if "model_section" not in node.knobs():
         _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     if "model" not in node.knobs():
@@ -1071,7 +1071,7 @@ def create_inpaint_node() -> Any:
     nuke = _nuke(); selected = nuke.selectedNodes(); source = selected[0] if selected else None; mask = selected[1] if len(selected) > 1 else None
     node = nuke.nodes.Group(name="KyvenInpaint"); node.setInput(SOURCE_INPUT, source); node.setInput(MASK_INPUT, mask)
     node["label"].setValue("[value kyven_status]"); node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint")); add_node_branding(node, nuke)
-    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 26</font>'))
+    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 27</font>'))
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
     node["model"].setValue(1)
@@ -1161,7 +1161,7 @@ def upgrade_selected_inpaint_node() -> None:
     if not has_inpaint_graph:
         nuke.message("The selected Group is not a Kyven Inpaint node.")
         return
-    legacy_api = "kyven_title" not in node.knobs() or "API 26" not in str(node["kyven_title"].value())
+    legacy_api = "kyven_title" not in node.knobs() or "API 27" not in str(node["kyven_title"].value())
     _repair_inpaint_interface(node)
     if legacy_api:
         _apply_inpaint_api26_defaults(node)
@@ -1219,7 +1219,7 @@ def upgrade_selected_inpaint_node() -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br>'
-            '<font color="#91a3b0">LaMa | Source + Mask | API 26</font>'
+            '<font color="#91a3b0">LaMa | Source + Mask | API 27</font>'
         )
     if "mask_help" in node.knobs():
         node["mask_help"].setValue(

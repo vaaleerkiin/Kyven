@@ -513,6 +513,32 @@ class NukePayloadTests(unittest.TestCase):
         self.assertEqual(payload["max_hole_area"], 2_048)
         self.assertEqual(payload["rois"], [])
 
+    def test_video_payload_serializes_multiple_correction_frames(self) -> None:
+        payload = segment_video_payload(
+            frames_dir="D:/cache/frames",
+            output_pattern="D:/cache/matte.%04d.png",
+            model_index=1,
+            profile="balanced",
+            image_width=100,
+            image_height=80,
+            positive_points=[(10, 10)],
+            negative_points=[],
+            box_enabled=False,
+            box=(0, 0, 100, 80),
+            first_frame=1,
+            last_frame=20,
+            key_frame=1,
+            direction="both",
+            corrections=(
+                {"frame": 1, "positive_points": [(10, 10)], "negative_points": []},
+                {"frame": 12, "positive_points": [(30, 20)], "negative_points": [(50, 40)]},
+            ),
+        )
+
+        self.assertEqual([item["frame"] for item in payload["corrections"]], [1, 12])
+        self.assertEqual(payload["corrections"][1]["points"][0]["y"], 60.0)
+        self.assertEqual(payload["corrections"][1]["points"][1]["label"], "negative")
+
     def test_video_payload_serializes_animated_roi_per_frame(self) -> None:
         payload = segment_video_payload(
             frames_dir="D:/cache/frames",

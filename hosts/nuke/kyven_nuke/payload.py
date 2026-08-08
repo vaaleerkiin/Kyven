@@ -126,6 +126,7 @@ def segment_video_payload(
     fill_holes: bool = True,
     max_hole_area: int = 2_048,
     animated_rois: Sequence[tuple[int, tuple[float, float, float, float]]] = (),
+    corrections: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     image_payload = segment_payload(
         source="unused",
@@ -142,6 +143,21 @@ def segment_video_payload(
         fill_holes=fill_holes,
         max_hole_area=max_hole_area,
     )
+    correction_payload = []
+    for correction in corrections:
+        correction_points = [
+            point(*xy, image_height, "positive")
+            for xy in correction.get("positive_points", ())
+        ]
+        correction_points.extend(
+            point(*xy, image_height, "negative")
+            for xy in correction.get("negative_points", ())
+        )
+        correction_payload.append({
+            "frame": int(correction["frame"]),
+            "points": correction_points,
+            "box": None,
+        })
     return {
         "frames_dir": frames_dir,
         "output_pattern": output_pattern,
@@ -158,6 +174,7 @@ def segment_video_payload(
         "first_frame": int(first_frame),
         "last_frame": int(last_frame),
         "key_frame": int(key_frame),
+        "corrections": correction_payload,
         "direction": direction,
         "offload_video_to_cpu": True,
         "offload_state_to_cpu": True,

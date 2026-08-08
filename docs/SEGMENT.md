@@ -73,9 +73,10 @@ error suitable for display by a host adapter.
 
 The Nuke adapter supports multiple Viewer points, static or animated Processing ROI, independent
 ranges, SAM 2 video tracking with progress/ETA/cancellation, four output modes, native Read creation,
-and cache cleanup. Video points are sampled on the key frame while the animated ROI is sampled for
-each frame and reconstructed into full-resolution coordinates. Remaining Segment work
-includes multi-key-frame corrections, resumable per-frame metadata, explicit out-of-memory retry
+and cache cleanup. Video points are sampled on every saved key/correction frame while the animated
+ROI is sampled for each frame and reconstructed into full-resolution coordinates. All corrections
+condition one SAM 2 tracking state before propagation. Remaining Segment work includes resumable
+per-frame metadata, explicit out-of-memory retry
 profiles, and broader host testing.
 
 New Segment nodes default to `Source + Alpha`. Updating an older Group through
