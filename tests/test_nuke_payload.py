@@ -428,7 +428,14 @@ class NukePayloadTests(unittest.TestCase):
     def test_output_modes_match_internal_switch_inputs(self) -> None:
         self.assertEqual(
             OUTPUT_MODES,
-            ("Matte", "Source + Alpha", "Cutout", "Source (Bypass)"),
+            (
+                "Source + Alpha",
+                "Alpha",
+                "Cutout",
+                "Source + Trimap",
+                "Trimap",
+                "Bypass",
+            ),
         )
         self.assertEqual(
             REFINE_OUTPUT_MODES,

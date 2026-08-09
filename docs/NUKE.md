@@ -123,7 +123,8 @@ range still opens the normal cancellable progress window.
 
 ### Points
 
-Positive points identify the object to keep. Negative points remove unwanted areas. Each point type
+Positive points identify the object to keep. Negative points remove unwanted areas. A newly created
+Segment node immediately keys its initial point on the current primary `Key Frame`. Each point type
 has an independent enable toggle, so its Viewer handles and payload can be hidden without deleting
 the saved coordinates. Up to 32 controls are available per type. Each visible point has a `×`
 button on its right; deleting a row shifts later points up while preserving their animation curves.
@@ -156,7 +157,13 @@ silhouette is never dilated or eroded.
 
 `Max Hole Area (px)` limits which connected holes are filled. The default is `2048`; use a smaller
 value to preserve intentional openings, or `0` to fill every enclosed hole. The Status field reports
-how many holes were filled. Changing these controls changes cache identity and requires reprocessing.
+how many holes were filled. When a raw matte already exists, the Nuke adapter rebuilds the displayed
+result through the CPU preview endpoint instead of running SAM again.
+
+`Confidence Width` controls the gray unknown band of Segment's confidence trimap. Kyven stores SAM 2
+logits privately as float16 NPZ cache data and regenerates black / gray / white trimaps on CPU, so
+moving this control never reruns SAM. Use `Output = Trimap` and connect Segment directly
+to Refine with `Generate Trimap from Mask` disabled to feed ViTMatte SAM-derived uncertainty.
 
 ### Processing modes
 
@@ -196,9 +203,13 @@ rows. Editing its number moves its point keyframes. `Set Current as Key` replace
 primary key and removes the old primary point keys. New points receive both primary and correction
 keys automatically.
 
-Points are used only to initialize the key frame and are checked only against that frame's ROI.
-Animated ROIs on later frames may move away from the original point; they guide only the per-frame
-crop and do not require the key-frame point to remain inside them.
+The primary key and every correction condition the same SAM 2 tracking state before propagation.
+The direction buttons are ordered `Backward`, `Both Directions`, then `Forward`; they control which
+part of the selected range is written, not which corrections are loaded.
+
+Points are sampled on the primary key and every saved correction. Each prompt is checked against the
+ROI at its own conditioning frame. Animated ROIs between conditioning frames guide only the per-frame
+crop and do not require any original point to remain inside them.
 
 ## Output modes
 
@@ -206,10 +217,12 @@ New Segment nodes default to `Source + Alpha`.
 
 | Mode | Result |
 | --- | --- |
-| `Matte` | Mask in RGB and alpha |
 | `Source + Alpha` | Original RGB with the mask replacing alpha |
-| `Cutout` | Source premultiplied by the generated alpha |
-| `Source (Bypass)` | Unchanged input |
+| `Alpha` | Binary mask in RGB and alpha |
+| `Cutout` | Source premultiplied by the generated binary alpha |
+| `Source + Trimap` | Original RGB with the confidence trimap replacing alpha |
+| `Trimap` | SAM confidence as exact black, gray, and white in RGB and alpha |
+| `Bypass` | Unchanged input |
 
 Changing output mode uses native Nuke nodes and never reruns SAM.
 
@@ -237,7 +250,8 @@ D:/Kyven/.runtime/nuke_cache/<node-uuid>/
 ```
 
 Typical files include exported source frames, displayed `matte.%04d.png`, CPU-preview source
-`raw_matte.%04d.png`, video JPEGs, `tracked_matte.%04d.png`, and
+`raw_matte.%04d.png`, private `sam_logits.%04d.npz`, generated
+`confidence_trimap.%04d.png`, video JPEGs, `tracked_matte.%04d.png`, and
 `raw_tracked_matte.%04d.png`. Refine nodes add fast lossless `refine_source.%04d.tif`,
 `refine_mask.%04d.png`, `refined_matte.%04d.png`, exact processed trimaps, and lightweight
 `trimap_preview` files under their own UUID folder. Inpaint adds source, mask, and full-format
@@ -269,7 +283,7 @@ Kyven returns a readable error before inference when that budget is exceeded.
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18788` and requires API 27. A
+The adapter starts an external hidden Python process on `127.0.0.1:18788` and requires API 28. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 

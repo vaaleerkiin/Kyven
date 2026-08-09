@@ -11,7 +11,7 @@ from PIL import Image
 
 from kyven.cancellation import CancellationToken
 from kyven.segment.models import SegmentPrediction, SegmentRequest, SegmentResult
-from kyven.segment.output import write_mask_png_atomic
+from kyven.segment.output import confidence_trimap, write_logits_npz_atomic, write_mask_png_atomic
 from kyven.segment.postprocess import fill_enclosed_holes
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.segment.roi import expand_mask, resolve_region, translate_box, translate_points
@@ -41,6 +41,20 @@ class SegmentService:
         token.report_progress(0.90, "Post-processing matte")
 
         mask = np.asarray(prediction.mask)
+        logits = None if prediction.logits is None else np.asarray(prediction.logits, dtype=np.float32)
+        if logits is not None and logits.shape != mask.shape:
+            logits = np.asarray(
+                Image.fromarray(logits, mode="F").resize(
+                    (mask.shape[1], mask.shape[0]), Image.Resampling.BILINEAR
+                ),
+                dtype=np.float32,
+            )
+        if request.logits_output is not None and logits is not None:
+            write_logits_npz_atomic(request.logits_output, logits)
+        if request.trimap_output is not None and logits is not None:
+            write_mask_png_atomic(
+                request.trimap_output, confidence_trimap(logits, request.confidence_width)
+            )
         if request.raw_output is not None:
             write_mask_png_atomic(request.raw_output, mask)
         metadata = dict(prediction.metadata)
@@ -98,5 +112,23 @@ class SegmentService:
         return SegmentPrediction(
             mask=expand_mask(np.asarray(prediction.mask), region),
             score=prediction.score,
+            logits=(
+                None
+                if prediction.logits is None
+                else _expand_logits(np.asarray(prediction.logits), region)
+            ),
             metadata=metadata,
         )
+
+
+def _expand_logits(logits: np.ndarray, region) -> np.ndarray:
+    values = np.asarray(logits, dtype=np.float32)
+    if values.shape != (region.height, region.width):
+        values = np.asarray(
+            Image.fromarray(values, mode="F").resize(
+                (region.width, region.height), Image.Resampling.BILINEAR
+            ), dtype=np.float32
+        )
+    full = np.full((region.source_height, region.source_width), -100.0, dtype=np.float32)
+    full[region.y0 : region.y1, region.x0 : region.x1] = values
+    return full

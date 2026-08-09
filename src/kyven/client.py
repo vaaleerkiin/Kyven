@@ -120,6 +120,11 @@ class KyvenClient:
             timeout_seconds=60.0,
         )
 
+    def preview_confidence_trimap(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request(
+            "POST", "/v1/preview/confidence-trimap", payload, timeout_seconds=60.0
+        )
+
     def preview_inpaint_mask(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request(
             "POST",

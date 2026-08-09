@@ -16,6 +16,7 @@ from kyven.errors import ErrorCode, KyvenError
 from kyven.models.catalog import ModelCatalog
 from kyven.models.operations import ModelOperationManager
 from kyven.preview import (
+    confidence_trimap_preview,
     postprocess_mask_preview,
     prepare_inpaint_mask_preview,
     prepare_trimap_preview,
@@ -24,7 +25,7 @@ from kyven.segment.providers.registry import ProviderRegistry
 from kyven.server.jobs import JobManager
 
 MAX_REQUEST_BYTES = 1024 * 1024
-SERVER_API_VERSION = 27
+SERVER_API_VERSION = 28
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +209,9 @@ def _handler_type(
                     return
                 if path == "/v1/preview/mask-postprocess":
                     self._send(HTTPStatus.OK, postprocess_mask_preview(payload))
+                    return
+                if path == "/v1/preview/confidence-trimap":
+                    self._send(HTTPStatus.OK, confidence_trimap_preview(payload))
                     return
                 if path == "/v1/preview/inpaint-mask":
                     self._send(HTTPStatus.OK, prepare_inpaint_mask_preview(payload))

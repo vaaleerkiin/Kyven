@@ -14,7 +14,12 @@ from PIL import Image
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
 from kyven.segment.models import BoxPrompt, ExecutionProfile, PointPrompt
-from kyven.segment.output import write_mask_png_atomic
+from kyven.segment.output import (
+    confidence_trimap,
+    read_logits_npz,
+    write_logits_npz_atomic,
+    write_mask_png_atomic,
+)
 from kyven.segment.postprocess import fill_enclosed_holes
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.segment.roi import expand_mask, resolve_region, translate_box, translate_points
@@ -55,6 +60,9 @@ class VideoSegmentRequest:
     fill_holes: bool = True
     max_hole_area: int = 2_048
     raw_output_pattern: Path | None = None
+    logits_output_pattern: Path | None = None
+    trimap_output_pattern: Path | None = None
+    confidence_width: float = 1.0
 
     def validate(self) -> None:
         if not self.frames_dir.is_dir():
@@ -104,6 +112,14 @@ class VideoSegmentRequest:
                 code=ErrorCode.INVALID_REQUEST,
                 message="Video raw_output_pattern must contain a printf-style frame placeholder.",
             )
+        for label, pattern in (
+            ("logits_output_pattern", self.logits_output_pattern),
+            ("trimap_output_pattern", self.trimap_output_pattern),
+        ):
+            if pattern is not None and "%" not in pattern.name:
+                raise KyvenError(ErrorCode.INVALID_REQUEST, f"Video {label} must contain a frame placeholder.")
+        if self.confidence_width < 0:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Confidence Width must be zero or greater.")
         if self.max_hole_area < 0:
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
@@ -150,6 +166,12 @@ class VideoSegmentRequest:
         if self.raw_output_pattern is None:
             return None
         return Path(str(self.raw_output_pattern) % frame)
+
+    def logits_output_for_frame(self, frame: int) -> Path | None:
+        return None if self.logits_output_pattern is None else Path(str(self.logits_output_pattern) % frame)
+
+    def trimap_output_for_frame(self, frame: int) -> Path | None:
+        return None if self.trimap_output_pattern is None else Path(str(self.trimap_output_pattern) % frame)
 
     def roi_for_frame(self, frame: int) -> BoxPrompt | None:
         return dict(self.rois).get(frame, self.roi)
@@ -201,11 +223,18 @@ class VideoSegmentService:
         token: CancellationToken,
     ) -> VideoSegmentResult:
         for index, output in enumerate(result.outputs):
-            raw_output = request.raw_output_for_frame(result.first_frame + index)
-            if raw_output is None:
-                continue
-            with Image.open(output) as image:
-                write_mask_png_atomic(raw_output, np.asarray(image.convert("L")))
+            frame = result.first_frame + index
+            raw_output = request.raw_output_for_frame(frame)
+            if raw_output is not None:
+                with Image.open(output) as image:
+                    write_mask_png_atomic(raw_output, np.asarray(image.convert("L")))
+            logits_output = request.logits_output_for_frame(frame)
+            trimap_output = request.trimap_output_for_frame(frame)
+            if logits_output is not None and trimap_output is not None and logits_output.is_file():
+                write_mask_png_atomic(
+                    trimap_output,
+                    confidence_trimap(read_logits_npz(logits_output), request.confidence_width),
+                )
         if not request.fill_holes:
             return result
         filled_holes = 0
@@ -325,6 +354,8 @@ class VideoSegmentService:
                 request,
                 frames_dir=cropped_frames,
                 output_pattern=temporary_root / "matte.%04d.png",
+                logits_output_pattern=temporary_root / "logits.%04d.npz",
+                trimap_output_pattern=None,
                 corrections=corrections,
                 points=primary.points,
                 box=primary.box,
@@ -349,6 +380,21 @@ class VideoSegmentService:
                     mask = np.asarray(mask_image)
                 output = request.output_for_index(index)
                 write_mask_png_atomic(output, expand_mask(mask, region))
+                cropped_logits = prepared.logits_output_for_frame(request.frame_number(index))
+                logits_output = request.logits_output_for_frame(request.frame_number(index))
+                if cropped_logits is not None and logits_output is not None and cropped_logits.is_file():
+                    logits = read_logits_npz(cropped_logits)
+                    if logits.shape != (region.height, region.width):
+                        logits = np.asarray(
+                            Image.fromarray(logits, mode="F").resize(
+                                (region.width, region.height), Image.Resampling.BILINEAR
+                            ), dtype=np.float32
+                        )
+                    full_logits = np.full(
+                        (region.source_height, region.source_width), -100.0, dtype=np.float32
+                    )
+                    full_logits[region.y0 : region.y1, region.x0 : region.x1] = logits
+                    write_logits_npz_atomic(logits_output, full_logits)
                 outputs.append(output)
 
         metadata = dict(cropped_result.metadata)

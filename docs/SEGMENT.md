@@ -1,8 +1,7 @@
 # Kyven Segment
 
-`Kyven Segment` creates a binary base matte from positive points, negative points, and an optional
-model prompt box. Host adapters may also supply a separate Processing ROI that crops inference and
-is never sent to the model as a prompt.
+`Kyven Segment` creates a binary alpha and a confidence trimap from positive and negative point
+prompts. An optional Processing ROI crops inference but is never sent to SAM 2 as a model prompt.
 
 ## Current pipeline
 
@@ -16,10 +15,16 @@ SegmentRequest
 SegmentService
           |
           v
-SegmentationProvider (SAM 2.1 initially)
+SegmentationProvider (SAM 2.1)
           |
           v
-Atomic grayscale PNG matte
+SAM 2 mask logits
+          |
+          +--> Binary alpha --> optional enclosed-hole fill --> PNG
+          |
+          +--> Confidence thresholds --> black / gray / white trimap PNG
+          |
+          +--> compressed float16 NPZ cache
 ```
 
 The provider registry stores factories and constructs a provider only when selected. Merely
@@ -65,6 +70,18 @@ outer silhouette nor model inference. The Nuke adapter stores an additional raw 
 the post-process checkbox or full-width area slider rebuilds the displayed matte immediately on CPU
 without running SAM again.
 
+SAM 2 mask logits are preserved internally as compressed float16 NPZ files. Segment derives an
+exact confidence trimap in logit space:
+
+```text
+logit <= -T       confident background  -> 0.0
+-T < logit < T    uncertain             -> 0.5
+logit >= T        confident foreground  -> 1.0
+```
+
+`Confidence Width` controls `T`. Increasing it widens the uncertain region. Changing the knob
+rebuilds every available cached trimap on CPU without loading or rerunning SAM.
+
 On success the CLI prints structured JSON with the output path, selected-mask score,
 deterministic cache key, device, and provider metadata. On failure it prints a structured Kyven
 error suitable for display by a host adapter.
@@ -72,7 +89,7 @@ error suitable for display by a host adapter.
 ## Implemented host workflow
 
 The Nuke adapter supports multiple Viewer points, static or animated Processing ROI, independent
-ranges, SAM 2 video tracking with progress/ETA/cancellation, four output modes, native Read creation,
+ranges, SAM 2 video tracking with progress/ETA/cancellation, six output modes, native Read creation,
 and cache cleanup. Video points are sampled on every saved key/correction frame while the animated
 ROI is sampled for each frame and reconstructed into full-resolution coordinates. All corrections
 condition one SAM 2 tracking state before propagation. Remaining Segment work includes resumable
@@ -81,3 +98,6 @@ profiles, and broader host testing.
 
 New Segment nodes default to `Source + Alpha`. Updating an older Group through
 `Kyven > Upgrade Selected Segment Node` preserves its prompts, UUID, input, and cached matte.
+
+The six outputs are `Source + Alpha`, `Alpha`, `Cutout`, `Source + Trimap`, `Trimap`, and `Bypass`.
+Raw logits remain private cache data and are intentionally not presented as an artist-facing mode.

@@ -78,6 +78,9 @@ class SegmentRequest:
     fill_holes: bool = True
     max_hole_area: int = 2_048
     raw_output: Path | None = None
+    logits_output: Path | None = None
+    trimap_output: Path | None = None
+    confidence_width: float = 1.0
 
     def validate(self) -> None:
         if not self.source.is_file():
@@ -97,6 +100,8 @@ class SegmentRequest:
                 code=ErrorCode.INVALID_REQUEST,
                 message="Maximum hole area must be zero or greater.",
             )
+        if self.confidence_width < 0:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Confidence Width must be zero or greater.")
 
     def canonical(self) -> dict[str, Any]:
         """Return fields that affect inference output, excluding destination path."""
@@ -154,6 +159,7 @@ class SegmentPrediction:
 
     mask: NDArray[np.bool_] | NDArray[np.float32]
     score: float
+    logits: NDArray[np.float32] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

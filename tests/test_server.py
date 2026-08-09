@@ -121,7 +121,7 @@ class ServerTests(unittest.TestCase):
             try:
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
                 self.assertEqual(client.health()["status"], "ok")
-                self.assertEqual(client.health()["api_version"], 27)
+                self.assertEqual(client.health()["api_version"], 28)
                 self.assertEqual(len(client.models()), 8)
                 operation_id = client.start_model_remove("sam2.1-tiny")
                 deadline = time.monotonic() + 5
@@ -196,6 +196,22 @@ class ServerTests(unittest.TestCase):
                 self.assertEqual(postprocess["filled_holes"], 1)
                 with Image.open(preview_output) as processed:
                     self.assertEqual(processed.getpixel((2, 2)), 255)
+                logits_cache = root / "sam_logits.npz"
+                np.savez_compressed(
+                    logits_cache,
+                    logits=np.asarray([[-2.0, 0.0, 2.0]], dtype=np.float16),
+                )
+                confidence_output = root / "confidence_trimap.png"
+                confidence = client.preview_confidence_trimap(
+                    {
+                        "logits": str(logits_cache.resolve()),
+                        "output": str(confidence_output.resolve()),
+                        "confidence_width": 1.0,
+                    }
+                )
+                self.assertEqual(confidence["confidence_width"], 1.0)
+                with Image.open(confidence_output) as trimap:
+                    self.assertEqual(np.asarray(trimap).tolist(), [[0, 128, 255]])
                 trimap_mask = root / "trimap_mask.png"
                 trimap_preview = root / "trimap_preview.png"
                 mask_pixels = np.zeros((7, 7), dtype=np.uint8)

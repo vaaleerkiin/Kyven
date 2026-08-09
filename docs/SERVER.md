@@ -60,6 +60,9 @@ temporary file and activate atomically only after byte-size and SHA-256 verifica
 | `multimask_output` | Ask the provider for candidate masks and select the best score |
 | `fill_holes` | Enable enclosed-hole post-processing; defaults to `true` |
 | `max_hole_area` | Largest filled component in pixels; `0` means unlimited |
+| `logits_output` | Optional internal compressed float16 SAM-logit cache path |
+| `trimap_output` | Optional exact black / gray / white confidence-trimap PNG path |
+| `confidence_width` | Non-negative symmetric logit threshold; defaults to `1.0` |
 
 ### Video propagation fields
 
@@ -70,6 +73,8 @@ temporary file and activate atomically only after byte-size and SHA-256 verifica
 | `first_frame`, `last_frame`, `key_frame` | Nuke frame range and prompt frame |
 | `direction` | `forward`, `backward`, or `both` |
 | `points` | Prompts sampled on the key frame |
+| `logits_output_pattern` | Internal compressed float16 SAM-logit cache sequence |
+| `trimap_output_pattern`, `confidence_width` | Confidence-trimap sequence and logit threshold |
 | `roi` | Optional static Processing ROI |
 | `rois` | Optional animated ROI: exactly one `{frame, x0, y0, x1, y1}` item per frame |
 | `offload_video_to_cpu`, `offload_state_to_cpu` | Reduce persistent GPU memory use |

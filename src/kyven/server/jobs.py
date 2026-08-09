@@ -106,10 +106,16 @@ class JobManager:
         output = Path(str(payload["output"]))
         raw_output_value = payload.get("raw_output")
         raw_output = Path(str(raw_output_value)) if raw_output_value else None
+        logits_output_value = payload.get("logits_output")
+        logits_output = Path(str(logits_output_value)) if logits_output_value else None
+        trimap_output_value = payload.get("trimap_output")
+        trimap_output = Path(str(trimap_output_value)) if trimap_output_value else None
         if (
             not source.is_absolute()
             or not output.is_absolute()
             or (raw_output is not None and not raw_output.is_absolute())
+            or (logits_output is not None and not logits_output.is_absolute())
+            or (trimap_output is not None and not trimap_output.is_absolute())
         ):
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
@@ -130,6 +136,9 @@ class JobManager:
             source=source,
             output=output,
             raw_output=raw_output,
+            logits_output=logits_output,
+            trimap_output=trimap_output,
+            confidence_width=float(payload.get("confidence_width", 1.0)),
             points=points,
             box=box,
             roi=roi,
@@ -165,10 +174,16 @@ class JobManager:
         raw_output_pattern = (
             Path(str(raw_output_pattern_value)) if raw_output_pattern_value else None
         )
+        logits_pattern_value = payload.get("logits_output_pattern")
+        logits_output_pattern = Path(str(logits_pattern_value)) if logits_pattern_value else None
+        trimap_pattern_value = payload.get("trimap_output_pattern")
+        trimap_output_pattern = Path(str(trimap_pattern_value)) if trimap_pattern_value else None
         if (
             not frames_dir.is_absolute()
             or not output_pattern.is_absolute()
             or (raw_output_pattern is not None and not raw_output_pattern.is_absolute())
+            or (logits_output_pattern is not None and not logits_output_pattern.is_absolute())
+            or (trimap_output_pattern is not None and not trimap_output_pattern.is_absolute())
         ):
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
@@ -230,6 +245,9 @@ class JobManager:
             fill_holes=bool(payload.get("fill_holes", True)),
             max_hole_area=int(payload.get("max_hole_area", 2_048)),
             raw_output_pattern=raw_output_pattern,
+            logits_output_pattern=logits_output_pattern,
+            trimap_output_pattern=trimap_output_pattern,
+            confidence_width=float(payload.get("confidence_width", 1.0)),
         )
 
     def submit_video(self, payload: dict[str, Any]) -> str:

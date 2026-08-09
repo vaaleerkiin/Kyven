@@ -223,7 +223,7 @@ class Sam2Provider(SegmentationProvider):
                 predictor.set_image(image)
                 cancellation.raise_if_cancelled()
                 cancellation.report_progress(0.75, "Predicting mask")
-                masks, scores, _ = predictor.predict(
+                masks, scores, logits = predictor.predict(
                     point_coords=point_coords,
                     point_labels=point_labels,
                     box=box,
@@ -245,6 +245,7 @@ class Sam2Provider(SegmentationProvider):
         return SegmentPrediction(
             mask=np.asarray(masks[best], dtype=np.bool_),
             score=float(scores[best]),
+            logits=np.asarray(logits[best], dtype=np.float32),
             metadata={
                 "provider": self._provider_id,
                 "model_config": self._model_config,
@@ -258,7 +259,7 @@ class Sam2Provider(SegmentationProvider):
         request: VideoSegmentRequest,
         cancellation: CancellationToken,
     ) -> VideoSegmentResult:
-        from kyven.segment.output import write_mask_png_atomic
+        from kyven.segment.output import write_logits_npz_atomic, write_mask_png_atomic
         from kyven.segment.video import VideoDirection, VideoSegmentResult
 
         request.validate()
@@ -329,9 +330,15 @@ class Sam2Provider(SegmentationProvider):
                         reverse=reverse,
                     ):
                         cancellation.raise_if_cancelled()
-                        mask = (mask_logits[0] > 0.0).detach().cpu().numpy().squeeze()
+                        frame_logits = mask_logits[0].detach().cpu().float().numpy().squeeze()
+                        mask = frame_logits > 0.0
                         output = request.output_for_index(frame_index)
                         write_mask_png_atomic(output, np.asarray(mask, dtype=np.bool_))
+                        logits_output = request.logits_output_for_frame(
+                            request.frame_number(frame_index)
+                        )
+                        if logits_output is not None:
+                            write_logits_npz_atomic(logits_output, frame_logits)
                         outputs[frame_index] = output
                         produced_indices.add(frame_index)
                         cancellation.report_progress(

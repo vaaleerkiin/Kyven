@@ -122,7 +122,12 @@ See [Model selection and safety](docs/MODELS.md) for exact downloads, licenses, 
 2. Place a positive Viewer point on the object; add negative points where required.
 3. Optionally enable an animated Processing ROI.
 4. Choose **Process Current Frame**, **Process Frame Range**, or SAM 2 video propagation.
-5. Select Matte, Source + Alpha, Cutout, or Source output.
+5. Select Source + Alpha, Alpha, Cutout, Source + Trimap, Trimap, or Bypass.
+
+For confidence-guided refinement, set Segment to **Trimap**, connect it to the Refine mask input,
+and disable **Generate Trimap from Mask**. ViTMatte then receives SAM 2's own uncertainty instead of
+an eroded/dilated trimap reconstructed from the binary alpha. Adjusting **Confidence Width** rebuilds
+the trimap from cached logits and does not rerun SAM.
 
 ### Refine
 

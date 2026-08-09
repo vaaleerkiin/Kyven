@@ -16,6 +16,7 @@ from kyven.segment.models import (
     SegmentPrediction,
     SegmentRequest,
 )
+from kyven.segment.output import read_logits_npz
 from kyven.segment.providers.base import SegmentationProvider
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.segment.service import SegmentService
@@ -59,7 +60,38 @@ class HoleProvider(SyntheticProvider):
         return SegmentPrediction(mask=mask, score=0.8)
 
 
+class LogitProvider(SyntheticProvider):
+    def predict(self, request, cancellation):
+        logits = np.asarray([[-2.0, -0.25, 0.25, 2.0]], dtype=np.float32)
+        return SegmentPrediction(mask=logits > 0, logits=logits, score=0.95)
+
+
 class SegmentServiceTests(unittest.TestCase):
+    def test_service_preserves_logits_and_writes_confidence_trimap(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            Image.new("RGB", (4, 1), "white").save(source)
+            registry = ProviderRegistry()
+            registry.register("logits", LogitProvider)
+            logits_output = root / "logits.npz"
+            trimap_output = root / "trimap.png"
+            SegmentService(registry).run(
+                SegmentRequest(
+                    source=source,
+                    output=root / "mask.png",
+                    points=(PointPrompt(1, 0),),
+                    provider_id="logits",
+                    logits_output=logits_output,
+                    trimap_output=trimap_output,
+                    confidence_width=1.0,
+                    fill_holes=False,
+                )
+            )
+            np.testing.assert_allclose(read_logits_npz(logits_output), [[-2, -0.25, 0.25, 2]])
+            with Image.open(trimap_output) as trimap:
+                self.assertEqual(np.asarray(trimap).tolist(), [[0, 128, 128, 255]])
+
     def test_service_fills_enclosed_holes_and_reports_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -99,6 +99,11 @@ class NukeKyvenClient:
             timeout_seconds=60.0,
         )
 
+    def preview_confidence_trimap(self, payload):
+        return self._request(
+            "POST", "/v1/preview/confidence-trimap", payload, timeout_seconds=60.0
+        )
+
     def preview_inpaint_mask(self, payload):
         return self._request("POST", "/v1/preview/inpaint-mask", payload, timeout_seconds=60.0)
 

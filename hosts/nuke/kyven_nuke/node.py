@@ -17,13 +17,21 @@ from kyven_nuke.runtime import ensure_server, stop_server
 
 MAX_PROMPT_POINTS = 32
 MAX_CORRECTION_FRAMES = 32
-OUTPUT_MODES = ("Matte", "Source + Alpha", "Cutout", "Source (Bypass)")
+OUTPUT_MODES = (
+    "Source + Alpha",
+    "Alpha",
+    "Cutout",
+    "Source + Trimap",
+    "Trimap",
+    "Bypass",
+)
 _range_cancellations: set[str] = set()
 _range_cancel_lock = threading.RLock()
 _progress_tasks: dict[str, Any] = {}
 _progress_lock = threading.RLock()
 _postprocess_lock = threading.RLock()
 _postprocess_revisions: dict[str, int] = {}
+_confidence_revisions: dict[str, int] = {}
 _correction_sync_nodes: set[str] = set()
 
 
@@ -225,6 +233,8 @@ def prompt_knob_changed() -> None:
     node = nuke.thisNode()
     if knob_name in {"fill_holes", "max_hole_area"}:
         request_mask_postprocess(node)
+    if knob_name == "confidence_width":
+        request_confidence_trimap(node)
     from kyven_nuke.live import affects_live_result, request_live_update
 
     if "kyven_live_frame" in node.knobs() and affects_live_result(knob_name, "segment"):
@@ -257,6 +267,66 @@ def request_mask_postprocess(node: Any, delay_seconds: float = 0.18) -> None:
     )
     timer.daemon = True
     timer.start()
+
+
+def request_confidence_trimap(node: Any, delay_seconds: float = 0.18) -> None:
+    node_name = str(node.fullName())
+    width = float(node["confidence_width"].value())
+    root = _cache_root_path(node)
+    with _postprocess_lock:
+        revision = _confidence_revisions.get(node_name, 0) + 1
+        _confidence_revisions[node_name] = revision
+
+    def dispatch() -> None:
+        threading.Thread(
+            target=_confidence_trimap_worker,
+            args=(node_name, root, width, revision),
+            name="kyven-confidence-trimap-preview",
+            daemon=True,
+        ).start()
+
+    timer = threading.Timer(delay_seconds, dispatch)
+    timer.daemon = True
+    timer.start()
+
+
+def _confidence_trimap_worker(
+    node_name: str, root: Path, width: float, revision: int
+) -> None:
+    try:
+        logits_files = sorted(root.glob("sam_logits.*.npz"))
+        for logits in logits_files:
+            with _postprocess_lock:
+                if _confidence_revisions.get(node_name) != revision:
+                    return
+            token = logits.name.removeprefix("sam_logits.").removesuffix(".npz")
+            output = root / f"confidence_trimap.{token}.png"
+            ensure_server().preview_confidence_trimap(
+                {"logits": str(logits), "output": str(output), "confidence_width": width}
+            )
+        if logits_files:
+            _nuke().executeInMainThread(
+                _reload_confidence_trimap,
+                args=(node_name, f"Confidence trimap updated from cached logits ({len(logits_files)} frame(s))."),
+            )
+    except Exception as exc:  # noqa: BLE001
+        _nuke().executeInMainThread(
+            _set_status, args=(node_name, f"Confidence trimap preview failed: {exc}")
+        )
+
+
+def _reload_confidence_trimap(node_name: str, status: str) -> None:
+    node = _nuke().toNode(node_name)
+    if node is None:
+        return
+    node.begin()
+    try:
+        read = _nuke().toNode("KyvenConfidenceTrimapRead")
+        if read is not None and "reload" in read.knobs():
+            read["reload"].execute()
+    finally:
+        node.end()
+    node["kyven_status"].setValue(status)
 
 
 def _dispatch_mask_postprocess(node_name: str, revision: int) -> None:
@@ -474,6 +544,30 @@ def _set_matte_read(node: Any, output: str, first: int | None = None, last: int 
         node.end()
 
 
+def _set_confidence_trimap_read(
+    node: Any, output: str, first: int | None = None, last: int | None = None
+) -> None:
+    nuke = _nuke()
+    node.begin()
+    try:
+        read = nuke.toNode("KyvenConfidenceTrimapRead")
+        if read is None:
+            read = nuke.nodes.Read(name="KyvenConfidenceTrimapRead", file=output)
+            nuke.toNode("KyvenConfidenceTrimapSwitch").setInput(1, read)
+        else:
+            read["file"].setValue(output)
+        set_data_io(read)
+        if first is not None and last is not None:
+            for knob_name in ("first", "last", "origfirst", "origlast"):
+                if knob_name in read.knobs():
+                    read[knob_name].setValue(first if "first" in knob_name else last)
+        if "reload" in read.knobs():
+            read["reload"].execute()
+        nuke.toNode("KyvenConfidenceTrimapSwitch")["which"].setValue(1)
+    finally:
+        node.end()
+
+
 def _apply_result(node_name: str, job: dict[str, Any]) -> None:
     nuke = _nuke()
     node = nuke.toNode(node_name)
@@ -487,6 +581,10 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
         return
     output = _nuke_file_path(Path(job["result"]["output"]))
     _set_matte_read(node, output)
+    frame = int(nuke.frame())
+    trimap = _cache_root(node) / f"confidence_trimap.{frame:04d}.png"
+    if trimap.is_file():
+        _set_confidence_trimap_read(node, _nuke_file_path(trimap))
     metadata = job["result"].get("metadata") or {}
     roi = metadata.get("processing_roi")
     suffix = f" | ROI {roi['width']}x{roi['height']}" if roi else ""
@@ -509,6 +607,8 @@ def _apply_range_result(
     if node is None:
         return
     _set_matte_read(node, output_pattern, first, last)
+    trimap_pattern = _cache_root(node) / "confidence_trimap.%04d.png"
+    _set_confidence_trimap_read(node, _nuke_file_path(trimap_pattern), first, last)
     node["kyven_status"].setValue(
         f"Range {first}-{last} ready - average score {average_score:.3f}"
     )
@@ -526,6 +626,9 @@ def _apply_video_result(node_name: str, job: dict[str, Any]) -> None:
     first = int(result["first_frame"])
     last = int(result["last_frame"])
     _set_matte_read(node, output_pattern, first, last)
+    trimap_pattern = _cache_root(node) / "confidence_trimap.%04d.png"
+    if _path_for_frame(trimap_pattern, first).is_file():
+        _set_confidence_trimap_read(node, _nuke_file_path(trimap_pattern), first, last)
     roi = (result.get("metadata") or {}).get("processing_roi")
     suffix = f" | ROI {roi['width']}x{roi['height']}" if roi else ""
     postprocess = (result.get("metadata") or {}).get("postprocess")
@@ -811,6 +914,7 @@ def _disconnect_cached_matte(node: Any) -> None:
             "KyvenTrimapSwitch",
             "KyvenResultSwitch",
             "KyvenProcessedMaskSwitch",
+            "KyvenConfidenceTrimapSwitch",
         ):
             switch = nuke.toNode(switch_name)
             if switch is not None and "which" in switch.knobs():
@@ -820,6 +924,7 @@ def _disconnect_cached_matte(node: Any) -> None:
             "KyvenTrimapRead",
             "KyvenResultRead",
             "KyvenProcessedMaskRead",
+            "KyvenConfidenceTrimapRead",
         ):
             read = nuke.toNode(read_name)
             if read is not None:
@@ -911,10 +1016,20 @@ def _payload_for_paths(
     raw_matte_path: Path,
     matte_path: Path,
 ) -> dict[str, Any]:
+    frame_token = matte_path.stem.rsplit(".", 1)[-1]
+    logits_path = matte_path.parent / f"sam_logits.{frame_token}.npz"
+    trimap_path = matte_path.parent / f"confidence_trimap.{frame_token}.png"
     return segment_payload(
         source=str(source_path.resolve()),
         output=str(matte_path.resolve()),
         raw_output=str(raw_matte_path.resolve()),
+        logits_output=str(logits_path.resolve()),
+        trimap_output=str(trimap_path.resolve()),
+        confidence_width=(
+            float(node["confidence_width"].value())
+            if "confidence_width" in node.knobs()
+            else 1.0
+        ),
         model_index=int(node["model"].getValue()),
         profile=str(node["profile"].value()),
         image_width=int(source.width()),
@@ -1479,6 +1594,13 @@ def propagate_video(direction: str) -> None:
         ),
         animated_rois=animated_rois,
         corrections=corrections,
+        logits_output_pattern=str((_cache_root(node) / "sam_logits.%04d.npz").resolve()),
+        trimap_output_pattern=str((_cache_root(node) / "confidence_trimap.%04d.png").resolve()),
+        confidence_width=(
+            float(node["confidence_width"].value())
+            if "confidence_width" in node.knobs()
+            else 1.0
+        ),
     )
     node["kyven_status"].setValue("Starting SAM 2 video predictor...")
     threading.Thread(
@@ -1747,14 +1869,16 @@ def _restyle_node_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 27</font>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 28</font>'
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
-            "<b>Matte</b>: mask in RGB + alpha &nbsp; | &nbsp; "
+            "<b>Alpha</b>: mask in RGB + alpha &nbsp; | &nbsp; "
             "<b>Source + Alpha</b>: original RGB, mask in alpha<br>"
-            "<b>Cutout</b>: premultiplied foreground &nbsp; | &nbsp; "
-            "<b>Source</b>: bypass"
+            "<b>Cutout</b>: premultiplied foreground<br>"
+            "<b>Source + Trimap</b>: original RGB, confidence trimap in alpha<br>"
+            "<b>Trimap</b>: confidence trimap in RGB + alpha &nbsp; | &nbsp; "
+            "<b>Bypass</b>: source unchanged"
         )
     if "roi_help" in node.knobs():
         node["roi_help"].setValue(
@@ -1811,6 +1935,7 @@ def _ensure_processing_layout(node: Any) -> None:
 def _ensure_output_controls(node: Any) -> None:
     """Add the output selector and native Nuke compositing branch to a Segment Group."""
     nuke = _nuke()
+    previous_output = str(node["output_mode"].value()) if "output_mode" in node.knobs() else None
     if "output_mode" not in node.knobs():
         _add_section(nuke, node, "output_section", "OUTPUT")
         _add_knob(
@@ -1818,16 +1943,35 @@ def _ensure_output_controls(node: Any) -> None:
             node,
             nuke.Enumeration_Knob("output_mode", "Output", list(OUTPUT_MODES)),
         )
-        node["output_mode"].setValue(1)
+        node["output_mode"].setValue(0)
         help_text = nuke.Text_Knob(
             "output_help",
             "",
-            "<b>Matte</b>: mask in RGB + alpha &nbsp; | &nbsp; "
+            "<b>Alpha</b>: mask in RGB + alpha &nbsp; | &nbsp; "
             "<b>Source + Alpha</b>: original RGB, mask in alpha<br>"
-            "<b>Cutout</b>: premultiplied foreground &nbsp; | &nbsp; "
-            "<b>Source</b>: bypass",
+            "<b>Cutout</b>: premultiplied foreground<br>"
+            "<b>Source + Trimap</b>: original RGB, confidence trimap in alpha<br>"
+            "<b>Trimap</b>: confidence trimap in RGB + alpha &nbsp; | &nbsp; "
+            "<b>Bypass</b>: source unchanged",
         )
         _add_knob(nuke, node, help_text)
+    else:
+        previous_output = {
+            "Matte": "Alpha",
+            "Confidence Trimap": "Trimap",
+            "Alpha Premult": "Cutout",
+            "Source (Bypass)": "Bypass",
+        }.get(previous_output, previous_output)
+        node["output_mode"].setValues(list(OUTPUT_MODES))
+        node["output_mode"].setValue(
+            OUTPUT_MODES.index(previous_output) if previous_output in OUTPUT_MODES else 0
+        )
+    if "confidence_width" not in node.knobs():
+        width = nuke.Double_Knob("confidence_width", "Confidence Width")
+        width.setRange(0.0, 10.0)
+        width.setValue(1.0)
+        _add_knob(nuke, node, width)
+    _place_knob_after(node, "confidence_width", "output_mode")
 
     node.begin()
     try:
@@ -1858,13 +2002,36 @@ def _ensure_output_controls(node: Any) -> None:
             cutout = nuke.nodes.Premult(name="KyvenCutout")
         cutout.setInput(0, source_alpha)
 
+        trimap = nuke.toNode("KyvenConfidenceTrimapSwitch")
+        if trimap is None:
+            trimap = nuke.nodes.Switch(name="KyvenConfidenceTrimapSwitch")
+            trimap.setInput(0, nuke.toNode("KyvenEmptyMatte"))
+            trimap["which"].setValue(0)
+        trimap_rgba = nuke.toNode("KyvenConfidenceTrimapRGBA")
+        if trimap_rgba is None:
+            trimap_rgba = nuke.nodes.Copy(name="KyvenConfidenceTrimapRGBA")
+        trimap_rgba.setInput(0, trimap)
+        trimap_rgba.setInput(1, trimap)
+        trimap_rgba["from0"].setValue("rgba.red")
+        trimap_rgba["to0"].setValue("rgba.alpha")
+
+        source_trimap = nuke.toNode("KyvenSourceTrimap")
+        if source_trimap is None:
+            source_trimap = nuke.nodes.Copy(name="KyvenSourceTrimap")
+        source_trimap.setInput(0, source)
+        source_trimap.setInput(1, trimap)
+        source_trimap["from0"].setValue("rgba.red")
+        source_trimap["to0"].setValue("rgba.alpha")
+
         output_switch = nuke.toNode("KyvenOutputSwitch")
         if output_switch is None:
             output_switch = nuke.nodes.Switch(name="KyvenOutputSwitch")
-        output_switch.setInput(0, matte_rgba)
-        output_switch.setInput(1, source_alpha)
+        output_switch.setInput(0, source_alpha)
+        output_switch.setInput(1, matte_rgba)
         output_switch.setInput(2, cutout)
-        output_switch.setInput(3, source)
+        output_switch.setInput(3, source_trimap)
+        output_switch.setInput(4, trimap_rgba)
+        output_switch.setInput(5, source)
         output_switch["which"].setExpression("parent.output_mode")
         output.setInput(0, output_switch)
     finally:
@@ -2151,7 +2318,7 @@ def create_segment_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 27</font>',
+            '<font color="#91a3b0">SAM 2 | Local inference | API 28</font>',
         ),
     )
 
@@ -2385,17 +2552,19 @@ def create_segment_node() -> Any:
         node,
         nuke.Enumeration_Knob("output_mode", "Output", list(OUTPUT_MODES)),
     )
-    node["output_mode"].setValue(1)
+    node["output_mode"].setValue(0)
     _add_knob(
         nuke,
         node,
         nuke.Text_Knob(
             "output_help",
             "",
-            "<b>Matte</b>: mask in RGB + alpha &nbsp; | &nbsp; "
+            "<b>Alpha</b>: mask in RGB + alpha &nbsp; | &nbsp; "
             "<b>Source + Alpha</b>: original RGB, mask in alpha<br>"
-            "<b>Cutout</b>: premultiplied foreground &nbsp; | &nbsp; "
-            "<b>Source</b>: bypass",
+            "<b>Cutout</b>: premultiplied foreground<br>"
+            "<b>Source + Trimap</b>: original RGB, confidence trimap in alpha<br>"
+            "<b>Trimap</b>: confidence trimap in RGB + alpha &nbsp; | &nbsp; "
+            "<b>Bypass</b>: source unchanged",
         ),
     )
     internal_id = nuke.String_Knob("kyven_uuid", "UUID")
@@ -2442,5 +2611,6 @@ def create_segment_node() -> Any:
     _ensure_output_controls(node)
     _restyle_node_ui(node)
     _reset_prompts(node)
+    _snapshot_correction_prompts(node, int(node["key_frame"].value()))
     sync_prompt_visibility(node)
     return node

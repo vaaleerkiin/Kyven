@@ -12,7 +12,7 @@ from kyven.errors import ErrorCode, KyvenError
 from kyven.inpaint.masks import prepare_inpaint_masks
 from kyven.refine.trimap import generate_trimap, normalize_trimap
 from kyven.segment.models import BoxPrompt
-from kyven.segment.output import write_mask_png_atomic
+from kyven.segment.output import confidence_trimap, read_logits_npz, write_mask_png_atomic
 from kyven.segment.postprocess import fill_enclosed_holes
 from kyven.segment.roi import resolve_region
 
@@ -171,6 +171,20 @@ def postprocess_mask_preview(payload: dict[str, Any]) -> dict[str, Any]:
         "filled_holes": filled_holes,
         "filled_pixels": filled_pixels,
     }
+
+
+def confidence_trimap_preview(payload: dict[str, Any]) -> dict[str, Any]:
+    """Rebuild an exact SAM-confidence trimap from cached logits without inference."""
+
+    logits_path = _absolute_file(payload, "logits", must_exist=True)
+    output_path = _absolute_file(payload, "output", must_exist=False)
+    try:
+        width = float(payload.get("confidence_width", 1.0))
+    except (TypeError, ValueError) as exc:
+        raise KyvenError(ErrorCode.INVALID_REQUEST, "Confidence Width must be numeric.") from exc
+    trimap = confidence_trimap(read_logits_npz(logits_path), width)
+    write_mask_png_atomic(output_path, trimap)
+    return {"output": str(output_path), "confidence_width": width}
 
 
 def prepare_inpaint_mask_preview(payload: dict[str, Any]) -> dict[str, Any]:

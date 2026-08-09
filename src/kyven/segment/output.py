@@ -50,3 +50,52 @@ def write_mask_png_atomic(output: Path, mask: np.ndarray) -> None:
             recoverable=True,
             suggested_action="Check the output path and available disk space.",
         ) from exc
+
+
+def write_logits_npz_atomic(output: Path, logits: np.ndarray) -> None:
+    """Persist SAM logits compactly as float16 without exposing them as an image output."""
+
+    pixels = np.asarray(logits, dtype=np.float16)
+    if pixels.ndim != 2:
+        raise KyvenError(ErrorCode.INFERENCE_FAILED, "SAM logits must be a two-dimensional array.")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{output.stem}-", suffix=".npz", dir=output.parent, delete=False
+        ) as stream:
+            temporary_path = Path(stream.name)
+        np.savez_compressed(temporary_path, logits=pixels)
+        os.replace(temporary_path, output)
+    except Exception as exc:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise KyvenError(
+            ErrorCode.OUTPUT_FAILED,
+            f"Could not write SAM logits: {output}",
+            technical_detail=str(exc),
+        ) from exc
+
+
+def confidence_trimap(logits: np.ndarray, width: float) -> np.ndarray:
+    """Map logit confidence to exact black, mid-gray, and white pixels."""
+
+    if width < 0:
+        raise KyvenError(ErrorCode.INVALID_REQUEST, "Confidence Width must be zero or greater.")
+    values = np.asarray(logits, dtype=np.float32)
+    trimap = np.full(values.shape, 128, dtype=np.uint8)
+    trimap[values <= -width] = 0
+    trimap[values >= width] = 255
+    return trimap
+
+
+def read_logits_npz(path: Path) -> np.ndarray:
+    try:
+        with np.load(path, allow_pickle=False) as archive:
+            return np.asarray(archive["logits"], dtype=np.float32)
+    except (OSError, KeyError, ValueError) as exc:
+        raise KyvenError(
+            ErrorCode.INVALID_REQUEST,
+            f"Could not read cached SAM logits: {path}",
+            technical_detail=str(exc),
+        ) from exc
