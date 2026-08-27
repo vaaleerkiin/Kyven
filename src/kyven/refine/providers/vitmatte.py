@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from contextlib import nullcontext
 from pathlib import Path
@@ -13,6 +12,7 @@ from PIL import Image
 
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
+from kyven.hashing import cached_file_sha256
 from kyven.refine.models import RefinementCapabilities, RefinePrediction, RefineRequest
 from kyven.refine.providers.base import RefinementProvider
 
@@ -51,11 +51,7 @@ class VitMatteProvider(RefinementProvider):
             return self._checksum
         if not self._checkpoint.is_file():
             return "missing"
-        digest = hashlib.sha256()
-        with self._checkpoint.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(chunk)
-        self._checksum = digest.hexdigest()
+        self._checksum = cached_file_sha256(self._checkpoint)
         return self._checksum
 
     @property
@@ -63,7 +59,7 @@ class VitMatteProvider(RefinementProvider):
         return RefinementCapabilities(
             provider_id=self._provider_id,
             display_name=self._display_name,
-            provider_version="1",
+            provider_version="2",
             model_checksum=self._checksum_if_present(),
             license_name="Apache-2.0",
             license_url=self._license_url,

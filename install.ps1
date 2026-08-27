@@ -80,10 +80,13 @@ function Select-Models {
         [pscustomobject]@{ Number = "2"; Id = "sam2.1-small"; Label = "SAM 2.1 Small"; Guidance = "6 GB, recommended for 8 GB" },
         [pscustomobject]@{ Number = "3"; Id = "sam2.1-base-plus"; Label = "SAM 2.1 Base+"; Guidance = "8-12 GB VRAM" },
         [pscustomobject]@{ Number = "4"; Id = "sam2.1-large"; Label = "SAM 2.1 Large"; Guidance = "12+ GB VRAM" },
+        [pscustomobject]@{ Number = "11"; Id = "hq-sam2.1-large"; Label = "HQ-SAM 2.1 Large Beta"; Guidance = "fine-detail image/video masks, 12+ GB VRAM" },
         [pscustomobject]@{ Number = "5"; Id = "vitmatte-small-composition-1k"; Label = "ViTMatte Small"; Guidance = "4 GB+, refinement" },
         [pscustomobject]@{ Number = "6"; Id = "lama-2025jan-onnx"; Label = "LaMa ONNX Fast"; Guidance = "CPU / Live, fixed 512 input" },
         [pscustomobject]@{ Number = "7"; Id = "big-lama-native"; Label = "Big-LaMa Native"; Guidance = "best detail, native ROI, 4 GB+" },
         [pscustomobject]@{ Number = "8"; Id = "vitmatte-base-distinctions-646"; Label = "ViTMatte Base"; Guidance = "higher quality, 8 GB+, use tiling" },
+        [pscustomobject]@{ Number = "9"; Id = "mematte-vits-aim500"; Label = "MEMatte ViT-S"; Guidance = "memory-efficient high-resolution refinement, 4 GB+" },
+        [pscustomobject]@{ Number = "10"; Id = "mematte-vitb-composition-1k"; Label = "MEMatte ViT-B"; Guidance = "quality high-resolution refinement, 8 GB+" },
         [pscustomobject]@{ Number = "0"; Id = "none"; Label = "No model"; Guidance = "install runtime only" }
     )
 
@@ -105,7 +108,7 @@ function Select-Models {
         }
         $Match = $Choices | Where-Object Number -eq $Part
         if (-not $Match) {
-            throw "Unknown model choice '$Part'. Run the installer again and enter 0-8."
+            throw "Unknown model choice '$Part'. Run the installer again and enter 0-11."
         }
         if ($Match.Id -eq "none") {
             $AnswerParts = @($Answer -split "[,; ]+" | Where-Object { $_ })
@@ -127,10 +130,13 @@ function Resolve-RequestedModels([string[]]$RequestedModels) {
         "sam2.1-small",
         "sam2.1-base-plus",
         "sam2.1-large",
+        "hq-sam2.1-large",
         "vitmatte-small-composition-1k",
         "lama-2025jan-onnx",
         "big-lama-native",
-        "vitmatte-base-distinctions-646"
+        "vitmatte-base-distinctions-646",
+        "mematte-vits-aim500",
+        "mematte-vitb-composition-1k"
     )
     if (-not $RequestedModels -or $RequestedModels.Count -eq 0) {
         return @(Select-Models)
@@ -220,7 +226,10 @@ try {
     Write-Step "Updating packaging tools inside .venv"
     Invoke-Native $VenvPython @("-m", "pip", "install", "--upgrade", "pip", "setuptools")
 
-    Write-Step "Installing PyTorch and SAM 2 inside .venv"
+    Write-Step "Preparing the pinned SAM 2 / HQ-SAM 2 runtime"
+    Invoke-Native $VenvPython @("-m", "pip", "uninstall", "--yes", "SAM-2", "HQ-SAM-2")
+
+    Write-Step "Installing PyTorch and SAM 2 / HQ-SAM 2 inside .venv"
     Invoke-Native $VenvPython @("-m", "pip", "install", "-r", $Requirements)
 
     Write-Step "Installing pinned official TAPNet code without its unused JAX stack"

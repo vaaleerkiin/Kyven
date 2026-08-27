@@ -59,15 +59,31 @@ class ModelOperationManager:
         self._unload_provider = unload_provider or registry.unload
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kyven-models")
         self._operations: dict[str, ModelOperation] = {}
+        self._active: dict[tuple[str, str], str] = {}
+        self._history_limit = 100
         self._lock = threading.RLock()
 
     def submit(self, action: str, model_id: str) -> str:
         self._catalog.get(model_id)
         if action not in {"download", "remove"}:
             raise KyvenError(ErrorCode.INVALID_REQUEST, f"Unknown model action: {action}")
-        operation = ModelOperation(uuid.uuid4().hex, action, model_id)
+        key = (action, model_id)
         with self._lock:
+            active_id = self._active.get(key)
+            if active_id is not None:
+                active = self._operations.get(active_id)
+                if active is not None and active.status in {"queued", "running"}:
+                    return active_id
+                self._active.pop(key, None)
+            finished = sorted(
+                (item for item in self._operations.values() if item.finished_at is not None),
+                key=lambda item: item.finished_at or item.created_at,
+            )
+            for item in finished[: max(0, len(self._operations) - self._history_limit + 1)]:
+                self._operations.pop(item.operation_id, None)
+            operation = ModelOperation(uuid.uuid4().hex, action, model_id)
             self._operations[operation.operation_id] = operation
+            self._active[key] = operation.operation_id
         self._executor.submit(self._run, operation)
         return operation.operation_id
 
@@ -88,6 +104,7 @@ class ModelOperationManager:
                 operation.status = "cancelled"
                 operation.message = "Cancelled"
                 operation.finished_at = time.time()
+                self._active.pop((operation.action, operation.model_id), None)
             return operation.snapshot()
 
     def _run(self, operation: ModelOperation) -> None:
@@ -111,18 +128,28 @@ class ModelOperationManager:
                 operation.message = exc.message
                 operation.error = exc.to_dict()
         except Exception as exc:  # noqa: BLE001
+            detail = str(exc)
+            suggested_action = (
+                "Allow Kyven's Python runtime through Windows Firewall, then retry the download."
+                if "WinError 10013" in detail
+                else "Retry the operation; if it fails again, review the technical detail."
+            )
             with self._lock:
                 operation.status = "failed"
                 operation.message = "Model operation failed"
                 operation.error = KyvenError(
                     ErrorCode.SERVER_ERROR,
                     "Model operation failed unexpectedly.",
-                    technical_detail=str(exc),
+                    technical_detail=detail,
                     recoverable=True,
+                    suggested_action=suggested_action,
                 ).to_dict()
         finally:
             with self._lock:
                 operation.finished_at = time.time()
+                key = (operation.action, operation.model_id)
+                if self._active.get(key) == operation.operation_id:
+                    self._active.pop(key, None)
 
     def _download(self, operation: ModelOperation) -> None:
         def report(downloaded: int, total: int) -> None:
@@ -148,4 +175,8 @@ class ModelOperationManager:
         self._catalog.remove(operation.model_id, self._models_dir)
 
     def shutdown(self) -> None:
+        with self._lock:
+            for operation in self._operations.values():
+                if operation.status in {"queued", "running"}:
+                    operation.cancelled.set()
         self._executor.shutdown(wait=True, cancel_futures=True)

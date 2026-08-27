@@ -25,7 +25,7 @@ from kyven.segment.providers.registry import ProviderRegistry
 from kyven.server.jobs import JobManager
 
 MAX_REQUEST_BYTES = 1024 * 1024
-SERVER_API_VERSION = 28
+SERVER_API_VERSION = 30
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +131,8 @@ def _handler_type(
                             "status": "ok",
                             "service": "kyven",
                             "api_version": SERVER_API_VERSION,
+                            "loaded_providers": list(registry.loaded_ids),
+                            "jobs": manager.summary(),
                         },
                     )
                     return
@@ -167,13 +169,19 @@ def _handler_type(
                     model_id = str(payload.get("model_id", "sam2.1-small"))
                     catalog.get(model_id)
                     job_id = manager.submit_segment(payload)
-                    self._send(HTTPStatus.ACCEPTED, {"job_id": job_id, "status": "queued"})
+                    self._send(
+                        HTTPStatus.ACCEPTED,
+                        {"job_id": job_id, "status": manager.get(job_id)["status"]},
+                    )
                     return
                 if path == "/v1/jobs/segment-video":
                     model_id = str(payload.get("model_id", "sam2.1-small"))
                     catalog.get(model_id)
                     job_id = manager.submit_video(payload)
-                    self._send(HTTPStatus.ACCEPTED, {"job_id": job_id, "status": "queued"})
+                    self._send(
+                        HTTPStatus.ACCEPTED,
+                        {"job_id": job_id, "status": manager.get(job_id)["status"]},
+                    )
                     return
                 if path == "/v1/jobs/refine":
                     model_id = str(payload.get("model_id", "vitmatte-small-composition-1k"))
@@ -183,14 +191,20 @@ def _handler_type(
                             message="The selected model is not a refinement model.",
                         )
                     job_id = manager.submit_refine(payload)
-                    self._send(HTTPStatus.ACCEPTED, {"job_id": job_id, "status": "queued"})
+                    self._send(
+                        HTTPStatus.ACCEPTED,
+                        {"job_id": job_id, "status": manager.get(job_id)["status"]},
+                    )
                     return
                 if path == "/v1/jobs/inpaint":
                     model_id = str(payload.get("model_id", "big-lama-native"))
                     if catalog.get(model_id).task != "inpaint":
                         raise KyvenError(ErrorCode.INVALID_REQUEST, "The selected model is not an inpaint model.")
                     job_id = manager.submit_inpaint(payload)
-                    self._send(HTTPStatus.ACCEPTED, {"job_id": job_id, "status": "queued"})
+                    self._send(
+                        HTTPStatus.ACCEPTED,
+                        {"job_id": job_id, "status": manager.get(job_id)["status"]},
+                    )
                     return
                 if path == "/v1/models/download":
                     operation_id = model_operations.submit("download", str(payload.get("model_id", "")))

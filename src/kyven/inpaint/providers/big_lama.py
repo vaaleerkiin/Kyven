@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +9,7 @@ from PIL import Image
 
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
+from kyven.hashing import cached_file_sha256
 from kyven.inpaint.models import InpaintCapabilities, InpaintPrediction, InpaintRequest
 from kyven.inpaint.providers.base import InpaintProvider
 from kyven.inpaint.refinement import refine_big_lama
@@ -36,6 +36,7 @@ class BigLamaProvider(InpaintProvider):
         self._requested_device = device
         self._device = "cpu"
         self._model = None
+        self._checksum: str | None = None
 
     @property
     def capabilities(self) -> InpaintCapabilities:
@@ -59,7 +60,9 @@ class BigLamaProvider(InpaintProvider):
                 f"Big-LaMa model is not installed: {self._checkpoint}",
                 suggested_action="Run install.ps1 again and select Big-LaMa Native.",
             )
-        digest = hashlib.sha256(self._checkpoint.read_bytes()).hexdigest()
+        if self._checksum is None:
+            self._checksum = cached_file_sha256(self._checkpoint)
+        digest = self._checksum
         if digest != self._expected_checksum:
             raise KyvenError(
                 ErrorCode.MODEL_NOT_FOUND,

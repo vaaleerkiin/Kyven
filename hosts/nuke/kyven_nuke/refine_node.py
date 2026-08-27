@@ -13,7 +13,11 @@ from kyven_nuke.color_management import set_data_io
 from kyven_nuke.node import (
     _add_knob,
     _add_section,
+    _begin_node_operation,
     _cache_root,
+    _clamp_bbox_knob,
+    _clear_sequence_frames,
+    _create_group_at_cursor,
     _ensure_cache_controls,
     _ensure_double_slider,
     _ensure_live_controls,
@@ -22,19 +26,27 @@ from kyven_nuke.node import (
     _format_eta,
     _inside,
     _job_error_text,
+    _job_timing_text,
+    _knob_value_at,
+    _missing_sequence_frames,
     _nuke,
     _nuke_file_path,
+    _operation_node,
     _path_for_frame,
     _place_knob_after,
     _progress_cancelled,
+    _refresh_node_output,
     _section_markup,
+    _server_progress,
     _set_busy,
     _set_matte_read,
+    _set_operation_controls,
     _set_status,
     _start_progress,
     _update_progress,
 )
-from kyven_nuke.payload import REFINE_MODEL_LABELS, refine_payload, roi_box
+from kyven_nuke.payload import REFINE_MODEL_IDS, REFINE_MODEL_LABELS, refine_payload, roi_box
+from kyven_nuke.preferences import default_model_index
 from kyven_nuke.runtime import ensure_server
 
 _range_cancellations: set[str] = set()
@@ -42,6 +54,7 @@ _range_cancel_lock = threading.RLock()
 _trimap_preview_lock = threading.RLock()
 _trimap_preview_revisions: dict[str, int] = {}
 _trimap_preview_running: set[str] = set()
+_suspended_reads: dict[str, dict[str, str]] = {}
 MASK_INPUT = 0
 SOURCE_INPUT = 1
 REFINE_OUTPUT_MODES = (
@@ -53,6 +66,50 @@ REFINE_OUTPUT_MODES = (
     "Trimap Cutout",
     "Source (Bypass)",
 )
+
+
+def _suspend_result_reads(node: Any) -> None:
+    """Release Windows file handles before atomically replacing cached Refine outputs."""
+
+    node_name = str(node.fullName())
+    saved: dict[str, str] = {}
+    node.begin()
+    try:
+        nuke = _nuke()
+        for name in ("KyvenMatteRead", "KyvenTrimapRead"):
+            read = nuke.toNode(name)
+            if read is None or "file" not in read.knobs():
+                continue
+            value = str(read["file"].value())
+            if value:
+                saved[name] = value
+                read["file"].setValue("")
+    finally:
+        node.end()
+    if saved:
+        _suspended_reads[node_name] = saved
+
+
+def _restore_result_reads(node_name: str) -> None:
+    saved = _suspended_reads.pop(node_name, None)
+    node = _operation_node(node_name)
+    if not saved or node is None:
+        return
+    node.begin()
+    try:
+        nuke = _nuke()
+        for name, value in saved.items():
+            read = nuke.toNode(name)
+            if read is not None and "file" in read.knobs():
+                read["file"].setValue(value)
+                if "reload" in read.knobs():
+                    read["reload"].execute()
+    finally:
+        node.end()
+
+
+def _forget_suspended_reads(node_name: str) -> None:
+    _suspended_reads.pop(node_name, None)
 REFINE_OUTPUT_HELP = (
     "<b>Refined</b>: Matte / Source + Alpha / Cutout<br>"
     "<b>Trimap</b>: Matte / Source + Alpha / Cutout<br>"
@@ -65,6 +122,10 @@ REFINE_TRIMAP_HELP = (
 REFINE_LIVE_HELP = (
     "Live follows timeline and model / ROI changes asynchronously.<br>"
     "Trimap controls remain CPU-only."
+)
+REFINE_ROI_HELP = (
+    "<b>Auto</b>: trimap bounds plus context &nbsp; | &nbsp; "
+    "<b>Manual</b>: animated ROI &nbsp; | &nbsp; <b>Full</b>: entire frame"
 )
 
 
@@ -143,7 +204,15 @@ def _payload(
     mask_path: Path,
     output_path: Path,
     trimap_output_path: Path,
+    frame: int,
 ) -> dict[str, Any]:
+    knob_names = node.knobs() if hasattr(node, "knobs") else node.values
+    legacy_roi_enabled = bool(_knob_value_at(node["roi_enabled"], frame))
+    crop_mode = (
+        str(node["crop_mode"].value())
+        if "crop_mode" in knob_names
+        else ("manual" if legacy_roi_enabled else "full")
+    )
     return refine_payload(
         source=str(source_path.resolve()),
         mask=str(mask_path.resolve()),
@@ -153,8 +222,14 @@ def _payload(
         profile=str(node["profile"].value()),
         image_width=int(source.width()),
         image_height=int(source.height()),
-        roi_enabled=bool(node["roi_enabled"].value()),
-        roi=tuple(node["processing_roi"].value()),
+        roi_enabled=crop_mode == "manual",
+        roi=tuple(_knob_value_at(node["processing_roi"], frame, dimensions=4)),
+        crop_mode=crop_mode,
+        context_padding=(
+            int(_knob_value_at(node["context_padding"], frame))
+            if "context_padding" in knob_names
+            else 128
+        ),
         generate_trimap=bool(node["generate_trimap"].value()),
         foreground_radius=int(node["foreground_radius"].value()),
         background_radius=int(node["background_radius"].value()),
@@ -164,13 +239,15 @@ def _payload(
 
 
 def _apply_result(node_name: str, job: dict[str, Any]) -> None:
-    node = _nuke().toNode(node_name)
+    node = _operation_node(node_name)
     if node is None:
         return
     if job["status"] == "cancelled":
+        _restore_result_reads(node_name)
         node["kyven_status"].setValue("Refinement cancelled.")
         return
     if job["status"] != "succeeded":
+        _restore_result_reads(node_name)
         node["kyven_status"].setValue(f"Refine failed: {_job_error_text(job)}")
         return
     result = job["result"]
@@ -178,14 +255,19 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
     trimap_output = result.get("trimap_output")
     if trimap_output:
         _set_trimap_read(node, _nuke_file_path(Path(trimap_output)))
+    _forget_suspended_reads(node_name)
     metadata = result.get("metadata") or {}
     trimap = metadata.get("trimap") or {}
     mode = "auto trimap" if trimap.get("generated") else "input trimap"
     roi = metadata.get("processing_roi")
     roi_text = f" | ROI {roi['width']}x{roi['height']}" if roi else ""
+    cache_text = " | cache hit" if metadata.get("cache_hit") else ""
+    timing_text = _job_timing_text(job)
     node["kyven_status"].setValue(
-        f"Refined - {mode} | {int(metadata.get('tiles', 1))} tile(s){roi_text}"
+        f"Refined - {mode} | {int(metadata.get('tiles', 1))} tile(s)"
+        f"{roi_text}{cache_text}{timing_text}"
     )
+    _refresh_node_output(node)
 
 
 def _set_trimap_read(
@@ -221,7 +303,30 @@ def _set_trimap_read(
 
 
 def request_trimap_preview(node: Any, delay_seconds: float = 0.18) -> None:
-    """Debounce trimap controls into a CPU-only preview without ViTMatte."""
+    """Show the native Nuke trimap graph immediately without server work."""
+
+    del delay_seconds
+    _activate_native_trimap_preview(node)
+
+
+def _activate_native_trimap_preview(node: Any) -> None:
+    """Switch Refine output to its dependency-free 0/0.5/1 trimap branch."""
+
+    trimap_switch = _inside(node, "KyvenTrimapSwitch")
+    if trimap_switch is None:
+        _ensure_refine_output_controls(node)
+        trimap_switch = _inside(node, "KyvenTrimapSwitch")
+    if trimap_switch is not None:
+        trimap_switch["which"].setValue(0)
+    if "kyven_trimap_preview_frame" in node.knobs():
+        node["kyven_trimap_preview_frame"].setValue(int(_nuke().frame()))
+    _refresh_node_output(node)
+    if "kyven_status" in node.knobs():
+        node["kyven_status"].setValue("Trimap preview ready - native Nuke graph.")
+
+
+def _request_server_trimap_preview(node: Any, delay_seconds: float = 0.18) -> None:
+    """Legacy server preview retained for compatibility and diagnostics."""
 
     node_name = str(node.fullName())
     with _trimap_preview_lock:
@@ -339,7 +444,7 @@ def _finish_trimap_preview(
         if current is not None:
             _start_trimap_preview(node_name, current)
         return
-    node = _nuke().toNode(node_name)
+    node = _operation_node(node_name)
     if node is None:
         output_path.unlink(missing_ok=True)
         return
@@ -351,6 +456,9 @@ def _finish_trimap_preview(
         node["kyven_status"].setValue("Trimap preview failed: server did not create the PNG.")
         return
     _set_trimap_read(node, _nuke_file_path(output_path), frame, frame)
+    if "kyven_trimap_preview_frame" in node.knobs():
+        node["kyven_trimap_preview_frame"].setValue(frame)
+    _refresh_node_output(node)
     node["kyven_status"].setValue("Trimap preview ready - ViTMatte was not run.")
 
 
@@ -363,7 +471,7 @@ def _submit_and_wait(
     started = time.monotonic()
     cancellation_sent = False
     try:
-        client = ensure_server()
+        client = ensure_server(progress_callback=_server_progress(node_name))
         job_id = client.submit_refine(payload)
         nuke.executeInMainThread(_set_job_id, args=(node_name, job_id))
         while True:
@@ -390,6 +498,7 @@ def _submit_and_wait(
             time.sleep(0.2)
         nuke.executeInMainThread(_apply_result, args=(node_name, job))
     except Exception as exc:  # noqa: BLE001
+        nuke.executeInMainThread(_restore_result_reads, args=(node_name,))
         nuke.executeInMainThread(_set_status, args=(node_name, f"Refine failed: {exc}"))
     finally:
         if show_progress:
@@ -398,14 +507,21 @@ def _submit_and_wait(
 
 
 def _set_job_id(node_name: str, job_id: str) -> None:
-    node = _nuke().toNode(node_name)
+    node = _operation_node(node_name)
     if node is not None:
         node["kyven_job_id"].setValue(job_id)
         node["kyven_status"].setValue("ViTMatte refining...")
 
 
+def _export_cancelled(node_name: str) -> bool:
+    with _range_cancel_lock:
+        requested = node_name in _range_cancellations
+    return requested or _progress_cancelled(node_name)
+
+
 def _export(node: Any, frame: int, source_path: Path, mask_path: Path) -> bool:
     nuke = _nuke()
+    node_name = str(node.fullName())
     source_writer = _inside(node, "KyvenRefineSourceWrite")
     mask_writer = _inside(node, "KyvenRefineMaskWrite")
     _configure_export_writers(source_writer, mask_writer)
@@ -413,7 +529,13 @@ def _export(node: Any, frame: int, source_path: Path, mask_path: Path) -> bool:
     mask_writer["file"].setValue(_nuke_file_path(mask_path))
     try:
         nuke.execute(source_writer, frame, frame)
+        if _export_cancelled(node_name):
+            node["kyven_status"].setValue("Refine export cancelled after Source.")
+            return False
         nuke.execute(mask_writer, frame, frame)
+        if _export_cancelled(node_name):
+            node["kyven_status"].setValue("Refine export cancelled after Mask.")
+            return False
     except Exception as exc:  # noqa: BLE001
         node["kyven_status"].setValue(f"Refine input export failed: {exc}")
         return False
@@ -430,21 +552,22 @@ def process_current_frame(node: Any | None = None, live: bool = False) -> None:
         if not live:
             nuke.message("Kyven Refine requires Source and Mask/Trimap inputs.")
         return
-    if bool(node["kyven_busy"].value()):
-        return
     frame = int(nuke.frame())
     node_name = node.fullName()
     show_progress = not live
+    if not _begin_node_operation(node):
+        return
+    with _range_cancel_lock:
+        _range_cancellations.discard(node_name)
     if show_progress:
         _start_progress(node_name, "Kyven ViTMatte Refine", f"Exporting frame {frame}")
         _update_progress(node_name, 2, "Exporting Source and mask")
-    node["kyven_busy"].setValue(True)
     source_path, mask_path, output_path, trimap_output_path = _cache_paths(node, frame)
     node["kyven_status"].setValue("Exporting source and mask...")
     if not _export(node, frame, source_path, mask_path):
         if show_progress:
             _finish_progress(node_name)
-        node["kyven_busy"].setValue(False)
+        _set_busy(node_name, False)
         return
     if show_progress:
         _update_progress(node_name, 15, "Starting ViTMatte")
@@ -455,6 +578,7 @@ def process_current_frame(node: Any | None = None, live: bool = False) -> None:
         mask_path,
         output_path,
         trimap_output_path,
+        frame,
     )
     node["kyven_live_frame"].setValue(frame)
     threading.Thread(
@@ -472,11 +596,13 @@ def _apply_range(
     first: int,
     last: int,
 ) -> None:
-    node = _nuke().toNode(node_name)
+    node = _operation_node(node_name)
     if node is not None:
         _set_matte_read(node, output, first, last)
         _set_trimap_read(node, trimap_output, first, last)
+        _forget_suspended_reads(node_name)
         node["kyven_status"].setValue(f"Refined range ready: {first}-{last}")
+        _refresh_node_output(node)
 
 
 def _range_worker(
@@ -489,8 +615,9 @@ def _range_worker(
 ) -> None:
     nuke = _nuke()
     started = time.monotonic()
+    completed = False
     try:
-        client = ensure_server()
+        client = ensure_server(progress_callback=_server_progress(node_name))
         total = len(payloads)
         for index, (frame, payload) in enumerate(payloads, start=1):
             with _range_cancel_lock:
@@ -507,6 +634,7 @@ def _range_worker(
                 args=(node_name, f"Refining frame {frame} ({index}/{len(payloads)})..."),
             )
             cancellation_sent = False
+            job_started = time.monotonic()
             while True:
                 job = client.job(job_id)
                 job_progress = float(job.get("progress", 0.0))
@@ -532,6 +660,8 @@ def _range_worker(
                     cancellation_sent = True
                 if job["status"] in ("succeeded", "failed", "cancelled"):
                     break
+                if time.monotonic() - job_started > 1800.0:
+                    raise RuntimeError(f"Timed out waiting to refine frame {frame}.")
                 time.sleep(0.2)
             if job["status"] == "cancelled":
                 nuke.executeInMainThread(
@@ -546,9 +676,12 @@ def _range_worker(
             _apply_range,
             args=(node_name, output_pattern, trimap_output_pattern, first, last),
         )
+        completed = True
     except Exception as exc:  # noqa: BLE001
         nuke.executeInMainThread(_set_status, args=(node_name, f"Refine range failed: {exc}"))
     finally:
+        if not completed:
+            nuke.executeInMainThread(_restore_result_reads, args=(node_name,))
         with _range_cancel_lock:
             _range_cancellations.discard(node_name)
         nuke.executeInMainThread(_finish_progress, args=(node_name,))
@@ -563,8 +696,6 @@ def process_frame_range() -> None:
     if source is None or node.input(MASK_INPUT) is None:
         nuke.message("Kyven Refine requires Source and Mask/Trimap inputs.")
         return
-    if bool(node["kyven_busy"].value()):
-        return
     first = int(node["range_first"].value())
     last = int(node["range_last"].value())
     if last < first:
@@ -576,35 +707,52 @@ def process_frame_range() -> None:
     _configure_export_writers(source_writer, mask_writer)
     source_writer["file"].setValue(_nuke_file_path(source_pattern))
     mask_writer["file"].setValue(_nuke_file_path(mask_pattern))
+    if not _begin_node_operation(node):
+        return
     node_name = node.fullName()
+    with _range_cancel_lock:
+        _range_cancellations.discard(node_name)
     _start_progress(node_name, "Kyven ViTMatte Frame Range", "Preparing input export")
-    node["kyven_busy"].setValue(True)
     node["kyven_status"].setValue(f"Exporting refine inputs {first}-{last}...")
     try:
-        _update_progress(node_name, 2, f"Batch exporting Source {first}-{last}")
-        nuke.execute(source_writer, first, last)
-        if _progress_cancelled(node_name):
-            node["kyven_status"].setValue("Refine range cancelled after Source export.")
-            _finish_progress(node_name)
-            node["kyven_busy"].setValue(False)
-            return
-        _update_progress(node_name, 12, f"Batch exporting Mask {first}-{last}")
-        nuke.execute(mask_writer, first, last)
+        _clear_sequence_frames(source_pattern, first, last)
+        _clear_sequence_frames(mask_pattern, first, last)
+        total = last - first + 1
+        for index, frame in enumerate(range(first, last + 1), start=1):
+            if _export_cancelled(node_name):
+                node["kyven_status"].setValue(f"Refine range cancelled before frame {frame}.")
+                _finish_progress(node_name)
+                _set_busy(node_name, False)
+                return
+            percent = 2 + round((index - 1) / total * 18)
+            _update_progress(node_name, percent, f"Exporting Source {frame} ({index}/{total})")
+            nuke.execute(source_writer, frame, frame)
+            if _export_cancelled(node_name):
+                node["kyven_status"].setValue(f"Refine range cancelled after Source {frame}.")
+                _finish_progress(node_name)
+                _set_busy(node_name, False)
+                return
+            _update_progress(node_name, percent + 1, f"Exporting Mask {frame} ({index}/{total})")
+            nuke.execute(mask_writer, frame, frame)
         _update_progress(node_name, 20, "Refine inputs exported")
     except Exception as exc:  # noqa: BLE001
         _finish_progress(node_name)
-        node["kyven_busy"].setValue(False)
+        _set_busy(node_name, False)
         node["kyven_status"].setValue(f"Refine range export failed: {exc}")
         return
+    missing_source = _missing_sequence_frames(source_pattern, first, last)
+    missing_mask = _missing_sequence_frames(mask_pattern, first, last)
+    if missing_source or missing_mask:
+        _finish_progress(node_name)
+        _set_busy(node_name, False)
+        kind, missing = ("Source", missing_source) if missing_source else ("Mask", missing_mask)
+        node["kyven_status"].setValue(f"Missing exported refine {kind} at frame {missing[0]}.")
+        return
+
     payloads = []
     for frame in range(first, last + 1):
         source_path = _path_for_frame(source_pattern, frame)
         mask_path = _path_for_frame(mask_pattern, frame)
-        if not source_path.is_file() or not mask_path.is_file():
-            _finish_progress(node_name)
-            node["kyven_busy"].setValue(False)
-            node["kyven_status"].setValue(f"Missing exported refine input at frame {frame}.")
-            return
         output_path = _path_for_frame(output_pattern, frame)
         trimap_output_path = _path_for_frame(trimap_output_pattern, frame)
         payloads.append(
@@ -617,11 +765,10 @@ def process_frame_range() -> None:
                     mask_path,
                     output_path,
                     trimap_output_path,
+                    frame,
                 ),
             )
         )
-    with _range_cancel_lock:
-        _range_cancellations.discard(node_name)
     threading.Thread(
         target=_range_worker,
         args=(
@@ -643,6 +790,10 @@ def cancel_current_job() -> None:
     node_name = node.fullName()
     with _range_cancel_lock:
         _range_cancellations.add(node_name)
+    try:
+        nuke.cancel()
+    except Exception:  # noqa: BLE001, S110 - there may be no active Nuke render
+        pass
     job_id = str(node["kyven_job_id"].value())
     if not job_id:
         node["kyven_status"].setValue("Cancellation requested.")
@@ -674,16 +825,31 @@ def knob_changed() -> None:
     nuke = _nuke()
     node = nuke.thisNode()
     name = nuke.thisKnob().name()
+    if name in {"inputChange", "processing_roi", "crop_mode", "roi_enabled"}:
+        _clamp_bbox_knob(node, "processing_roi", SOURCE_INPUT)
     generated = bool(node["generate_trimap"].value())
     node["foreground_radius"].setVisible(generated)
     node["background_radius"].setVisible(generated)
-    node["processing_roi"].setVisible(bool(node["roi_enabled"].value()))
+    crop_mode = (
+        str(node["crop_mode"].value())
+        if "crop_mode" in node.knobs()
+        else ("manual" if bool(node["roi_enabled"].value()) else "full")
+    )
+    node["processing_roi"].setVisible(crop_mode == "manual")
+    if "reset_roi" in node.knobs():
+        node["reset_roi"].setVisible(crop_mode == "manual")
+    if "context_padding" in node.knobs():
+        node["context_padding"].setVisible(crop_mode == "auto")
+    if "roi_enabled" in node.knobs():
+        node["roi_enabled"].setVisible(False)
     if name in {
         "inputChange",
         "mask_channel",
         "generate_trimap",
         "foreground_radius",
         "background_radius",
+        "crop_mode",
+        "context_padding",
         "roi_enabled",
         "processing_roi",
     }:
@@ -727,15 +893,57 @@ def _apply_model_labels(node_name: str, labels: list[str]) -> None:
         node["kyven_status"].setValue("Refinement model list refreshed.")
 
 
+def _ensure_refine_crop_controls(node: Any) -> None:
+    """Add crop modes to old nodes while preserving their previous ROI behavior."""
+
+    nuke = _nuke()
+    knobs = node.knobs()
+    if "roi_section" not in knobs:
+        _add_section(nuke, node, "roi_section", "PROCESSING ROI / MODEL CROP")
+    if "crop_mode" not in node.knobs():
+        legacy_manual = (
+            bool(node["roi_enabled"].value()) if "roi_enabled" in node.knobs() else False
+        )
+        crop_mode = nuke.Enumeration_Knob(
+            "crop_mode", "Crop Mode", ["auto", "manual", "full"]
+        )
+        crop_mode.setValue("manual" if legacy_manual else "full")
+        _add_knob(nuke, node, crop_mode)
+        _place_knob_after(node, "crop_mode", "roi_section")
+    if "context_padding" not in node.knobs():
+        padding = nuke.Int_Knob("context_padding", "Context Padding (px)")
+        padding.setRange(0, 1024)
+        padding.setValue(128)
+        _add_knob(nuke, node, padding)
+        _place_knob_after(node, "context_padding", "crop_mode")
+    if "processing_roi" not in node.knobs():
+        _add_knob(nuke, node, nuke.BBox_Knob("processing_roi", "Manual ROI"))
+    if "reset_roi" not in node.knobs():
+        _add_knob(
+            nuke,
+            node,
+            nuke.PyScript_Knob(
+                "reset_roi",
+                "Reset ROI to Source",
+                "kyven_nuke.refine_node.reset_roi_to_input()",
+            ),
+        )
+    if "roi_help" not in node.knobs():
+        _add_knob(nuke, node, nuke.Text_Knob("roi_help", "", REFINE_ROI_HELP))
+    if "roi_enabled" in node.knobs():
+        node["roi_enabled"].setVisible(False)
+
+
 def _ensure_refine_output_controls(node: Any) -> None:
     """Build Refine and exact-trimap output branches for new or existing Groups."""
 
     nuke = _nuke()
     _ensure_input_order(node)
+    _ensure_refine_crop_controls(node)
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 28</font>'
+            '<font color="#91a3b0">ViTMatte + MEMatte | Source + Mask | API 30</font>'
         )
     created_selector = "output_mode" not in node.knobs()
     previous_label = str(node["output_mode"].value()) if not created_selector else None
@@ -789,11 +997,55 @@ def _ensure_refine_output_controls(node: Any) -> None:
         if mask_input is not None:
             mask_input.setXpos(120)
 
+        foreground = nuke.toNode("KyvenTrimapForeground")
+        if foreground is None:
+            foreground = nuke.nodes.Dilate(name="KyvenTrimapForeground")
+        foreground.setInput(0, mask_channel)
+        foreground["size"].setExpression("-parent.foreground_radius")
+
+        possible = nuke.toNode("KyvenTrimapPossibleForeground")
+        if possible is None:
+            possible = nuke.nodes.Dilate(name="KyvenTrimapPossibleForeground")
+        possible.setInput(0, mask_channel)
+        possible["size"].setExpression("parent.background_radius")
+
+        foreground_half = nuke.toNode("KyvenTrimapForegroundHalf")
+        if foreground_half is None:
+            foreground_half = nuke.nodes.Multiply(
+                name="KyvenTrimapForegroundHalf", value=0.5
+            )
+        foreground_half.setInput(0, foreground)
+        foreground_half["value"].setValue(0.5)
+
+        possible_half = nuke.toNode("KyvenTrimapPossibleHalf")
+        if possible_half is None:
+            possible_half = nuke.nodes.Multiply(
+                name="KyvenTrimapPossibleHalf", value=0.5
+            )
+        possible_half.setInput(0, possible)
+        possible_half["value"].setValue(0.5)
+
+        generated_trimap = nuke.toNode("KyvenGeneratedTrimap")
+        if generated_trimap is None:
+            generated_trimap = nuke.nodes.Merge2(
+                name="KyvenGeneratedTrimap", operation="plus"
+            )
+        generated_trimap.setInput(0, possible_half)
+        generated_trimap.setInput(1, foreground_half)
+        generated_trimap["operation"].setValue("plus")
+
+        generated_selector = nuke.toNode("KyvenGeneratedTrimapSwitch")
+        if generated_selector is None:
+            generated_selector = nuke.nodes.Switch(name="KyvenGeneratedTrimapSwitch")
+        generated_selector.setInput(0, mask_channel)
+        generated_selector.setInput(1, generated_trimap)
+        generated_selector["which"].setExpression("parent.generate_trimap")
+
         trimap = nuke.toNode("KyvenTrimapSwitch")
         if trimap is None:
             trimap = nuke.nodes.Switch(name="KyvenTrimapSwitch")
-            trimap.setInput(0, mask_channel)
             trimap["which"].setValue(0)
+        trimap.setInput(0, generated_selector)
 
         refined_rgba = nuke.toNode("KyvenMatteRGBA")
         if refined_rgba is None:
@@ -886,7 +1138,9 @@ def _restyle_refine_ui(node: Any) -> None:
         "generate_trimap": "Generate Trimap from Mask",
         "foreground_radius": "Foreground Erosion (px)",
         "background_radius": "Background Dilation (px)",
-        "roi_enabled": "Enable Processing ROI",
+        "crop_mode": "Crop Mode",
+        "context_padding": "Context Padding (px)",
+        "processing_roi": "Manual ROI",
         "reset_roi": "Reset ROI to Source",
         "live_mode": "Live Current Frame",
         "process_frame": "Process Current Frame",
@@ -931,7 +1185,7 @@ def _restyle_refine_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 28</font>'
+            '<font color="#91a3b0">ViTMatte + MEMatte | Source + Mask | API 30</font>'
         )
     if "trimap_help" in node.knobs():
         node["trimap_help"].setValue(REFINE_TRIMAP_HELP)
@@ -939,6 +1193,8 @@ def _restyle_refine_ui(node: Any) -> None:
         node["live_help"].setValue(REFINE_LIVE_HELP)
     if "output_help" in node.knobs():
         node["output_help"].setValue(REFINE_OUTPUT_HELP)
+    if "roi_help" in node.knobs():
+        node["roi_help"].setValue(REFINE_ROI_HELP)
 
 
 def upgrade_selected_refine_node() -> None:
@@ -978,7 +1234,7 @@ def upgrade_selected_refine_node() -> None:
 def create_refine_node() -> Any:
     nuke = _nuke()
     selected = nuke.selectedNode() if nuke.selectedNodes() else None
-    node = nuke.nodes.Group(name="KyvenRefine")
+    node = _create_group_at_cursor(nuke, "KyvenRefine")
     node.setInput(SOURCE_INPUT, selected)
     node["label"].setValue("[value kyven_status]")
     node.addKnob(nuke.Tab_Knob("kyven", "Kyven Refine"))
@@ -990,11 +1246,12 @@ def create_refine_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte | Source + Mask | API 28</font>',
+            '<font color="#91a3b0">ViTMatte + MEMatte | Source + Mask | API 30</font>',
         ),
     )
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(REFINE_MODEL_LABELS)))
+    node["model"].setValue(default_model_index("refine", REFINE_MODEL_IDS))
     _add_knob(
         nuke,
         node,
@@ -1050,8 +1307,19 @@ def create_refine_node() -> Any:
     )
 
     _add_section(nuke, node, "roi_section", "PROCESSING ROI / MODEL CROP")
-    _add_knob(nuke, node, nuke.Boolean_Knob("roi_enabled", "Enable Processing ROI"))
-    _add_knob(nuke, node, nuke.BBox_Knob("processing_roi", "Processing ROI"))
+    crop_mode = nuke.Enumeration_Knob(
+        "crop_mode", "Crop Mode", ["auto", "manual", "full"]
+    )
+    crop_mode.setValue("auto")
+    _add_knob(nuke, node, crop_mode)
+    padding = nuke.Int_Knob("context_padding", "Context Padding (px)")
+    padding.setRange(0, 1024)
+    padding.setValue(128)
+    _add_knob(nuke, node, padding)
+    legacy_roi = nuke.Boolean_Knob("roi_enabled", "Legacy Processing ROI")
+    legacy_roi.setVisible(False)
+    _add_knob(nuke, node, legacy_roi)
+    _add_knob(nuke, node, nuke.BBox_Knob("processing_roi", "Manual ROI"))
     _add_knob(
         nuke,
         node,
@@ -1059,6 +1327,7 @@ def create_refine_node() -> Any:
             "reset_roi", "Reset ROI to Source", "kyven_nuke.refine_node.reset_roi_to_input()"
         ),
     )
+    _add_knob(nuke, node, nuke.Text_Knob("roi_help", "", REFINE_ROI_HELP))
 
     _add_section(nuke, node, "processing_section", "INDEPENDENT FRAME PROCESSING")
     _ensure_live_controls(node, "refine")
@@ -1166,6 +1435,7 @@ def create_refine_node() -> Any:
     _restyle_refine_ui(node)
     reset_roi_to_input_for_node(node)
     knob_changed_for_node(node)
+    _set_operation_controls(node, False)
     return node
 
 
@@ -1178,9 +1448,15 @@ def reset_roi_to_input_for_node(node: Any) -> None:
 
 
 def knob_changed_for_node(node: Any) -> None:
+    _clamp_bbox_knob(node, "processing_roi", SOURCE_INPUT)
     generated = bool(node["generate_trimap"].value())
     node["foreground_radius"].setVisible(generated)
     node["background_radius"].setVisible(generated)
-    node["processing_roi"].setVisible(bool(node["roi_enabled"].value()))
+    crop_mode = str(node["crop_mode"].value())
+    node["processing_roi"].setVisible(crop_mode == "manual")
+    node["reset_roi"].setVisible(crop_mode == "manual")
+    node["context_padding"].setVisible(crop_mode == "auto")
+    if "roi_enabled" in node.knobs():
+        node["roi_enabled"].setVisible(False)
     if node.input(MASK_INPUT) is not None:
         request_trimap_preview(node)

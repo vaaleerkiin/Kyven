@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from kyven.cache_manifest import read_valid_manifest, write_manifest_atomic
 from kyven.cancellation import CancellationToken
 from kyven.segment.models import SegmentPrediction, SegmentRequest, SegmentResult
 from kyven.segment.output import confidence_trimap, write_logits_npz_atomic, write_mask_png_atomic
@@ -36,6 +37,34 @@ class SegmentService:
         token.report_progress(0.05, "Preparing segmentation")
         provider = self._registry.activate(request.provider_id)
         capabilities = provider.capabilities
+        cache_key = request.cache_key(
+            provider_version=capabilities.provider_version,
+            model_checksum=capabilities.model_checksum,
+        )
+        required = (
+            request.output,
+            request.raw_output,
+            request.logits_output,
+            request.trimap_output,
+        )
+        cached = read_valid_manifest(request.output, cache_key, required)
+        if cached is not None:
+            if request.trimap_output is not None and request.logits_output is not None:
+                from kyven.segment.output import read_logits_npz
+
+                write_mask_png_atomic(
+                    request.trimap_output,
+                    confidence_trimap(read_logits_npz(request.logits_output), request.confidence_width),
+                )
+            metadata = dict(cached.get("metadata") or {})
+            metadata["cache_hit"] = True
+            token.report_progress(1.0, "Reused cached segmentation")
+            return SegmentResult(
+                output=request.output,
+                score=float(cached.get("score") or 0.0),
+                cache_key=cache_key,
+                metadata=metadata,
+            )
         prediction = self._predict(provider, request, token)
         token.raise_if_cancelled()
         token.report_progress(0.90, "Post-processing matte")
@@ -70,9 +99,12 @@ class SegmentService:
         write_mask_png_atomic(request.output, mask)
         token.report_progress(1.0, "Segmentation complete")
 
-        cache_key = request.cache_key(
-            provider_version=capabilities.provider_version,
-            model_checksum=capabilities.model_checksum,
+        metadata["cache_hit"] = False
+        write_manifest_atomic(
+            request.output,
+            cache_key,
+            metadata,
+            score=float(prediction.score),
         )
         return SegmentResult(
             output=request.output,

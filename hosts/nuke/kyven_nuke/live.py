@@ -17,6 +17,8 @@ def affects_live_result(knob_name: str, kind: str) -> bool:
         return knob_name in {
             "model",
             "profile",
+            "crop_mode",
+            "context_padding",
             "roi_enabled",
             "processing_roi",
             "tile_size",

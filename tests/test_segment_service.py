@@ -66,7 +66,56 @@ class LogitProvider(SyntheticProvider):
         return SegmentPrediction(mask=logits > 0, logits=logits, score=0.95)
 
 
+class CountingProvider(SyntheticProvider):
+    calls = 0
+
+    def predict(self, request, cancellation):
+        type(self).calls += 1
+        return super().predict(request, cancellation)
+
+
 class SegmentServiceTests(unittest.TestCase):
+    def test_corrupt_source_is_reported_as_invalid_request(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            source.write_bytes(b"not an image")
+            request = SegmentRequest(
+                source=source,
+                output=root / "mask.png",
+                points=(PointPrompt(1, 1),),
+            )
+            with self.assertRaises(KyvenError) as caught:
+                request.validate()
+            self.assertEqual(caught.exception.code, ErrorCode.INVALID_REQUEST)
+            self.assertIn("corrupt", caught.exception.message)
+
+    def test_valid_manifest_skips_inference_and_corruption_invalidates_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            output = root / "mask.png"
+            Image.new("RGB", (2, 2), "white").save(source)
+            registry = ProviderRegistry()
+            registry.register("counting", CountingProvider)
+            request = SegmentRequest(
+                source=source,
+                output=output,
+                points=(PointPrompt(1, 1),),
+                provider_id="counting",
+            )
+            CountingProvider.calls = 0
+            service = SegmentService(registry)
+            first = service.run(request)
+            second = service.run(request)
+            self.assertEqual(CountingProvider.calls, 1)
+            self.assertFalse(first.metadata["cache_hit"])
+            self.assertTrue(second.metadata["cache_hit"])
+
+            output.write_bytes(b"not a png")
+            third = service.run(request)
+            self.assertEqual(CountingProvider.calls, 2)
+            self.assertFalse(third.metadata["cache_hit"])
     def test_service_preserves_logits_and_writes_confidence_trimap(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -107,6 +156,7 @@ class SegmentServiceTests(unittest.TestCase):
                     output=output,
                     points=(PointPrompt(2, 2),),
                     provider_id="holes",
+                    fill_holes=True,
                     max_hole_area=10,
                 )
             )

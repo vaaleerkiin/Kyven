@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 
 from kyven.cancellation import CancellationToken
 from kyven.segment.models import ProviderCapabilities, SegmentPrediction, SegmentRequest
 from kyven.segment.providers.base import SegmentationProvider
 from kyven.segment.providers.registry import ProviderRegistry
+from kyven.segment.providers.sam2 import _make_standard_decoder_hq_predictor_compatible
 
 
 class FakeProvider(SegmentationProvider):
@@ -23,6 +25,17 @@ class FakeProvider(SegmentationProvider):
 
 
 class ProviderRegistryTests(unittest.TestCase):
+    def test_standard_decoder_ignores_hq_predictor_keyword(self) -> None:
+        class StandardDecoder:
+            def forward(self, *, value):
+                return value
+
+        decoder = StandardDecoder()
+        model = SimpleNamespace(sam_mask_decoder=decoder)
+        _make_standard_decoder_hq_predictor_compatible(model)
+
+        self.assertEqual(decoder.forward(value="mask", hq_token_only=False), "mask")
+
     def test_factory_is_lazy_and_instance_is_reused(self) -> None:
         created: list[FakeProvider] = []
 

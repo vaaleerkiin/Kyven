@@ -12,15 +12,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from kyven.errors import ErrorCode, KyvenError
+from kyven.hashing import file_sha256
+from kyven.media import validate_image_file
 from kyven.segment.models import BoxPrompt, ExecutionProfile
-
-
-def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +27,9 @@ class RefineRequest:
     trimap_output: Path | None = None
     provider_id: str = "vitmatte-small-composition-1k"
     profile: ExecutionProfile = ExecutionProfile.BALANCED
+    crop_mode: str = "full"
     roi: BoxPrompt | None = None
+    context_padding: int = 128
     generate_trimap: bool = True
     foreground_radius: int = 10
     background_radius: int = 15
@@ -42,11 +38,22 @@ class RefineRequest:
 
     def validate(self) -> None:
         for label, path in (("Source", self.source), ("Mask/trimap", self.mask)):
-            if not path.is_file():
-                raise KyvenError(
-                    code=ErrorCode.INVALID_REQUEST,
-                    message=f"{label} image does not exist: {path}",
-                )
+            validate_image_file(path, label)
+        if self.crop_mode not in {"auto", "manual", "full"}:
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="Refinement crop mode must be auto, manual, or full.",
+            )
+        if self.crop_mode == "manual" and self.roi is None:
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="Manual refinement crop mode requires an ROI.",
+            )
+        if self.context_padding < 0:
+            raise KyvenError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="Refinement context padding must be zero or greater.",
+            )
         if self.foreground_radius < 0 or self.background_radius < 0:
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
@@ -67,7 +74,9 @@ class RefineRequest:
         return {
             "provider_id": self.provider_id,
             "profile": self.profile.value,
+            "crop_mode": self.crop_mode,
             "roi": self.roi.canonical() if self.roi else None,
+            "context_padding": self.context_padding,
             "generate_trimap": self.generate_trimap,
             "foreground_radius": self.foreground_radius,
             "background_radius": self.background_radius,
@@ -77,8 +86,8 @@ class RefineRequest:
 
     def cache_key(self, provider_version: str, model_checksum: str) -> str:
         payload = {
-            "source_sha256": _file_sha256(self.source),
-            "mask_sha256": _file_sha256(self.mask),
+            "source_sha256": file_sha256(self.source),
+            "mask_sha256": file_sha256(self.mask),
             "request": self.canonical(),
             "provider_version": provider_version,
             "model_checksum": model_checksum,

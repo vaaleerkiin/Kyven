@@ -39,6 +39,29 @@ class FakeInpaintProvider:
 
 
 class InpaintServiceTests(unittest.TestCase):
+    def test_valid_inpaint_manifest_skips_second_inference(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            mask = root / "mask.png"
+            output = root / "output.png"
+            Image.new("RGB", (8, 8), "gray").save(source)
+            Image.new("L", (8, 8), 255).save(mask)
+            provider = FakeInpaintProvider()
+            request = InpaintRequest(
+                source,
+                mask,
+                output,
+                provider_id="fake",
+                crop_mode="full",
+            )
+            service = InpaintService(self._registry(provider))
+            first = service.run(request)
+            second = service.run(request)
+            self.assertEqual(len(provider.requests), 1)
+            self.assertFalse(first.metadata["cache_hit"])
+            self.assertTrue(second.metadata["cache_hit"])
+
     def test_big_lama_padding_matches_cattery_symmetric_wrapper(self) -> None:
         self.assertEqual(symmetric_modulo_padding(303, 225), (1, 0, 4, 3))
         self.assertEqual(symmetric_modulo_padding(2048, 1080), (0, 0, 0, 0))

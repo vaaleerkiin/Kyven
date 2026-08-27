@@ -30,7 +30,10 @@ vitmatte = [
   "transformers==4.53.2",
   "safetensors>=0.4.5,<1",
 ]
-
+mematte = [
+  "torch>=2.5.1",
+  "timm>=1.0,<2",
+]
 [project.scripts]
 kyven = "kyven.cli:main"
 
@@ -38,7 +41,7 @@ kyven = "kyven.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-kyven = ["resources/**/*.json"]
+kyven = ["resources/**/*.json", "resources/**/*.yaml"]
 
 [tool.ruff]
 line-length = 100

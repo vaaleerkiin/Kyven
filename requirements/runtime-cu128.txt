@@ -2,6 +2,7 @@
 
 torch==2.10.0+cu128
 torchvision==0.25.0+cu128
-SAM-2 @ https://github.com/facebookresearch/sam2/archive/2b90b9f5ceec907a1c18123530e92e794ad901a4.zip
+HQ-SAM-2 @ https://github.com/SysCV/sam-hq/archive/e696978d60352dc9a26b12631cd91781502c6546.zip#subdirectory=sam-hq2
 transformers==4.53.2
 safetensors>=0.4.5,<1
+timm>=1.0,<2

@@ -23,6 +23,7 @@ from kyven.server.jobs import JobManager
 
 
 class SyntheticRefinementProvider(RefinementProvider):
+    calls = 0
     @property
     def capabilities(self) -> RefinementCapabilities:
         return RefinementCapabilities(
@@ -42,6 +43,7 @@ class SyntheticRefinementProvider(RefinementProvider):
         request: RefineRequest,
         cancellation: CancellationToken,
     ) -> RefinePrediction:
+        type(self).calls += 1
         cancellation.raise_if_cancelled()
         with Image.open(request.mask) as trimap:
             pixels = np.asarray(trimap.convert("L"))
@@ -91,6 +93,29 @@ class TrimapTests(unittest.TestCase):
 
 
 class RefineServiceTests(unittest.TestCase):
+    def test_valid_refine_manifest_skips_second_inference(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            mask = root / "mask.png"
+            Image.new("RGB", (4, 4), "white").save(source)
+            Image.new("L", (4, 4), 255).save(mask)
+            registry = ProviderRegistry()
+            registry.register("synthetic-refine", SyntheticRefinementProvider)
+            request = RefineRequest(
+                source,
+                mask,
+                root / "alpha.png",
+                provider_id="synthetic-refine",
+            )
+            SyntheticRefinementProvider.calls = 0
+            service = RefineService(registry)
+            first = service.run(request)
+            second = service.run(request)
+            self.assertEqual(SyntheticRefinementProvider.calls, 1)
+            self.assertFalse(first.metadata["cache_hit"])
+            self.assertTrue(second.metadata["cache_hit"])
+
     def test_low_memory_payload_defaults_to_512_pixel_tiles(self) -> None:
         request = JobManager.refine_request_from_payload(
             {
@@ -102,6 +127,62 @@ class RefineServiceTests(unittest.TestCase):
         )
         self.assertEqual(request.tile_size, 512)
         self.assertEqual(request.tile_overlap, 64)
+
+    def test_payload_accepts_auto_crop_with_context(self) -> None:
+        request = JobManager.refine_request_from_payload(
+            {
+                "source": "D:/source.png",
+                "mask": "D:/mask.png",
+                "output": "D:/alpha.png",
+                "crop_mode": "auto",
+                "context_padding": 96,
+            }
+        )
+
+        self.assertEqual(request.crop_mode, "auto")
+        self.assertEqual(request.context_padding, 96)
+        self.assertIsNone(request.roi)
+
+    def test_auto_crop_bounds_full_trimap_and_adds_context(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            mask = root / "mask.png"
+            output = root / "refined.png"
+            Image.new("RGB", (12, 10), "white").save(source)
+            mask_pixels = np.zeros((10, 12), dtype=np.uint8)
+            mask_pixels[4:6, 5:7] = 255
+            Image.fromarray(mask_pixels, mode="L").save(mask)
+            registry = ProviderRegistry()
+            registry.register("synthetic-refine", SyntheticRefinementProvider)
+
+            result = RefineService(registry).run(
+                RefineRequest(
+                    source=source,
+                    mask=mask,
+                    output=output,
+                    provider_id="synthetic-refine",
+                    crop_mode="auto",
+                    context_padding=2,
+                    foreground_radius=0,
+                    background_radius=0,
+                )
+            )
+
+            self.assertEqual(
+                result.metadata["processing_roi"],
+                {
+                    "x0": 3,
+                    "y0": 2,
+                    "x1": 9,
+                    "y1": 8,
+                    "width": 6,
+                    "height": 6,
+                    "source_width": 12,
+                    "source_height": 10,
+                },
+            )
+            self.assertEqual(result.metadata["crop_mode"], "auto")
 
     def test_roi_refinement_restores_full_frame_and_preserves_outside_mask(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -134,7 +215,7 @@ class RefineServiceTests(unittest.TestCase):
                 self.assertIn(matte.getpixel((1, 1)), {127, 128})
             with Image.open(trimap_output) as trimap:
                 self.assertEqual(trimap.size, (8, 8))
-                self.assertEqual(trimap.getpixel((6, 6)), 0)
+                self.assertEqual(trimap.getpixel((6, 6)), 128)
                 self.assertEqual(trimap.getpixel((1, 1)), 128)
             self.assertEqual(result.trimap_output, trimap_output)
             self.assertEqual(result.metadata["processing_roi"]["width"], 4)

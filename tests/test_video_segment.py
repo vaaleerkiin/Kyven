@@ -27,7 +27,28 @@ class VideoSegmentRequestTests(unittest.TestCase):
         captured = {}
 
         class CaptureProvider:
+            calls = 0
+
+            @property
+            def capabilities(self):
+                return ProviderCapabilities(
+                    provider_id="capture",
+                    display_name="Capture",
+                    provider_version="1",
+                    model_family="test",
+                    model_variant="test",
+                    model_checksum="fixture",
+                    license_name="CC0-1.0",
+                    license_url="",
+                    supports_cpu=True,
+                    supports_points=True,
+                    supports_boxes=True,
+                    minimum_vram_mb=0,
+                    supported_profiles=(ExecutionProfile.BALANCED,),
+                )
+
             def propagate_video(self, request, cancellation):
+                type(self).calls += 1
                 captured["corrections"] = request.corrections
                 outputs = []
                 for index in range(request.last_frame - request.first_frame + 1):
@@ -66,7 +87,12 @@ class VideoSegmentRequestTests(unittest.TestCase):
                 fill_holes=False,
             )
 
-            VideoSegmentService(registry).run(request)
+            service = VideoSegmentService(registry)
+            first = service.run(request)
+            second = service.run(request)
+            self.assertEqual(CaptureProvider.calls, 1)
+            self.assertFalse(first.metadata["cache_hit"])
+            self.assertTrue(second.metadata["cache_hit"])
 
         corrections = captured["corrections"]
         self.assertEqual([item.frame for item in corrections], [1, 2])
@@ -186,6 +212,7 @@ class VideoSegmentRequestTests(unittest.TestCase):
                 key_frame=3,
                 direction=VideoDirection.FORWARD,
                 points=(PointPrompt(2, 2),),
+                fill_holes=True,
                 max_hole_area=10,
             )
             result = VideoSegmentResult(

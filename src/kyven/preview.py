@@ -146,7 +146,7 @@ def postprocess_mask_preview(payload: dict[str, Any]) -> dict[str, Any]:
             technical_detail=str(exc),
         ) from exc
 
-    enabled = bool(payload.get("fill_holes", True))
+    enabled = bool(payload.get("fill_holes", False))
     if enabled:
         result = fill_enclosed_holes(raw_mask, max_hole_area)
         mask = result.mask

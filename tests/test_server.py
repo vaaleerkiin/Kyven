@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -96,6 +97,42 @@ class ServerRefineProvider(RefinementProvider):
 
 
 class ServerTests(unittest.TestCase):
+    def test_identical_active_jobs_are_single_flight(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+
+        class BlockingProvider(ServerSyntheticProvider):
+            def predict(self, request, cancellation):
+                started.set()
+                self.assert_released = release.wait(timeout=2)
+                return super().predict(request, cancellation)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            Image.new("RGB", (4, 4), "white").save(source)
+            registry = ProviderRegistry()
+            registry.register("sam2.1-small", BlockingProvider)
+            manager = JobManager(SegmentService(registry))
+            payload = {
+                "source": str(source.resolve()),
+                "output": str((root / "output.png").resolve()),
+                "points": [{"x": 1, "y": 1, "label": "positive"}],
+                "model_id": "sam2.1-small",
+                "profile": "balanced",
+            }
+            try:
+                first = manager.submit_segment(payload)
+                self.assertTrue(started.wait(timeout=2))
+                second = manager.submit_segment(dict(payload))
+                self.assertEqual(first, second)
+                Image.new("RGB", (4, 4), "black").save(source)
+                changed_source = manager.submit_segment(dict(payload))
+                self.assertNotEqual(first, changed_source)
+            finally:
+                release.set()
+                manager.shutdown()
+
     def test_authenticated_http_job_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -120,9 +157,12 @@ class ServerTests(unittest.TestCase):
             server.start()
             try:
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
-                self.assertEqual(client.health()["status"], "ok")
-                self.assertEqual(client.health()["api_version"], 28)
-                self.assertEqual(len(client.models()), 8)
+                health = client.health()
+                self.assertEqual(health["status"], "ok")
+                self.assertEqual(health["api_version"], 30)
+                self.assertEqual(health["loaded_providers"], [])
+                self.assertIn("counts", health["jobs"])
+                self.assertEqual(len(client.models()), 11)
                 operation_id = client.start_model_remove("sam2.1-tiny")
                 deadline = time.monotonic() + 5
                 while True:

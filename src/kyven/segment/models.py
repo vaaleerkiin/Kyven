@@ -13,6 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from kyven.errors import ErrorCode, KyvenError
+from kyven.media import validate_image_file
 
 
 class PointLabel(str, Enum):
@@ -75,7 +76,7 @@ class SegmentRequest:
     provider_id: str = "sam2"
     profile: ExecutionProfile = ExecutionProfile.BALANCED
     multimask_output: bool = True
-    fill_holes: bool = True
+    fill_holes: bool = False
     max_hole_area: int = 2_048
     raw_output: Path | None = None
     logits_output: Path | None = None
@@ -83,12 +84,7 @@ class SegmentRequest:
     confidence_width: float = 1.0
 
     def validate(self) -> None:
-        if not self.source.is_file():
-            raise KyvenError(
-                code=ErrorCode.INVALID_REQUEST,
-                message=f"Source image does not exist: {self.source}",
-                suggested_action="Choose an existing image file.",
-            )
+        validate_image_file(self.source, "Source")
         if not self.points and self.box is None:
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,

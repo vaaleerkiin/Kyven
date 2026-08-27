@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
 from contextlib import nullcontext
 from pathlib import Path
+from threading import RLock
+from types import MethodType
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -12,6 +13,7 @@ from PIL import Image
 
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
+from kyven.hashing import cached_file_sha256
 from kyven.segment.models import (
     ExecutionProfile,
     PointLabel,
@@ -25,6 +27,26 @@ if TYPE_CHECKING:
     from kyven.segment.video import VideoSegmentRequest, VideoSegmentResult
 
 
+_HYDRA_CONFIG_LOCK = RLock()
+
+
+def _make_standard_decoder_hq_predictor_compatible(model: Any) -> None:
+    """Ignore the HQ-only predictor kwarg when the selected model has a standard decoder."""
+    decoder = model.sam_mask_decoder
+    original_forward = decoder.forward
+
+    def compatible_forward(
+        _decoder: Any,
+        *args: Any,
+        hq_token_only: bool = False,
+        **kwargs: Any,
+    ) -> Any:
+        del hq_token_only
+        return original_forward(*args, **kwargs)
+
+    decoder.forward = MethodType(compatible_forward, decoder)
+
+
 class Sam2Provider(SegmentationProvider):
     """SAM 2.1 adapter with no import or VRAM use until prediction begins."""
 
@@ -36,6 +58,9 @@ class Sam2Provider(SegmentationProvider):
         expected_checksum: str | None = None,
         provider_id: str = "sam2",
         display_name: str = "SAM 2.1",
+        hq: bool = False,
+        minimum_vram_mb: int | None = None,
+        license_url: str = "https://github.com/facebookresearch/sam2/blob/main/LICENSE",
     ) -> None:
         self._checkpoint = Path(checkpoint)
         self._model_config = model_config
@@ -43,6 +68,9 @@ class Sam2Provider(SegmentationProvider):
         self._expected_checksum = expected_checksum
         self._provider_id = provider_id
         self._display_name = display_name
+        self._hq = hq
+        self._minimum_vram_mb = minimum_vram_mb
+        self._license_url = license_url
         self._resolved_device = "unresolved"
         self._predictor: Any | None = None
         self._video_predictor: Any | None = None
@@ -55,15 +83,15 @@ class Sam2Provider(SegmentationProvider):
             provider_id=self._provider_id,
             display_name=self._display_name,
             provider_version="1",
-            model_family="sam2",
+            model_family="hq-sam2" if self._hq else "sam2",
             model_variant=self._model_config,
             model_checksum=checksum,
             license_name="Apache-2.0",
-            license_url="https://github.com/facebookresearch/sam2/blob/main/LICENSE",
+            license_url=self._license_url,
             supports_cpu=True,
             supports_points=True,
             supports_boxes=True,
-            minimum_vram_mb=None,
+            minimum_vram_mb=self._minimum_vram_mb,
             supported_profiles=(
                 ExecutionProfile.LOW_MEMORY,
                 ExecutionProfile.BALANCED,
@@ -76,12 +104,31 @@ class Sam2Provider(SegmentationProvider):
             return self._checkpoint_checksum
         if not self._checkpoint.is_file():
             return "missing"
-        digest = hashlib.sha256()
-        with self._checkpoint.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(chunk)
-        self._checkpoint_checksum = digest.hexdigest()
+        self._checkpoint_checksum = cached_file_sha256(self._checkpoint)
         return self._checkpoint_checksum
+
+    def _build_model(self, builder: Any) -> Any:
+        """Build against Kyven's pinned configs; upstream HQ wheels omit their YAML files."""
+        from hydra import initialize_config_dir
+        from hydra.core.global_hydra import GlobalHydra
+
+        config_root = Path(__file__).parents[2] / "resources" / "models" / "sam2_configs"
+        config_name = self._model_config.removeprefix("configs/")
+        with _HYDRA_CONFIG_LOCK:
+            GlobalHydra.instance().clear()
+            try:
+                with initialize_config_dir(
+                    version_base="1.2",
+                    config_dir=str(config_root),
+                    job_name="kyven-sam2",
+                ):
+                    return builder(
+                        config_name,
+                        str(self._checkpoint),
+                        device=self._resolved_device,
+                    )
+            finally:
+                GlobalHydra.instance().clear()
 
     def _load(self) -> Any:
         if self._predictor is not None:
@@ -124,11 +171,9 @@ class Sam2Provider(SegmentationProvider):
             self._resolved_device = self._requested_device
 
         try:
-            model = build_sam2(
-                self._model_config,
-                str(self._checkpoint),
-                device=self._resolved_device,
-            )
+            model = self._build_model(build_sam2)
+            if not self._hq:
+                _make_standard_decoder_hq_predictor_compatible(model)
             self._predictor = SAM2ImagePredictor(model)
             self._calculate_checksum_if_present()
             return self._predictor
@@ -158,7 +203,10 @@ class Sam2Provider(SegmentationProvider):
             )
         try:
             import torch
-            from sam2.build_sam import build_sam2_video_predictor
+            if self._hq:
+                from sam2.build_sam import build_sam2_hq_video_predictor as builder
+            else:
+                from sam2.build_sam import build_sam2_video_predictor as builder
         except ImportError as exc:
             raise KyvenError(
                 code=ErrorCode.DEPENDENCY_MISSING,
@@ -172,11 +220,7 @@ class Sam2Provider(SegmentationProvider):
             self._resolved_device = "cpu"
         self._release_models()
         try:
-            self._video_predictor = build_sam2_video_predictor(
-                self._model_config,
-                str(self._checkpoint),
-                device=self._resolved_device,
-            )
+            self._video_predictor = self._build_model(builder)
             return self._video_predictor
         except Exception as exc:
             raise KyvenError(

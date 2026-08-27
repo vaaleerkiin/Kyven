@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import threading
 import time
 import traceback
@@ -54,9 +56,11 @@ class JobRecord:
     finished_at: float | None = None
     result: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
+    fingerprint: str = ""
 
     def snapshot(self) -> dict[str, Any]:
         progress, progress_message = self.cancellation.progress_snapshot()
+        now = self.finished_at or time.time()
         return {
             "job_id": self.job_id,
             "status": self.status.value,
@@ -67,6 +71,14 @@ class JobRecord:
             "error": self.error,
             "progress": progress,
             "progress_message": progress_message,
+            "queue_seconds": (
+                max(0.0, (self.started_at or now) - self.created_at)
+                if self.started_at is not None or self.finished_at is not None
+                else max(0.0, now - self.created_at)
+            ),
+            "run_seconds": (
+                max(0.0, now - self.started_at) if self.started_at is not None else 0.0
+            ),
         }
 
 
@@ -86,7 +98,87 @@ class JobManager:
         self._inpaint_service = inpaint_service
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kyven-gpu")
         self._jobs: dict[str, JobRecord] = {}
+        self._active_fingerprints: dict[str, str] = {}
+        self._max_job_history = 500
         self._lock = threading.RLock()
+
+    def _prune_finished_jobs(self) -> None:
+        overflow = len(self._jobs) - self._max_job_history + 1
+        if overflow <= 0:
+            return
+        finished = sorted(
+            (
+                record
+                for record in self._jobs.values()
+                if record.status in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED}
+            ),
+            key=lambda record: record.finished_at or record.created_at,
+        )
+        for record in finished[:overflow]:
+            self._jobs.pop(record.job_id, None)
+
+    @staticmethod
+    def _payload_fingerprint(kind: str, payload: dict[str, Any]) -> str:
+        input_state: dict[str, Any] = {}
+        for input_field in ("source", "mask", "model_mask"):
+            value = payload.get(input_field)
+            if not value:
+                continue
+            path = Path(str(value))
+            try:
+                stat = path.stat()
+                input_state[input_field] = [stat.st_size, stat.st_mtime_ns]
+            except OSError:
+                input_state[input_field] = None
+        frames_value = payload.get("frames_dir")
+        if frames_value:
+            frames_dir = Path(str(frames_value))
+            try:
+                input_state["frames"] = [
+                    [path.name, path.stat().st_size, path.stat().st_mtime_ns]
+                    for path in sorted(frames_dir.iterdir())
+                    if path.suffix.lower() in {".jpg", ".jpeg"}
+                ]
+            except OSError:
+                input_state["frames"] = None
+        encoded = json.dumps(
+            {"kind": kind, "payload": payload, "input_state": input_state},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def _enqueue(self, kind: str, payload: dict[str, Any], request: Any, runner: Any) -> str:
+        """Submit one active copy of a deterministic request."""
+
+        fingerprint = self._payload_fingerprint(kind, payload)
+        with self._lock:
+            self._prune_finished_jobs()
+            existing_id = self._active_fingerprints.get(fingerprint)
+            if existing_id is not None:
+                existing = self._jobs.get(existing_id)
+                if existing is not None and existing.status in {JobStatus.QUEUED, JobStatus.RUNNING}:
+                    return existing_id
+                self._active_fingerprints.pop(fingerprint, None)
+            record = JobRecord(
+                job_id=uuid.uuid4().hex,
+                request=request,
+                fingerprint=fingerprint,
+            )
+            self._jobs[record.job_id] = record
+            self._active_fingerprints[fingerprint] = record.job_id
+        try:
+            self._executor.submit(runner, record)
+        except Exception:
+            with self._lock:
+                self._jobs.pop(record.job_id, None)
+                self._active_fingerprints.pop(fingerprint, None)
+            raise
+        return record.job_id
+
+    def _release_fingerprint(self, record: JobRecord) -> None:
+        if self._active_fingerprints.get(record.fingerprint) == record.job_id:
+            self._active_fingerprints.pop(record.fingerprint, None)
 
     @staticmethod
     def _box_from_payload(payload: dict[str, Any], field: str) -> BoxPrompt | None:
@@ -145,7 +237,7 @@ class JobManager:
             provider_id=str(payload.get("model_id", "sam2.1-small")),
             profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
             multimask_output=bool(payload.get("multimask_output", True)),
-            fill_holes=bool(payload.get("fill_holes", True)),
+            fill_holes=bool(payload.get("fill_holes", False)),
             max_hole_area=int(payload.get("max_hole_area", 2_048)),
         )
 
@@ -160,11 +252,7 @@ class JobManager:
                 technical_detail=str(exc),
                 suggested_action="Check source, output, points, box, ROI, model, and profile fields.",
             ) from exc
-        record = JobRecord(job_id=uuid.uuid4().hex, request=request)
-        with self._lock:
-            self._jobs[record.job_id] = record
-        self._executor.submit(self._run, record)
-        return record.job_id
+        return self._enqueue("segment", payload, request, self._run)
 
     @staticmethod
     def video_request_from_payload(payload: dict[str, Any]) -> VideoSegmentRequest:
@@ -242,7 +330,7 @@ class JobManager:
             profile=ExecutionProfile(str(payload.get("profile", "balanced"))),
             offload_video_to_cpu=bool(payload.get("offload_video_to_cpu", True)),
             offload_state_to_cpu=bool(payload.get("offload_state_to_cpu", True)),
-            fill_holes=bool(payload.get("fill_holes", True)),
+            fill_holes=bool(payload.get("fill_holes", False)),
             max_hole_area=int(payload.get("max_hole_area", 2_048)),
             raw_output_pattern=raw_output_pattern,
             logits_output_pattern=logits_output_pattern,
@@ -265,11 +353,7 @@ class JobManager:
                 message="The video segmentation payload is invalid.",
                 technical_detail=str(exc),
             ) from exc
-        record = JobRecord(job_id=uuid.uuid4().hex, request=request)
-        with self._lock:
-            self._jobs[record.job_id] = record
-        self._executor.submit(self._run_video, record)
-        return record.job_id
+        return self._enqueue("segment-video", payload, request, self._run_video)
 
     @staticmethod
     def refine_request_from_payload(payload: dict[str, Any]) -> RefineRequest:
@@ -287,8 +371,12 @@ class JobManager:
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
                 message="Refinement job paths must be absolute.",
-            )
+        )
         roi = JobManager._box_from_payload(payload, "roi")
+        crop_mode_value = payload.get("crop_mode")
+        crop_mode = str(crop_mode_value) if crop_mode_value is not None else (
+            "manual" if roi is not None else "full"
+        )
         profile = ExecutionProfile(str(payload.get("profile", "balanced")))
         default_tile = {
             ExecutionProfile.LOW_MEMORY: 512,
@@ -302,7 +390,9 @@ class JobManager:
             trimap_output=trimap_output,
             provider_id=str(payload.get("model_id", "vitmatte-small-composition-1k")),
             profile=profile,
+            crop_mode=crop_mode,
             roi=roi,
+            context_padding=int(payload.get("context_padding", 128)),
             generate_trimap=bool(payload.get("generate_trimap", True)),
             foreground_radius=int(payload.get("foreground_radius", 10)),
             background_radius=int(payload.get("background_radius", 15)),
@@ -325,11 +415,7 @@ class JobManager:
                 message="The refinement job payload is invalid.",
                 technical_detail=str(exc),
             ) from exc
-        record = JobRecord(job_id=uuid.uuid4().hex, request=request)
-        with self._lock:
-            self._jobs[record.job_id] = record
-        self._executor.submit(self._run_refine, record)
-        return record.job_id
+        return self._enqueue("refine", payload, request, self._run_refine)
 
     @staticmethod
     def inpaint_request_from_payload(
@@ -381,11 +467,7 @@ class JobManager:
             request.validate()
         except (KeyError, TypeError, ValueError) as exc:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "The inpaint job payload is invalid.", technical_detail=str(exc)) from exc
-        record = JobRecord(job_id=uuid.uuid4().hex, request=request)
-        with self._lock:
-            self._jobs[record.job_id] = record
-        self._executor.submit(self._run_inpaint, record)
-        return record.job_id
+        return self._enqueue("inpaint", payload, request, self._run_inpaint)
 
     def _run(self, record: JobRecord) -> None:
         with self._lock:
@@ -435,6 +517,7 @@ class JobManager:
         finally:
             with self._lock:
                 record.finished_at = time.time()
+                self._release_fingerprint(record)
 
     def _run_video(self, record: JobRecord) -> None:
         with self._lock:
@@ -482,6 +565,7 @@ class JobManager:
         finally:
             with self._lock:
                 record.finished_at = time.time()
+                self._release_fingerprint(record)
 
     def _run_refine(self, record: JobRecord) -> None:
         with self._lock:
@@ -528,6 +612,7 @@ class JobManager:
         finally:
             with self._lock:
                 record.finished_at = time.time()
+                self._release_fingerprint(record)
 
     def _run_inpaint(self, record: JobRecord) -> None:
         with self._lock:
@@ -573,6 +658,7 @@ class JobManager:
         finally:
             with self._lock:
                 record.finished_at = time.time()
+                self._release_fingerprint(record)
 
     def get(self, job_id: str) -> dict[str, Any]:
         with self._lock:
@@ -583,6 +669,20 @@ class JobManager:
                     message=f"Kyven job was not found: {job_id}",
                 )
             return record.snapshot()
+
+    def summary(self) -> dict[str, Any]:
+        with self._lock:
+            counts = {status.value: 0 for status in JobStatus}
+            active_job_id = None
+            for record in self._jobs.values():
+                counts[record.status.value] += 1
+                if record.status is JobStatus.RUNNING:
+                    active_job_id = record.job_id
+            return {
+                "counts": counts,
+                "active_job_id": active_job_id,
+                "history_limit": self._max_job_history,
+            }
 
     def cancel(self, job_id: str) -> dict[str, Any]:
         with self._lock:
@@ -596,9 +696,18 @@ class JobManager:
             if record.status is JobStatus.QUEUED:
                 record.status = JobStatus.CANCELLED
                 record.finished_at = time.time()
+                self._release_fingerprint(record)
             return record.snapshot()
 
     def shutdown(self) -> None:
+        with self._lock:
+            for record in self._jobs.values():
+                if record.status in {JobStatus.QUEUED, JobStatus.RUNNING}:
+                    record.cancellation.cancel()
+                    if record.status is JobStatus.QUEUED:
+                        record.status = JobStatus.CANCELLED
+                        record.finished_at = time.time()
+                        self._release_fingerprint(record)
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     def unload_all(self, registry: ProviderRegistry) -> None:

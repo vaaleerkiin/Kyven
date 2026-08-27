@@ -14,23 +14,35 @@ from kyven_nuke.color_management import set_data_io
 from kyven_nuke.node import (
     _add_knob,
     _add_section,
+    _begin_node_operation,
     _cache_root,
+    _clamp_bbox_knob,
+    _clear_sequence_frames,
+    _create_group_at_cursor,
+    _ensure_cache_version_control,
     _ensure_double_slider,
     _ensure_live_controls,
     _ensure_server_controls,
     _finish_progress,
     _inside,
     _job_error_text,
+    _job_timing_text,
+    _missing_sequence_frames,
     _nuke,
     _nuke_file_path,
+    _operation_node,
     _place_knob_after,
     _progress_cancelled,
+    _refresh_node_output,
+    _server_progress,
     _set_busy,
+    _set_operation_controls,
     _set_status,
     _start_progress,
     _update_progress,
 )
-from kyven_nuke.payload import INPAINT_MODEL_LABELS, inpaint_payload
+from kyven_nuke.payload import INPAINT_MODEL_IDS, INPAINT_MODEL_LABELS, inpaint_payload
+from kyven_nuke.preferences import default_model_index
 from kyven_nuke.runtime import ensure_server
 
 INPAINT_OUTPUT_MODES = (
@@ -45,6 +57,14 @@ CATTERY_DEFAULT_INPUT_COLORSPACE = "Linear"
 CATTERY_MODEL_COLORSPACE = "sRGB"
 MASK_INPUT = 0
 SOURCE_INPUT = 1
+_export_cancellations: set[str] = set()
+_export_cancel_lock = threading.RLock()
+
+
+def _export_cancelled(node_name: str) -> bool:
+    with _export_cancel_lock:
+        requested = node_name in _export_cancellations
+    return requested or _progress_cancelled(node_name)
 
 
 def _wire_patch_over_source(merge: Any, patch: Any, source: Any) -> None:
@@ -463,7 +483,7 @@ def _apply(
     display_name: str = "Inpaint",
     expected_job_id: str | None = None,
 ) -> None:
-    node = _nuke().toNode(node_name)
+    node = _operation_node(node_name)
     if node is None: return
     if expected_job_id is not None and str(node["kyven_job_id"].value()) != expected_job_id:
         return
@@ -474,9 +494,14 @@ def _apply(
     _set_result(node, output)
     _set_processed_mask(node, processed_mask)
     _set_patch(node, patch)
-    roi = (job.get("result") or {}).get("metadata", {}).get("processing_roi")
+    metadata = (job.get("result") or {}).get("metadata", {})
+    roi = metadata.get("processing_roi")
     suffix = f" | crop {roi['width']}x{roi['height']}" if roi else ""
+    if metadata.get("cache_hit"):
+        suffix += " | cache hit"
+    suffix += _job_timing_text(job)
     _set_status(node_name, f"{display_name} complete{suffix}")
+    _refresh_node_output(node)
 
 
 def process_current_frame_for_node(
@@ -488,10 +513,6 @@ def process_current_frame_for_node(
 ) -> None:
     nuke = _nuke()
     node_name = str(node.fullName())
-    if bool(node["kyven_busy"].value()):
-        if not live:
-            _set_status(node_name, f"{display_name} is already processing this node.")
-        return
     _ensure_input_order(node)
     source, mask = node.input(SOURCE_INPUT), node.input(MASK_INPUT)
     if source is None or mask is None:
@@ -501,7 +522,6 @@ def process_current_frame_for_node(
     if _inside(node, "KyvenInpaintModelMaskWrite") is None:
         _ensure_inpaint_preview_graph(node)
     _configure_color_io(node)
-    _set_busy(node_name, True)
     frame = int(nuke.frame())
     source_path, mask_path, model_mask_path, output_path, processed_mask_path, patch_path = _paths(node, frame)
     source_path.parent.mkdir(parents=True, exist_ok=True)
@@ -515,14 +535,33 @@ def process_current_frame_for_node(
         mask_path = source_path
     else:
         mask_writer["file"].setValue(_nuke_file_path(mask_path))
+    if not _begin_node_operation(node):
+        if not live:
+            _set_status(node_name, f"{display_name} is already processing this node.")
+        return
+    with _export_cancel_lock:
+        _export_cancellations.discard(node_name)
     _set_status(node.fullName(), "Exporting inpaint inputs...")
     show_progress = not live
     if show_progress:
         _start_progress(node_name, f"Kyven {display_name}", f"Exporting frame {frame}")
     try:
         nuke.execute(source_writer, frame, frame)
+        if _export_cancelled(node_name):
+            _set_status(node_name, f"{display_name} export cancelled after Source.")
+            if show_progress:
+                _finish_progress(node_name)
+            _set_busy(node_name, False)
+            return
         nuke.execute(model_mask_writer, frame, frame)
-        if mask_writer is not None: nuke.execute(mask_writer, frame, frame)
+        if _export_cancelled(node_name):
+            _set_status(node_name, f"{display_name} export cancelled after Model Mask.")
+            if show_progress:
+                _finish_progress(node_name)
+            _set_busy(node_name, False)
+            return
+        if mask_writer is not None:
+            nuke.execute(mask_writer, frame, frame)
     except Exception as exc:  # noqa: BLE001
         if show_progress:
             _finish_progress(node_name)
@@ -534,8 +573,9 @@ def process_current_frame_for_node(
     payload = payload_builder(node, source, source_path, mask_path, model_mask_path, output_path, processed_mask_path, patch_path, "alpha" if combined else "luminance")
     def work() -> None:
         try:
-            client = ensure_server(); job_id = getattr(client, submit_method)(payload)
+            client = ensure_server(progress_callback=_server_progress(node_name)); job_id = getattr(client, submit_method)(payload)
             _nuke().executeInMainThread(_set_node_job_id, args=(node_name, job_id))
+            started = time.monotonic()
             last_contact = time.monotonic()
             while True:
                 try:
@@ -552,6 +592,8 @@ def process_current_frame_for_node(
                     time.sleep(0.5)
                     continue
                 if job["status"] in ("succeeded", "failed", "cancelled"): break
+                if time.monotonic() - started > 1800.0:
+                    raise RuntimeError(f"Timed out waiting for {display_name.lower()}.")
                 progress = float(job.get("progress") or 0.0)
                 message = str(job.get("progress_message") or "Inpainting")
                 if show_progress:
@@ -588,16 +630,12 @@ def process_frame_range_for_node(
 ) -> None:
     nuke = _nuke(); _ensure_input_order(node); source, mask = node.input(SOURCE_INPUT), node.input(MASK_INPUT)
     node_name = str(node.fullName())
-    if bool(node["kyven_busy"].value()):
-        _set_status(node_name, f"{display_name} is already processing this node.")
-        return
     first = int(node["range_first"].value()); last = int(node["range_last"].value())
     if source is None or mask is None: nuke.message("Connect Source and Mask first."); return
     if last < first: nuke.message("Range Last must be equal to or greater than Range First."); return
     if _inside(node, "KyvenInpaintModelMaskWrite") is None:
         _ensure_inpaint_preview_graph(node)
     _configure_color_io(node)
-    _set_busy(node_name, True)
     root = _cache_root(node); source_pattern = root / "inpaint_source.%04d.tif"; mask_pattern = root / "inpaint_mask.%04d.png"; model_mask_pattern = root / "inpaint_model_mask.%04d.png"; output_pattern = root / "inpaint_result.%04d.png"; processed_mask_pattern = root / "inpaint_processed_mask.%04d.png"; patch_pattern = root / "inpaint_patch.%04d.png"
     source_writer = _inside(node, "KyvenInpaintSourceWrite")
     model_mask_writer = _inside(node, "KyvenInpaintModelMaskWrite")
@@ -609,20 +647,43 @@ def process_frame_range_for_node(
         mask_pattern = source_pattern
     else:
         mask_writer["file"].setValue(_nuke_file_path(mask_pattern))
+    if not _begin_node_operation(node):
+        _set_status(node_name, f"{display_name} is already processing this node.")
+        return
+    with _export_cancel_lock:
+        _export_cancellations.discard(node_name)
     _start_progress(node_name, f"Kyven {display_name}", f"Exporting frames {first}-{last}")
     try:
-        nuke.execute(source_writer, first, last)
-        nuke.execute(model_mask_writer, first, last)
-        if mask_writer is not None: nuke.execute(mask_writer, first, last)
+        for pattern in {source_pattern, model_mask_pattern, mask_pattern}:
+            _clear_sequence_frames(pattern, first, last)
+        total = last - first + 1
+        for index, frame in enumerate(range(first, last + 1), start=1):
+            if _export_cancelled(node_name):
+                _finish_progress(node_name); _set_busy(node_name, False); _set_status(node_name, f"Inpaint range cancelled before frame {frame}."); return
+            _update_progress(node_name, round((index - 1) / total * 20), f"Exporting Source {frame} ({index}/{total})")
+            nuke.execute(source_writer, frame, frame)
+            if _export_cancelled(node_name):
+                _finish_progress(node_name); _set_busy(node_name, False); _set_status(node_name, f"Inpaint range cancelled after Source {frame}."); return
+            nuke.execute(model_mask_writer, frame, frame)
+            if mask_writer is not None:
+                nuke.execute(mask_writer, frame, frame)
     except Exception as exc:  # noqa: BLE001
         _finish_progress(node_name); _set_busy(node_name, False); nuke.message(f"Inpaint export failed: {exc}"); return
+    required_patterns = [("Source", source_pattern), ("Model Mask", model_mask_pattern)]
+    if mask_writer is not None:
+        required_patterns.append(("Mask", mask_pattern))
+    for kind, pattern in required_patterns:
+        missing = _missing_sequence_frames(pattern, first, last)
+        if missing:
+            _finish_progress(node_name); _set_busy(node_name, False); _set_status(node_name, f"Missing exported inpaint {kind} at frame {missing[0]}."); return
+
     payloads = [
         payload_builder(node, source, Path(str(source_pattern) % frame), Path(str(mask_pattern) % frame), Path(str(model_mask_pattern) % frame), Path(str(output_pattern) % frame), Path(str(processed_mask_pattern) % frame), Path(str(patch_pattern) % frame), "alpha" if combined else "luminance")
         for frame in range(first, last + 1)
     ]
     def work() -> None:
         try:
-            client = ensure_server(); total = len(payloads)
+            client = ensure_server(progress_callback=_server_progress(node_name)); total = len(payloads)
             for index, payload in enumerate(payloads, start=1):
                 cancelled = _nuke().executeInMainThreadWithResult(
                     _progress_cancelled,
@@ -632,7 +693,19 @@ def process_frame_range_for_node(
                     break
                 job_id = getattr(client, submit_method)(payload)
                 _nuke().executeInMainThread(_set_node_job_id, args=(node_name, job_id))
-                job = client.wait(job_id)
+                job = client.wait(
+                    job_id,
+                    cancel_requested=lambda: _nuke().executeInMainThreadWithResult(
+                        _progress_cancelled,
+                        args=(node_name,),
+                    ),
+                )
+                if job["status"] == "cancelled":
+                    _nuke().executeInMainThread(
+                        _set_status,
+                        args=(node_name, f"{display_name} range cancelled at frame {first + index - 1}."),
+                    )
+                    return
                 if job["status"] != "succeeded":
                     error = job.get("error") or {}; raise RuntimeError(error.get("message", job["status"]))
                 _nuke().executeInMainThread(_update_progress, args=(node_name, int(index * 100 / total), f"{display_name} frame {first + index - 1} ({index}/{total})"))
@@ -654,7 +727,7 @@ def process_frame_range_for_node(
 
 
 def _set_node_job_id(node_name: str, job_id: str) -> None:
-    node = _nuke().toNode(node_name)
+    node = _operation_node(node_name)
     if node is not None:
         node["kyven_job_id"].setValue(job_id)
 
@@ -669,13 +742,14 @@ def _apply_range(
     expected_job_id: str,
     display_name: str,
 ) -> None:
-    node = _nuke().toNode(node_name)
+    node = _operation_node(node_name)
     if node is None or str(node["kyven_job_id"].value()) != expected_job_id:
         return
     _set_result(node, output, first, last)
     _set_processed_mask(node, processed_mask, first, last)
     _set_patch(node, patch, first, last)
     _set_status(node_name, f"{display_name} range ready: {first}-{last}")
+    _refresh_node_output(node)
 
 
 def process_frame_range() -> None:
@@ -683,9 +757,18 @@ def process_frame_range() -> None:
 
 
 def cancel_current_job() -> None:
-    node = _nuke().thisNode(); job_id = str(node["kyven_job_id"].value())
+    nuke = _nuke(); node = nuke.thisNode(); node_name = str(node.fullName())
+    with _export_cancel_lock:
+        _export_cancellations.add(node_name)
+    try:
+        nuke.cancel()
+    except Exception:  # noqa: BLE001, S110 - there may be no active Nuke render
+        pass
+    job_id = str(node["kyven_job_id"].value())
     if job_id:
         threading.Thread(target=lambda: ensure_server().cancel(job_id), daemon=True).start()
+    else:
+        _set_status(node_name, "Cancellation requested.")
 
 
 def create_read_from_current_result() -> None:
@@ -733,6 +816,8 @@ def reset_roi_to_input() -> None:
 
 def knob_changed() -> None:
     nuke = _nuke(); node = nuke.thisNode(); knob_name = nuke.thisKnob().name()
+    if knob_name in {"inputChange", "processing_roi", "crop_mode"}:
+        _clamp_bbox_knob(node, "processing_roi", SOURCE_INPUT)
     if knob_name in {
         "output_mode",
         "mask_channel",
@@ -922,6 +1007,7 @@ def _restyle_inpaint_cache(node: Any) -> None:
         "cache_folder": "Cache Folder",
         "cache_location": "Cache Folder",
         "create_result_read": "Create Result Read",
+        "new_cache_version": "New Cache Version",
         "delete_node_cache": "Delete Node Cache",
         "delete_all_cache": "Delete All Kyven Cache",
     }
@@ -938,6 +1024,7 @@ def _restyle_inpaint_cache(node: Any) -> None:
         node["delete_node_cache"].setCommand(
             "kyven_nuke.inpaint_node.delete_this_node_cache()"
         )
+    _ensure_cache_version_control(node)
     if "delete_all_cache" in node.knobs():
         node["delete_all_cache"].setFlag(nuke.STARTLINE)
         node["delete_all_cache"].setCommand("kyven_nuke.node.delete_all_cache()")
@@ -954,12 +1041,12 @@ def _repair_inpaint_interface(node: Any) -> None:
 
     if "kyven" not in node.knobs():
         node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint"))
-    add(nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 28</font>'))
+    add(nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 30</font>'))
     if "model_section" not in node.knobs():
         _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     if "model" not in node.knobs():
         model = nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS))
-        model.setValue(1)
+        model.setValue(default_model_index("inpaint", INPAINT_MODEL_IDS))
         add(model)
     _ensure_input_color_control(node)
     profile = nuke.Enumeration_Knob("profile", "Memory Profile", ["low_memory", "balanced", "quality"])
@@ -1038,6 +1125,7 @@ def _repair_inpaint_interface(node: Any) -> None:
         folder.setValue(str(_cache_root(node)))
         add(folder)
     add(nuke.PyScript_Knob("create_result_read", "Create Result Read", "kyven_nuke.inpaint_node.create_read_from_current_result()"))
+    _ensure_cache_version_control(node)
     add(nuke.PyScript_Knob("delete_node_cache", "Delete Node Cache", "kyven_nuke.inpaint_node.delete_this_node_cache()"), start_line=False)
     add(nuke.PyScript_Knob("delete_all_cache", "Delete All Kyven Cache", "kyven_nuke.node.delete_all_cache()"))
     if "kyven_job_id" not in node.knobs():
@@ -1069,12 +1157,12 @@ def _apply_inpaint_api26_defaults(node: Any) -> None:
 
 def create_inpaint_node() -> Any:
     nuke = _nuke(); selected = nuke.selectedNodes(); source = selected[0] if selected else None; mask = selected[1] if len(selected) > 1 else None
-    node = nuke.nodes.Group(name="KyvenInpaint"); node.setInput(SOURCE_INPUT, source); node.setInput(MASK_INPUT, mask)
+    node = _create_group_at_cursor(nuke, "KyvenInpaint"); node.setInput(SOURCE_INPUT, source); node.setInput(MASK_INPUT, mask)
     node["label"].setValue("[value kyven_status]"); node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint")); add_node_branding(node, nuke)
-    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 28</font>'))
+    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 30</font>'))
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
-    node["model"].setValue(1)
+    node["model"].setValue(default_model_index("inpaint", INPAINT_MODEL_IDS))
     _ensure_input_color_control(node)
     _add_knob(nuke, node, nuke.Enumeration_Knob("profile", "Memory Profile", ["low_memory", "balanced", "quality"])); node["profile"].setValue(1)
     _add_knob(nuke, node, nuke.PyScript_Knob("refresh_models", "Refresh Models", "kyven_nuke.inpaint_node.refresh_models()"))
@@ -1110,6 +1198,7 @@ def create_inpaint_node() -> Any:
     _add_section(nuke, node, "cache_section", "CACHE")
     folder = nuke.String_Knob("cache_location", "Cache Folder"); folder.setFlag(nuke.READ_ONLY); folder.setValue(str(_cache_root(node))); _add_knob(nuke, node, folder)
     _add_knob(nuke, node, nuke.PyScript_Knob("create_result_read", "Create Result Read", "kyven_nuke.inpaint_node.create_read_from_current_result()"))
+    _ensure_cache_version_control(node)
     _add_knob(nuke, node, nuke.PyScript_Knob("delete_node_cache", "Delete Node Cache", "kyven_nuke.inpaint_node.delete_this_node_cache()"), start_line=False)
     _add_knob(nuke, node, nuke.PyScript_Knob("delete_all_cache", "Delete All Kyven Cache", "kyven_nuke.node.delete_all_cache()"))
     job = nuke.String_Knob("kyven_job_id", "Job ID"); job.setVisible(False); node.addKnob(job)
@@ -1147,6 +1236,7 @@ def create_inpaint_node() -> Any:
     node["processing_roi"].setVisible(False)
     _restyle_inpaint_cache(node)
     add_node_branding(node, nuke)
+    _set_operation_controls(node, False)
     return node
 
 
@@ -1161,7 +1251,7 @@ def upgrade_selected_inpaint_node() -> None:
     if not has_inpaint_graph:
         nuke.message("The selected Group is not a Kyven Inpaint node.")
         return
-    legacy_api = "kyven_title" not in node.knobs() or "API 28" not in str(node["kyven_title"].value())
+    legacy_api = "kyven_title" not in node.knobs() or "API 30" not in str(node["kyven_title"].value())
     _repair_inpaint_interface(node)
     if legacy_api:
         _apply_inpaint_api26_defaults(node)
@@ -1219,7 +1309,7 @@ def upgrade_selected_inpaint_node() -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br>'
-            '<font color="#91a3b0">LaMa | Source + Mask | API 28</font>'
+            '<font color="#91a3b0">LaMa | Source + Mask | API 30</font>'
         )
     if "mask_help" in node.knobs():
         node["mask_help"].setValue(

@@ -16,7 +16,7 @@ sequences that remain usable without a live model connection.
 
 | Node | Input | Purpose | Models |
 | --- | --- | --- | --- |
-| **Kyven Segment** | Source + Viewer prompts | Binary object masks and video propagation | SAM 2.1 Tiny / Small / Base+ / Large |
+| **Kyven Segment** | Source + Viewer prompts | Binary object masks and video propagation | SAM 2.1 Tiny / Small / Base+ / Large; HQ-SAM 2.1 Large Beta |
 | **Kyven Refine** | Source + mask or trimap | Soft alpha refinement and trimap inspection | ViTMatte Small / Base |
 | **Kyven Inpaint** | Source + removal mask | ROI-aware object removal and clean-up | LaMa ONNX Fast / Big-LaMa Native |
 
@@ -40,6 +40,10 @@ Atomic per-node image cache -> ordinary Nuke Read
 - Only the selected provider stays resident; switching tools releases the previous model.
 - Jobs run asynchronously with progress, cancellation, and clear errors.
 - Every node owns an isolated cache folder and can create a normal Nuke Read.
+- Atomic cache manifests validate every required output, reuse completed frames, and reject corrupt
+  or incomplete results without rerunning valid work.
+- Per-node and server-side single-flight guards prevent duplicate inference from repeated clicks or
+  identical active API requests.
 - The server accepts only loopback connections protected by a random local token.
 
 ## Quick start · Windows + Nuke
@@ -99,6 +103,7 @@ touching node caches or source media.
 | Segment on 8 GB | SAM 2.1 Small | 6 GB VRAM | Recommended balance |
 | Higher-detail Segment | SAM 2.1 Base+ | 8 GB VRAM | May require fallback on an 8 GB GPU |
 | Maximum Segment model | SAM 2.1 Large | 12 GB+ VRAM | Slowest and heaviest |
+| Fine-detail Segment | HQ-SAM 2.1 Large Beta | 12 GB+ VRAM | Higher-quality boundaries; optional beta runtime |
 | Refine on 4–8 GB | ViTMatte Small | 4 GB+ or tiled | Fastest and recommended default |
 | Maximum Refine quality | ViTMatte Base | 8 GB+ with tiling | 96.7 M parameters; slower and heavier |
 | Fast Inpaint / Live | LaMa ONNX Fast | CPU, no GPU required | Fixed 512 × 512 model input |

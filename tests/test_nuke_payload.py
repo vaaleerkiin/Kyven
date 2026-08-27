@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -29,16 +30,23 @@ from kyven_nuke.inpaint_node import (
 from kyven_nuke.live import affects_live_result
 from kyven_nuke.node import (
     OUTPUT_MODES,
+    _begin_node_operation,
     _cache_root_path,
+    _cached_postprocess_frames,
+    _clamped_bbox_values,
+    _clear_sequence_frames,
     _ensure_double_slider,
     _ensure_unique_cache_uuid,
     _job_error_text,
+    _missing_sequence_frames,
     _nuke_file_path,
+    _operation_node,
     _path_for_frame,
     _place_knob_after,
     _point_knob_names,
     _prompt_defaults,
     _section_markup,
+    _set_busy,
 )
 from kyven_nuke.payload import (
     inpaint_payload,
@@ -60,10 +68,166 @@ from kyven_nuke.refine_node import (
 from kyven_nuke.refine_node import (
     _ensure_input_order as ensure_refine_input_order,
 )
-from kyven_nuke.runtime import _listener_pids, _server_environment
+from kyven_nuke.refine_node import (
+    _payload as refine_node_payload,
+)
+from kyven_nuke.runtime import (
+    HQ_SAM2_RUNTIME_URL,
+    _listener_pids,
+    _listening_legacy_ports,
+    _runtime_install_command,
+    _server_environment,
+    ensure_model_runtime,
+)
 
 
 class NukePayloadTests(unittest.TestCase):
+    def test_refine_payload_reads_animated_roi_at_requested_frame(self) -> None:
+        class Knob:
+            def __init__(self, value, animated=None):
+                self.current = value
+                self.animated = animated
+
+            def value(self):
+                return self.current
+
+            def valueAt(self, frame, index=None):
+                value = self.animated[frame] if self.animated else self.current
+                return value if index is None else value[index]
+
+            def getValue(self):
+                return self.current
+
+        class Node:
+            def __init__(self):
+                self.values = {
+                    "model": Knob(0),
+                    "profile": Knob("balanced"),
+                    "roi_enabled": Knob(True),
+                    "processing_roi": Knob(
+                        (0, 0, 100, 100),
+                        animated={1: (10, 20, 110, 120), 2: (30, 40, 230, 240)},
+                    ),
+                    "generate_trimap": Knob(True),
+                    "foreground_radius": Knob(10),
+                    "background_radius": Knob(15),
+                    "tile_size": Knob(0),
+                    "tile_overlap": Knob(64),
+                }
+
+            def __getitem__(self, name):
+                return self.values[name]
+
+        class Source:
+            @staticmethod
+            def width():
+                return 1000
+
+            @staticmethod
+            def height():
+                return 500
+
+        payload = refine_node_payload(
+            Node(),
+            Source(),
+            Path("source.png"),
+            Path("mask.png"),
+            Path("output.png"),
+            Path("trimap.png"),
+            frame=2,
+        )
+        self.assertEqual(payload["roi"], {"x0": 30.0, "y0": 260.0, "x1": 230.0, "y1": 460.0})
+
+    def test_active_node_is_resolved_by_uuid_after_rename(self) -> None:
+        class Knob:
+            def __init__(self, value):
+                self.current = value
+
+            def value(self):
+                return self.current
+
+            def setValue(self, value):
+                self.current = value
+
+        class Node:
+            def __init__(self):
+                self.name = "BeforeRename"
+                self.values = {
+                    "cache_uuid": Knob("stable-uuid"),
+                    "kyven_busy": Knob(False),
+                    "kyven_job_id": Knob("job"),
+                }
+
+            def fullName(self):
+                return self.name
+
+            def knobs(self):
+                return self.values
+
+            def __getitem__(self, name):
+                return self.values[name]
+
+        node = Node()
+        fake_nuke = mock.Mock()
+        fake_nuke.toNode.return_value = None
+        fake_nuke.allNodes.return_value = [node]
+        self.assertTrue(_begin_node_operation(node))
+        node.name = "AfterRename"
+        with mock.patch("kyven_nuke.node._nuke", return_value=fake_nuke):
+            self.assertIs(_operation_node("BeforeRename"), node)
+            _set_busy("BeforeRename", False)
+        self.assertFalse(node["kyven_busy"].value())
+        self.assertEqual(node["kyven_job_id"].value(), "")
+
+    def test_legacy_server_scan_only_returns_listening_known_ports(self) -> None:
+        output = """TCP 127.0.0.1:8765 0.0.0.0:0 LISTENING 10
+TCP 127.0.0.1:18788 0.0.0.0:0 LISTENING 11
+TCP 127.0.0.1:9999 0.0.0.0:0 LISTENING 12
+TCP 127.0.0.1:8766 0.0.0.0:0 ESTABLISHED 13"""
+        self.assertEqual(_listening_legacy_ports(output), (8765,))
+
+    def test_node_operation_claim_rejects_duplicate_start(self) -> None:
+        class Knob:
+            def __init__(self) -> None:
+                self.current = False
+
+            def value(self):
+                return self.current
+
+            def setValue(self, value):
+                self.current = bool(value)
+
+        class Node:
+            def __init__(self) -> None:
+                self.busy = Knob()
+
+            def knobs(self):
+                return {"kyven_busy": self.busy}
+
+            def fullName(self):
+                return "TestNodeOperationClaim"
+
+            def __getitem__(self, name):
+                return self.knobs()[name]
+
+        node = Node()
+        # A persisted busy knob from a crashed/reopened script is stale and must be recoverable.
+        node.busy.current = True
+        self.assertTrue(_begin_node_operation(node))
+        self.assertFalse(_begin_node_operation(node))
+
+    def test_missing_sequence_frames_checks_exact_expected_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pattern = Path(directory) / "frame.%04d.png"
+            (Path(directory) / "frame.0001.png").touch()
+            (Path(directory) / "unrelated.jpg").touch()
+            (Path(directory) / "frame.0003.png").touch()
+            self.assertEqual(_missing_sequence_frames(pattern, 1, 3), [2])
+            _clear_sequence_frames(pattern, 1, 3)
+            self.assertFalse((Path(directory) / "frame.0001.png").exists())
+            self.assertFalse((Path(directory) / "frame.0003.png").exists())
+            self.assertTrue((Path(directory) / "unrelated.jpg").exists())
+
     def test_inpaint_matches_cattery_lama_color_defaults(self) -> None:
         self.assertEqual(CATTERY_DEFAULT_INPUT_COLORSPACE, "Linear")
         self.assertEqual(CATTERY_MODEL_COLORSPACE, "sRGB")
@@ -178,6 +342,26 @@ class NukePayloadTests(unittest.TestCase):
         self.assertEqual(result["status"], "succeeded")
         self.assertEqual(client.job.call_count, 3)
 
+    def test_nuke_client_wait_sends_cancellation_once(self) -> None:
+        client = NukeKyvenClient("http://127.0.0.1:1", "token")
+        client.cancel = mock.Mock()
+        client.job = mock.Mock(
+            side_effect=[
+                {"status": "running"},
+                {"status": "cancelled"},
+            ]
+        )
+
+        result = client.wait(
+            "job",
+            poll_seconds=0,
+            timeout_seconds=1,
+            cancel_requested=lambda: True,
+        )
+
+        self.assertEqual(result["status"], "cancelled")
+        client.cancel.assert_called_once_with("job")
+
     def test_int_control_is_upgraded_to_animated_double_slider_in_place(self) -> None:
         class Knob:
             def __init__(self, name: str, label: str = "", value: float = 0) -> None:
@@ -278,6 +462,35 @@ class NukePayloadTests(unittest.TestCase):
             {"x0": 0.0, "y0": 0.0, "x1": 1920.0, "y1": 1080.0},
         )
 
+    def test_visible_roi_is_clamped_to_canvas_without_negative_values(self) -> None:
+        self.assertEqual(
+            _clamped_bbox_values((-50.0, -20.0, 2500.0, 1400.0), 1920.0, 1080.0),
+            (0.0, 0.0, 1920.0, 1080.0),
+        )
+        self.assertEqual(
+            _clamped_bbox_values((3000.0, 1200.0, 4000.0, 1600.0), 1920.0, 1080.0),
+            (1919.0, 1079.0, 1920.0, 1080.0),
+        )
+
+    def test_mask_postprocess_discovers_independent_and_tracking_sequences(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "raw_matte.0001.png").write_bytes(b"raw")
+            (root / "raw_matte.0002.png").write_bytes(b"raw")
+            (root / "raw_tracked_matte.0042.png").write_bytes(b"raw")
+            pairs = _cached_postprocess_frames(root)
+
+        self.assertEqual(
+            [(source.name, output.name) for source, output in pairs],
+            [
+                ("raw_matte.0001.png", "matte.0001.png"),
+                ("raw_matte.0002.png", "matte.0002.png"),
+                ("raw_tracked_matte.0042.png", "tracked_matte.0042.png"),
+            ],
+        )
+
     def test_trimap_preview_read_name_ends_with_nuke_frame(self) -> None:
         _input, output = _trimap_preview_paths(Path("D:/cache"), frame=67, revision=23)
 
@@ -317,6 +530,29 @@ class NukePayloadTests(unittest.TestCase):
         self.assertTrue(payload["generate_trimap"])
         self.assertEqual(payload["tile_size"], 512)
         self.assertEqual(payload["trimap_output"], "D:/trimap.png")
+
+    def test_refine_auto_crop_payload_uses_context_without_manual_roi(self) -> None:
+        payload = refine_payload(
+            source="D:/source.png",
+            mask="D:/mask.png",
+            output="D:/alpha.png",
+            trimap_output="D:/trimap.png",
+            model_index=0,
+            profile="balanced",
+            image_width=1920,
+            image_height=1080,
+            roi_enabled=False,
+            roi=(10, 20, 300, 400),
+            generate_trimap=True,
+            foreground_radius=10,
+            background_radius=15,
+            crop_mode="auto",
+            context_padding=192,
+        )
+
+        self.assertEqual(payload["crop_mode"], "auto")
+        self.assertEqual(payload["context_padding"], 192)
+        self.assertIsNone(payload["roi"])
 
     def test_section_markup_adds_compact_spacing_and_title(self) -> None:
         markup = _section_markup("OUTPUT")
@@ -618,6 +854,39 @@ class NukePayloadTests(unittest.TestCase):
         self.assertNotIn("TCL_LIBRARY", environment)
         self.assertNotIn("Path", environment)
         self.assertEqual(environment["PYTHONNOUSERSITE"], "1")
+
+    def test_hq_sam2_runtime_install_is_pinned_and_isolated(self) -> None:
+        executable = Path("D:/Kyven/.venv/Scripts/python.exe")
+        command = _runtime_install_command("hq-sam2", executable)
+
+        self.assertEqual(command[0], str(executable))
+        self.assertIn("--no-deps", command)
+        self.assertIn("--force-reinstall", command)
+        self.assertEqual(command[-1], HQ_SAM2_RUNTIME_URL)
+
+    def test_missing_catalog_runtime_is_installed_and_verified(self) -> None:
+        process = mock.Mock(returncode=0)
+        process.communicate.return_value = ("installed", None)
+        probe_missing = mock.Mock(returncode=1)
+        probe_ready = mock.Mock(returncode=0)
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "python.exe"
+            executable.touch()
+            with (
+                mock.patch(
+                    "kyven_nuke.runtime.config.python_executable", return_value=executable
+                ),
+                mock.patch("kyven_nuke.runtime.config.root", return_value=Path(directory)),
+                mock.patch(
+                    "kyven_nuke.runtime.subprocess.run",
+                    side_effect=(probe_missing, probe_ready),
+                ),
+                mock.patch("kyven_nuke.runtime.subprocess.Popen", return_value=process) as popen,
+            ):
+                changed = ensure_model_runtime("hq-sam2")
+
+        self.assertTrue(changed)
+        self.assertEqual(popen.call_args.args[0][-1], HQ_SAM2_RUNTIME_URL)
 
     def test_nuke_file_paths_use_forward_slashes(self) -> None:
         path = _nuke_file_path(Path("D:/Kyven/.runtime/source.1.png"))

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +9,7 @@ from PIL import Image
 
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
+from kyven.hashing import cached_file_sha256
 from kyven.inpaint.models import InpaintCapabilities, InpaintPrediction, InpaintRequest
 from kyven.inpaint.providers.base import InpaintProvider
 
@@ -20,6 +20,7 @@ class LamaOnnxProvider(InpaintProvider):
         self._expected_checksum = expected_checksum
         self._device = device
         self._session = None
+        self._checksum: str | None = None
 
     @property
     def capabilities(self) -> InpaintCapabilities:
@@ -43,7 +44,9 @@ class LamaOnnxProvider(InpaintProvider):
                 f"LaMa model is not installed: {self._checkpoint}",
                 suggested_action="Run the Kyven installer and select LaMa Inpaint.",
             )
-        digest = hashlib.sha256(self._checkpoint.read_bytes()).hexdigest()
+        if self._checksum is None:
+            self._checksum = cached_file_sha256(self._checkpoint)
+        digest = self._checksum
         if digest != self._expected_checksum:
             raise KyvenError(ErrorCode.MODEL_NOT_FOUND, "The installed LaMa model checksum is invalid.")
         try:

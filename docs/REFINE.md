@@ -1,5 +1,8 @@
 # Kyven Refine
 
+Kyven Refine supports ViTMatte and the memory-efficient MEMatte ViT-S AIM-500 backend. Both consume
+the same source RGB and binary mask/trimap inputs and produce the same alpha/output branches.
+
 Refine converts a coarse mask into a soft alpha matte using ViTMatte while keeping model inference
 outside the compositing host.
 

@@ -7,9 +7,11 @@ Built-in provider metadata currently references:
 | Component | Purpose | License | Source |
 | --- | --- | --- | --- |
 | SAM 2.1 code and official checkpoints | Promptable segmentation | Apache-2.0 | https://github.com/facebookresearch/sam2 |
+| HQ-SAM 2 code and HQ-SAM 2.1 Large checkpoint | High-quality image and video segmentation | Apache-2.0 | https://github.com/SysCV/sam-hq/tree/main/sam-hq2 |
 | ViTMatte original code | Alpha matting architecture | MIT | https://github.com/hustvl/ViTMatte |
 | ViTMatte Small Composition-1k checkpoint | Alpha refinement | Apache-2.0 | https://huggingface.co/hustvl/vitmatte-small-composition-1k |
 | ViTMatte Base Distinctions-646 checkpoint | Alpha refinement | Apache-2.0 | https://huggingface.co/hustvl/vitmatte-base-distinctions-646 |
+| MEMatte inference code and ViT-S AIM-500 / ViT-B Composition-1k checkpoints | Memory-efficient alpha refinement | MIT | https://github.com/linyiheng123/MEMatte |
 | OpenCV LaMa ONNX checkpoint | Object removal / inpainting | Apache-2.0 | https://huggingface.co/opencv/inpainting_lama |
 | Big-LaMa architecture and TorchScript checkpoint | Native-resolution object removal | Apache-2.0 | https://github.com/advimman/lama |
 | ONNX Runtime | LaMa inference runtime | MIT | https://github.com/microsoft/onnxruntime |

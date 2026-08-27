@@ -41,10 +41,17 @@ it must not be committed or logged.
 | `POST` | `/v1/providers/unload-all` | Safely unload models after active work |
 | `POST` | `/v1/server/shutdown` | Gracefully stop the authenticated local server |
 
-GPU jobs execute in a single-worker queue. HTTP requests and host UIs remain responsive. Model
+GPU jobs execute in a single-worker queue. Identical active payloads share one job ID instead of
+running twice, and completed history is bounded to prevent long Nuke sessions from growing server
+memory indefinitely. HTTP requests and host UIs remain responsive. Model
 unloading is queued behind active inference so it cannot race a running kernel. Model removal uses
 the same inference queue before deleting the exact catalog-owned file. Downloads stream to a
 temporary file and activate atomically only after byte-size and SHA-256 verification.
+
+`GET /v1/health` also reports the loaded provider IDs and queued/running/completed job counts. During
+a managed cold start, Nuke reports the current startup phase and elapsed/timeout seconds in the node
+Status. On Windows the launcher scans listening ports once and contacts only detected older Kyven
+servers, avoiding a long sequential timeout across every historical port.
 
 ### Segment payload fields
 
@@ -118,7 +125,12 @@ fields participate in the deterministic cache key. The worker reports progress a
 cancellation during each refinement iteration.
 Empty masks return Source unchanged without loading a model.
 
-API version 26 is the current Nuke/server contract. `GET /v1/jobs/{id}` returns `progress`
+Successful Segment, Refine, and Inpaint outputs receive an atomic `.kyven.json` sidecar manifest.
+It contains the deterministic cache key and result metadata. A repeated request validates both the
+manifest and every required image/NPZ before returning a cache hit; missing or corrupt media forces
+a safe recalculation.
+
+API version 28 is the current Nuke/server contract. `GET /v1/jobs/{id}` returns `progress`
 (0.0-1.0) and `progress_message`. Segment video requests may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
 returned masks to the original dimensions. Restart Nuke after updating Kyven so the adapter does not

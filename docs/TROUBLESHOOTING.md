@@ -29,8 +29,16 @@ The Nuke adapter launches `python.exe -I -m kyven.server.bootstrap`. On Windows 
 the DLL directory inherited from Nuke before importing PyTorch; this prevents the common
 `c10.dll` / `WinError 1114` startup failure.
 
-Kyven API 28 uses port `18788`. Older development servers may remain on 8765-8769 or 18768-18787,
-but the adapter asks authenticated older servers to unload their models before starting API 28.
+Kyven API 30 uses port `18788`. Older development servers may remain on 8765-8769 or 18768-18787,
+but the adapter asks authenticated older servers to unload their models before starting API 30.
+The Windows launcher now checks `netstat` once and contacts only ports that are actually listening;
+it no longer waits through every historical port. While starting, the node Status shows the current
+phase plus elapsed and timeout seconds. A failure includes the path to `.runtime/server.log`.
+
+If Windows reports `WinError 5` while replacing a cached matte, update the Refine node. Current
+nodes temporarily detach their internal matte/trimap Reads before reprocessing and restore the old
+paths if the job fails or is cancelled. Atomic cache replacement also retries brief host file locks
+for up to two seconds.
 
 Each Kyven node provides **Stop Server** and **Start Server** next to Status. Use them after updating
 the repository if Nuke is still connected to code loaded before the update. Stop affects only the
@@ -124,3 +132,8 @@ the surviving internal Inpaint graph and reconstructs every missing control with
 
 When reporting a failure, include the Status text, the latest `server.log`, Nuke version, selected
 model, and GPU model. Do not include private footage.
+### Cannot find the HQ-SAM 2 primary config
+
+Run `install.ps1` again to replace the standard SAM 2 package with Kyven's pinned HQ-SAM 2
+runtime. Kyven ships its own pinned SAM 2.1 YAML files because the upstream HQ-SAM 2 wheel omits
+them; do not copy configs manually into `.venv`.

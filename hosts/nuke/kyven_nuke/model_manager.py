@@ -7,9 +7,16 @@ import threading
 import time
 
 from kyven_nuke import config
-from kyven_nuke.runtime import ensure_server
+from kyven_nuke.preferences import default_model_id, set_default_model
+from kyven_nuke.runtime import (
+    RuntimeInstallCancelled,
+    ensure_model_runtime,
+    ensure_server,
+    stop_server,
+)
 
 _tasks = {}
+_tasks_lock = threading.RLock()
 
 
 def _nuke():
@@ -19,15 +26,20 @@ def _nuke():
 
 
 def _format_size(size_bytes):
-    return f"{float(size_bytes) / (1024 ** 2):.0f} MB"
+    return f"{float(size_bytes) / (1024**2):.0f} MB"
 
 
 def _choice_label(model):
     state = "installed" if model.get("installed") else "not installed"
     warning = " | VRAM warning" if model.get("compatible") is False else ""
+    default = (
+        " | default for new nodes"
+        if default_model_id(str(model.get("task", ""))) == str(model.get("model_id", ""))
+        else ""
+    )
     return (
         f"{str(model.get('task', '')).replace('_', ' ').title()} | {model['display_name']} | "
-        f"{_format_size(model['size_bytes'])} | {state}{warning}"
+        f"{_format_size(model['size_bytes'])} | {state}{warning}{default}"
     )
 
 
@@ -47,7 +59,7 @@ def show_model_manager():
     panel = nuke.Panel("Kyven Model Manager")
     panel.addEnumerationPulldown(
         "Action",
-        "{Install Selected} {Remove Selected} {Open Models Folder}",
+        "{Install Selected} {Remove Selected} {Set as Default} {Open Models Folder}",
     )
     panel.addEnumerationPulldown(
         "Model",
@@ -57,7 +69,8 @@ def show_model_manager():
         "Safety",
         "Downloads come only from the trusted Kyven catalog. Single-file models are verified "
         "by exact size and SHA-256; repository models are pinned to an audited revision. "
-        "All model files stay inside the repository.",
+        "Required model runtimes are installed automatically into Kyven's private environment. "
+        "All model and runtime files stay inside the repository.",
     )
     if not panel.show():
         return
@@ -74,8 +87,20 @@ def show_model_manager():
         nuke.message("The selected catalog model could not be resolved.")
         return
     model = models[index]
+    if action == "Set as Default":
+        task = str(model.get("task", ""))
+        try:
+            set_default_model(task, str(model["model_id"]))
+        except (OSError, ValueError) as exc:
+            nuke.message(f"Could not save the default model:\n{exc}")
+            return
+        nuke.message(
+            f"{model['display_name']} is now the default for new {task.title()} nodes.\n\n"
+            "Existing nodes were not changed."
+        )
+        return
     if action == "Install Selected":
-        if model.get("installed"):
+        if model.get("installed") and not model.get("runtime"):
             nuke.message(f"{model['display_name']} is already installed.")
             return
         if model.get("license_acceptance_required") and not nuke.ask(
@@ -102,15 +127,43 @@ def show_model_manager():
 def _start_operation(action, model):
     nuke = _nuke()
     key = str(model["model_id"])
+    with _tasks_lock:
+        if key in _tasks:
+            nuke.message(f"An operation for {model['display_name']} is already running.")
+            return
+        # Reserve before creating UI or starting a thread so rapid repeated actions cannot race.
+        _tasks[key] = None
     title = "Install" if action == "download" else "Remove"
-    task = nuke.ProgressTask(f"Kyven Models | {title} {model['display_name']}")
-    task.setMessage("Submitting model operation")
-    task.setProgress(0)
-    _tasks[key] = task
+    try:
+        task = nuke.ProgressTask(f"Kyven Models | {title} {model['display_name']}")
+        task.setMessage("Submitting model operation")
+        task.setProgress(0)
+        with _tasks_lock:
+            _tasks[key] = task
+    except Exception:
+        with _tasks_lock:
+            _tasks.pop(key, None)
+        raise
 
     def work():
         operation_id = ""
         try:
+            runtime_changed = False
+            if action == "download":
+                runtime_changed = ensure_model_runtime(
+                    str(model.get("runtime") or ""),
+                    progress_callback=lambda message: nuke.executeInMainThread(
+                        _update_task, args=(key, 5, message)
+                    ),
+                    cancel_requested=lambda: nuke.executeInMainThreadWithResult(
+                        _task_cancelled, args=(key,)
+                    ),
+                )
+                if runtime_changed:
+                    nuke.executeInMainThread(
+                        _update_task, args=(key, 10, "Restarting Kyven Server with the new runtime")
+                    )
+                    stop_server()
             client = ensure_server()
             operation_id = (
                 client.start_model_download(key)
@@ -121,7 +174,11 @@ def _start_operation(action, model):
                 operation = client.model_operation(operation_id)
                 nuke.executeInMainThread(
                     _update_task,
-                    args=(key, int(float(operation.get("progress") or 0) * 100), str(operation.get("message") or "Working")),
+                    args=(
+                        key,
+                        int(float(operation.get("progress") or 0) * 100),
+                        str(operation.get("message") or "Working"),
+                    ),
                 )
                 cancelled = nuke.executeInMainThreadWithResult(_task_cancelled, args=(key,))
                 if cancelled and operation["status"] not in ("succeeded", "failed", "cancelled"):
@@ -129,7 +186,11 @@ def _start_operation(action, model):
                 if operation["status"] in ("succeeded", "failed", "cancelled"):
                     break
                 time.sleep(0.2)
-            nuke.executeInMainThread(_finish_operation, args=(key, model, operation))
+            nuke.executeInMainThread(
+                _finish_operation, args=(key, model, operation, runtime_changed)
+            )
+        except RuntimeInstallCancelled:
+            nuke.executeInMainThread(_finish_cancelled, args=(key,))
         except Exception as exc:  # noqa: BLE001
             nuke.executeInMainThread(_finish_error, args=(key, str(exc)))
 
@@ -137,32 +198,51 @@ def _start_operation(action, model):
 
 
 def _update_task(key, percent, message):
-    task = _tasks.get(key)
+    with _tasks_lock:
+        task = _tasks.get(key)
     if task is not None:
         task.setMessage(message)
         task.setProgress(max(0, min(100, int(percent))))
 
 
 def _task_cancelled(key):
-    task = _tasks.get(key)
+    with _tasks_lock:
+        task = _tasks.get(key)
     return bool(task is not None and task.isCancelled())
 
 
-def _finish_operation(key, model, operation):
-    _tasks.pop(key, None)
+def _finish_operation(key, model, operation, runtime_changed=False):
+    with _tasks_lock:
+        _tasks.pop(key, None)
     nuke = _nuke()
     if operation["status"] == "succeeded":
         _refresh_all_nodes()
         verb = "installed" if operation["action"] == "download" else "removed"
-        nuke.message(f"{model['display_name']} was {verb} successfully.")
+        runtime_note = "\nRequired runtime was installed automatically." if runtime_changed else ""
+        nuke.message(f"{model['display_name']} was {verb} successfully.{runtime_note}")
         return
     error = operation.get("error") or {}
-    nuke.message(f"Model operation {operation['status']}: {error.get('message', operation.get('message', 'Unknown error'))}")
+    message = str(error.get("message") or operation.get("message") or "Unknown error")
+    detail = str(error.get("technical_detail") or "").strip()
+    suggested = str(error.get("suggested_action") or "").strip()
+    lines = [f"Model operation {operation['status']}: {message}"]
+    if detail and detail not in message:
+        lines.extend(("", f"Technical detail: {detail}"))
+    if suggested:
+        lines.extend(("", suggested))
+    nuke.message("\n".join(lines))
 
 
 def _finish_error(key, message):
-    _tasks.pop(key, None)
+    with _tasks_lock:
+        _tasks.pop(key, None)
     _nuke().message(f"Kyven Model Manager failed:\n{message}")
+
+
+def _finish_cancelled(key):
+    with _tasks_lock:
+        _tasks.pop(key, None)
+    _nuke().message("Kyven model installation was cancelled.")
 
 
 def _refresh_all_nodes():

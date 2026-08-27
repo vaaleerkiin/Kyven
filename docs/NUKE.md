@@ -48,9 +48,11 @@ The adapter discovers the repository from its own installed plugin path, so the 
 anywhere. `KYVEN_ROOT` is only an optional override for custom deployments. Restart Nuke and choose
 `Kyven > Segment`, `Kyven > Refine`, or `Kyven > Inpaint` from the Nodes menu.
 
-Use `Kyven > Model Manager...` at any time to install or remove a trusted catalog checkpoint. The
-same button appears in every Kyven node. Downloads show progress and become available only after
-exact size and SHA-256 verification; model removal does not delete rendered caches.
+Use `Kyven > Model Manager...` at any time to install or remove a trusted catalog model. The same
+button appears in every Kyven node. Model Manager installs a model's pinned runtime into Kyven's
+private environment when required, restarts only Kyven Server, and then downloads the checkpoint.
+Downloads show progress and become available only after exact size and SHA-256 verification; model
+removal does not delete rendered caches.
 Repository-backed downloads use audited revisions, while every single-file checkpoint is verified
 against its exact expected size and SHA-256.
 
@@ -126,7 +128,7 @@ range still opens the normal cancellable progress window.
 Positive points identify the object to keep. Negative points remove unwanted areas. A newly created
 Segment node immediately keys its initial point on the current primary `Key Frame`. Each point type
 has an independent enable toggle, so its Viewer handles and payload can be hidden without deleting
-the saved coordinates. Up to 32 controls are available per type. Each visible point has a `×`
+the saved coordinates. Up to 32 controls are available per type. Each visible point has a remove
 button on its right; deleting a row shifts later points up while preserving their animation curves.
 
 ### Processing ROI
@@ -175,6 +177,17 @@ not appropriate.
 
 `Cancel` requests cooperative cancellation of the active job or range.
 
+Range input sequences are exported with Nuke's native batch execution instead of invoking the
+render engine once per frame. Segment, Refine, and Inpaint then validate every expected frame path
+before submitting inference. Only the expected temporary input frames are cleared before export, so
+stale or unrelated files in a node cache cannot make an incomplete export look valid. Cancellation
+is checked between export stages and while server jobs are running;
+the node always leaves its busy state when a range succeeds, fails, or is cancelled.
+Processing is single-flight per node: repeated button clicks and overlapping Live callbacks cannot
+submit a second job while the first one is active. The guard is session-backed, so a stale persisted
+Busy value after a host crash does not permanently lock the node. Model install/remove operations
+use the same one-operation-per-model rule.
+
 ### SAM 2 video tracking
 
 1. Move to a frame where the object is easy to identify.
@@ -192,7 +205,7 @@ crops each frame, normalizes the crop to the key-frame ROI size for tracking, th
 to that frame's original full-size coordinates. The native Nuke progress window shows export and
 model stages, percentage, an estimated remaining time, and a Cancel control. Every saved correction
 is sampled from the animated point controls at its frame and added to the same SAM 2 tracking state.
-Saved corrections appear as editable frame rows. Change the frame number directly or click `×` on
+Saved corrections appear as editable frame rows. Change the frame number directly or use remove on
 the right to remove that row. Editing the number moves every point keyframe from the old correction
 frame to the new one; removing the row removes those point keyframes. New points immediately receive
 all saved correction keyframes by copying the previous point with a small position offset. Correction
@@ -265,6 +278,26 @@ shows the unavoidable binary mask supplied to LaMa. **Preview Model Mask** is th
 override and reacts to Threshold and Model Grow natively inside Nuke without disk I/O, a server
 request, or a LaMa run. That exact native mask is exported when processing begins.
 
+Kyven uses one cache policy rather than forcing every data type into one container:
+
+| Cached data | Format | Reason |
+|---|---|---|
+| Lossless RGB inference inputs | TIFF or PNG | Preserve source pixels and Nuke color handling |
+| Masks, mattes, trimaps, results | PNG | Lossless, portable, directly readable by Nuke |
+| SAM confidence logits | compressed float16 NPZ | Preserve signed confidence without rerunning SAM |
+| Temporary SAM 2 tracking frames | high-quality JPEG | Fast sequential loading with bounded disk usage |
+
+All public image sequences use deterministic frame names and atomic server-side output writes.
+Different semantic data intentionally use different containers; mask PNG and numeric logits are not
+interchangeable.
+
+Successful inference writes a `.kyven.json` sidecar beside the primary output. The manifest records
+the deterministic source/prompt/model signature and metadata. Independent Segment, Refine, and
+Inpaint ranges therefore reuse already valid frames after interruption; corrupt or missing outputs
+invalidate only their matching frame. A fully completed SAM 2 tracking range can also be reused.
+Partially completed temporal propagation is restarted because an incomplete SAM memory state cannot
+be resumed safely from isolated mask files.
+
 Inpaint offers two model choices. `LaMa ONNX Fast` is CPU-friendly and uses a fixed 512 model input,
 so it is the better Live option. `Big-LaMa Native` processes the selected ROI at native detail
 (internally padded only to a multiple of 8), which is slower but normally produces cleaner large
@@ -283,7 +316,7 @@ Kyven returns a readable error before inference when that budget is exceeded.
 
 ## Server behavior
 
-The adapter starts an external hidden Python process on `127.0.0.1:18788` and requires API 28. A
+The adapter starts an external hidden Python process on `127.0.0.1:18788` and requires API 30. A
 random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
 revisions are asked to unload their models so they do not keep unnecessary VRAM.
 
@@ -292,7 +325,7 @@ Server output for the latest launch is written to `.runtime/server.log`.
 ## Current limitations
 
 - one object per Segment node;
-- range resumption is not implemented yet;
+- partial SAM 2 tracking-state resumption is not implemented; completed tracking ranges are cached;
 - Refine is frame-independent and has no temporal propagation yet;
 - the Nuke host adapter has been developed on Windows and still needs broader production testing.
 

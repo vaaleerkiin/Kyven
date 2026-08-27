@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -12,6 +13,32 @@ from kyven.segment.providers.registry import ProviderRegistry
 
 
 class ModelOperationTests(unittest.TestCase):
+    def test_identical_active_model_operations_are_single_flight(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+
+        class BlockingCatalog:
+            def get(self, model_id):
+                return object()
+
+            def download(self, model_id, models_dir, progress, cancelled):
+                started.set()
+                release.wait(timeout=2)
+
+        operations = ModelOperationManager(
+            BlockingCatalog(),  # type: ignore[arg-type]
+            Path("unused"),
+            ProviderRegistry(),
+        )
+        try:
+            first = operations.submit("download", "same-model")
+            self.assertTrue(started.wait(timeout=2))
+            second = operations.submit("download", "same-model")
+            self.assertEqual(first, second)
+        finally:
+            release.set()
+            operations.shutdown()
+
     def test_download_verify_and_remove_local_catalog_model(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

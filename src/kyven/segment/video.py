@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import tempfile
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -11,8 +13,10 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from kyven.cache_manifest import read_valid_manifest, write_manifest_atomic
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
+from kyven.hashing import file_sha256
 from kyven.segment.models import BoxPrompt, ExecutionProfile, PointPrompt
 from kyven.segment.output import (
     confidence_trimap,
@@ -57,7 +61,7 @@ class VideoSegmentRequest:
     profile: ExecutionProfile = ExecutionProfile.BALANCED
     offload_video_to_cpu: bool = True
     offload_state_to_cpu: bool = True
-    fill_holes: bool = True
+    fill_holes: bool = False
     max_hole_area: int = 2_048
     raw_output_pattern: Path | None = None
     logits_output_pattern: Path | None = None
@@ -176,6 +180,52 @@ class VideoSegmentRequest:
     def roi_for_frame(self, frame: int) -> BoxPrompt | None:
         return dict(self.rois).get(frame, self.roi)
 
+    def cache_key(self, provider_version: str, model_checksum: str) -> str:
+        frames = sorted(
+            path for path in self.frames_dir.iterdir() if path.suffix.lower() in {".jpg", ".jpeg"}
+        )
+        payload = {
+            "frames": [(path.name, file_sha256(path)) for path in frames],
+            "first_frame": self.first_frame,
+            "last_frame": self.last_frame,
+            "key_frame": self.key_frame,
+            "direction": self.direction.value,
+            "corrections": [
+                {
+                    "frame": item.frame,
+                    "points": [point.canonical() for point in item.points],
+                    "box": item.box.canonical() if item.box else None,
+                }
+                for item in self.effective_corrections
+            ],
+            "roi": self.roi.canonical() if self.roi else None,
+            "rois": [(frame, roi.canonical()) for frame, roi in self.rois],
+            "provider_id": self.provider_id,
+            "profile": self.profile.value,
+            "offload_video_to_cpu": self.offload_video_to_cpu,
+            "offload_state_to_cpu": self.offload_state_to_cpu,
+            "fill_holes": self.fill_holes,
+            "max_hole_area": self.max_hole_area,
+            "provider_version": provider_version,
+            "model_checksum": model_checksum,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def required_outputs(self) -> tuple[Path, ...]:
+        paths: list[Path] = []
+        for index in range(self.last_frame - self.first_frame + 1):
+            frame = self.frame_number(index)
+            paths.append(self.output_for_index(index))
+            for optional in (
+                self.raw_output_for_frame(frame),
+                self.logits_output_for_frame(frame),
+                self.trimap_output_for_frame(frame),
+            ):
+                if optional is not None:
+                    paths.append(optional)
+        return tuple(paths)
+
 
 @dataclass(frozen=True, slots=True)
 class VideoSegmentResult:
@@ -200,6 +250,36 @@ class VideoSegmentService:
         token = cancellation or CancellationToken()
         token.raise_if_cancelled()
         provider = self._registry.activate(request.provider_id)
+        capabilities = provider.capabilities
+        cache_key = request.cache_key(
+            capabilities.provider_version,
+            capabilities.model_checksum,
+        )
+        first_output = request.output_for_index(0)
+        cached = read_valid_manifest(first_output, cache_key, request.required_outputs())
+        if cached is not None:
+            for frame in range(request.first_frame, request.last_frame + 1):
+                logits = request.logits_output_for_frame(frame)
+                trimap = request.trimap_output_for_frame(frame)
+                if logits is not None and trimap is not None:
+                    write_mask_png_atomic(
+                        trimap,
+                        confidence_trimap(read_logits_npz(logits), request.confidence_width),
+                    )
+            metadata = dict(cached.get("metadata") or {})
+            metadata["cache_hit"] = True
+            token.report_progress(1.0, "Reused cached video propagation")
+            return VideoSegmentResult(
+                outputs=tuple(
+                    request.output_for_index(index)
+                    for index in range(request.last_frame - request.first_frame + 1)
+                ),
+                first_frame=request.first_frame,
+                last_frame=request.last_frame,
+                key_frame=request.key_frame,
+                direction=request.direction,
+                metadata=metadata,
+            )
         token.report_progress(0.03, "Preparing video propagation")
         propagate = getattr(provider, "propagate_video", None)
         if propagate is None:
@@ -213,6 +293,10 @@ class VideoSegmentService:
             else self._run_with_roi(propagate, request, token)
         )
         final = self._postprocess_outputs(result, request, token)
+        metadata = dict(final.metadata)
+        metadata["cache_hit"] = False
+        final = replace(final, metadata=metadata)
+        write_manifest_atomic(first_output, cache_key, metadata)
         token.report_progress(1.0, "Propagation complete")
         return final
 

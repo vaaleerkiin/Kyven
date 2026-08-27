@@ -12,15 +12,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from kyven.errors import ErrorCode, KyvenError
+from kyven.hashing import file_sha256
+from kyven.media import validate_image_file
 from kyven.segment.models import BoxPrompt, ExecutionProfile
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,13 +45,9 @@ class InpaintRequest:
 
     def validate(self) -> None:
         for label, path in (("Source", self.source), ("Mask", self.mask)):
-            if not path.is_file():
-                raise KyvenError(ErrorCode.INVALID_REQUEST, f"{label} image does not exist: {path}")
-        if self.model_mask is not None and not self.model_mask.is_file():
-            raise KyvenError(
-                ErrorCode.INVALID_REQUEST,
-                f"Model mask image does not exist: {self.model_mask}",
-            )
+            validate_image_file(path, label)
+        if self.model_mask is not None:
+            validate_image_file(self.model_mask, "Model mask")
         if self.crop_mode not in {"auto", "manual", "full"}:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Inpaint crop mode must be auto, manual, or full.")
         if self.crop_mode == "manual" and self.roi is None:
@@ -108,9 +98,9 @@ class InpaintRequest:
 
     def cache_key(self, provider_version: str, model_checksum: str) -> str:
         payload = {
-            "source_sha256": _sha256(self.source),
-            "mask_sha256": _sha256(self.mask),
-            "model_mask_sha256": _sha256(self.model_mask) if self.model_mask else None,
+            "source_sha256": file_sha256(self.source),
+            "mask_sha256": file_sha256(self.mask),
+            "model_mask_sha256": file_sha256(self.model_mask) if self.model_mask else None,
             "request": self.canonical(),
             "provider_version": provider_version,
             "model_checksum": model_checksum,

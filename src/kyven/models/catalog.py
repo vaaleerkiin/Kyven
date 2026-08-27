@@ -41,6 +41,7 @@ class ModelSpec:
     revision: str = ""
     allow_patterns: tuple[str, ...] = ()
     license_acceptance_required: bool = False
+    runtime: str = ""
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> ModelSpec:
@@ -72,6 +73,7 @@ class ModelSpec:
             "commercial_use": self.commercial_use,
             "redistribution": self.redistribution,
             "license_acceptance_required": self.license_acceptance_required,
+            "runtime": self.runtime,
             "installed": installed,
             "compatible": (
                 None
@@ -111,6 +113,7 @@ class ModelCatalog:
     def registry(self, models_dir: Path, device: str) -> ProviderRegistry:
         from kyven.inpaint.providers.big_lama import BigLamaProvider
         from kyven.inpaint.providers.lama import LamaOnnxProvider
+        from kyven.refine.providers.mematte import MEMatteProvider
         from kyven.refine.providers.vitmatte import VitMatteProvider
         from kyven.segment.providers.sam2 import Sam2Provider
 
@@ -125,10 +128,28 @@ class ModelCatalog:
                     expected_checksum=spec.sha256,
                     provider_id=spec.model_id,
                     display_name=spec.display_name,
+                    hq=spec.provider == "hq-sam2",
+                    minimum_vram_mb=spec.recommended_vram_mb,
+                    license_url=spec.license_url,
                 ),
             )
         resources = Path(__file__).parents[1] / "resources" / "models"
         for spec in self.list("refine"):
+            if spec.provider == "mematte":
+                registry.register(
+                    spec.model_id,
+                    lambda spec=spec: MEMatteProvider(
+                        checkpoint=str(spec.path(models_dir)),
+                        device=device,
+                        expected_checksum=spec.sha256,
+                        provider_id=spec.model_id,
+                        display_name=spec.display_name,
+                        license_url=spec.license_url,
+                        minimum_vram_mb=spec.recommended_vram_mb,
+                        variant="base" if "vitb" in spec.model_id else "small",
+                    ),
+                )
+                continue
             registry.register(
                 spec.model_id,
                 lambda spec=spec: VitMatteProvider(

@@ -15,7 +15,7 @@ SegmentRequest
 SegmentService
           |
           v
-SegmentationProvider (SAM 2.1)
+SegmentationProvider (SAM 2.1 / HQ-SAM 2.1)
           |
           v
 SAM 2 mask logits
@@ -42,6 +42,10 @@ python -m unittest discover -s tests -v
 SAM 2 is an optional provider runtime. On a compatible Windows NVIDIA system, the tested CUDA
 12.8 runtime can be installed with `requirements/runtime-cu128.txt`. Kyven downloads model
 weights separately from its trusted catalog and verifies both size and SHA-256.
+
+HQ-SAM 2.1 Large is available as an optional beta provider for more detailed boundaries. It keeps
+the same point, box, ROI, image, and video contracts, but requires the official SysCV HQ decoder and
+is intended for 12 GB+ GPUs. CPU fallback remains available and is substantially slower.
 
 ## CLI
 

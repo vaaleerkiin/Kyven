@@ -33,3 +33,7 @@ menu.addCommand("Start Server", kyven_nuke.start_server, icon=LOGO_ICON)
 if not getattr(nuke, "_kyven_live_callback_installed", False):
     nuke.addUpdateUI(kyven_nuke.update_live_nodes)
     nuke._kyven_live_callback_installed = True
+if not getattr(nuke, "_kyven_segment_repair_callback_installed", False):
+    nuke.addOnScriptLoad(kyven_nuke.repair_segment_nodes)
+    nuke._kyven_segment_repair_callback_installed = True
+kyven_nuke.repair_segment_nodes()

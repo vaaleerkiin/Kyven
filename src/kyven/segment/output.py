@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import os
 import tempfile
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
+from kyven.atomic_io import replace_with_retry
 from kyven.errors import ErrorCode, KyvenError
 
 
@@ -39,7 +39,7 @@ def write_mask_png_atomic(output: Path, mask: np.ndarray) -> None:
         ) as stream:
             temporary_path = Path(stream.name)
         Image.fromarray(pixels.astype(np.uint8), mode="L").save(temporary_path, format="PNG")
-        os.replace(temporary_path, output)
+        replace_with_retry(temporary_path, output)
     except Exception as exc:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
@@ -66,7 +66,7 @@ def write_logits_npz_atomic(output: Path, logits: np.ndarray) -> None:
         ) as stream:
             temporary_path = Path(stream.name)
         np.savez_compressed(temporary_path, logits=pixels)
-        os.replace(temporary_path, output)
+        replace_with_retry(temporary_path, output)
     except Exception as exc:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)

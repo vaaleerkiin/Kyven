@@ -119,10 +119,20 @@ class NukeKyvenClient:
     def shutdown_server(self):
         return self._request("POST", "/v1/server/shutdown", {})
 
-    def wait(self, job_id, poll_seconds=0.2, timeout_seconds=600.0):
+    def wait(
+        self,
+        job_id,
+        poll_seconds=0.2,
+        timeout_seconds=600.0,
+        cancel_requested=None,
+    ):
         deadline = time.monotonic() + timeout_seconds
         last_error = None
+        cancellation_sent = False
         while time.monotonic() < deadline:
+            if cancel_requested is not None and cancel_requested() and not cancellation_sent:
+                self.cancel(job_id)
+                cancellation_sent = True
             try:
                 job = self.job(job_id)
                 last_error = None

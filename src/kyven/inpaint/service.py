@@ -10,6 +10,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageFilter
 
+from kyven.atomic_io import replace_with_retry
+from kyven.cache_manifest import read_valid_manifest, write_manifest_atomic
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
 from kyven.inpaint.masks import mask_filter_size, prepare_inpaint_masks
@@ -28,7 +30,7 @@ def _write_rgb_atomic(path: Path, pixels: np.ndarray) -> None:
         temporary = Path(name)
         image = Image.fromarray(np.asarray(pixels, dtype=np.uint8), mode="RGB")
         image.save(temporary)
-        os.replace(temporary, path)
+        replace_with_retry(temporary, path)
     except Exception as exc:
         if temporary:
             temporary.unlink(missing_ok=True)
@@ -211,6 +213,23 @@ class InpaintService:
 
         provider = self._registry.activate(request.provider_id)
         capabilities = provider.capabilities
+        cache_key = request.cache_key(capabilities.provider_version, capabilities.model_checksum)
+        cached = read_valid_manifest(
+            request.output,
+            cache_key,
+            (request.output, request.mask_output, request.patch_output),
+        )
+        if cached is not None:
+            metadata = dict(cached.get("metadata") or {})
+            metadata["cache_hit"] = True
+            token.report_progress(1.0, "Reused cached inpaint result")
+            return InpaintResult(
+                request.output,
+                request.mask_output,
+                request.patch_output,
+                cache_key,
+                metadata,
+            )
         if request.quality_mode == "refined" and capabilities.provider_id != "big-lama-native":
             raise KyvenError(
                 ErrorCode.INVALID_REQUEST,
@@ -273,11 +292,13 @@ class InpaintService:
             "edge_color_offset": color_offset,
             "edge_softness": request.edge_softness,
             "patch_source_preserved_outside_model_mask": True,
+            "cache_hit": False,
         })
+        write_manifest_atomic(request.output, cache_key, metadata)
         return InpaintResult(
             request.output,
             request.mask_output,
             request.patch_output,
-            request.cache_key(capabilities.provider_version, capabilities.model_checksum),
+            cache_key,
             metadata,
         )

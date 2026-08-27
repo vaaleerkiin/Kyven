@@ -11,6 +11,7 @@ MODEL_IDS = (
     "sam2.1-small",
     "sam2.1-base-plus",
     "sam2.1-large",
+    "hq-sam2.1-large",
 )
 
 MODEL_LABELS = (
@@ -18,15 +19,20 @@ MODEL_LABELS = (
     "SAM 2.1 Small (6 GB, recommended for 8 GB)",
     "SAM 2.1 Base+ (8 GB, may require fallback)",
     "SAM 2.1 Large (12 GB+)",
+    "HQ-SAM 2.1 Large Beta (12 GB+, fine detail)",
 )
 
 REFINE_MODEL_IDS = (
     "vitmatte-small-composition-1k",
     "vitmatte-base-distinctions-646",
+    "mematte-vits-aim500",
+    "mematte-vitb-composition-1k",
 )
 REFINE_MODEL_LABELS = (
     "ViTMatte Small (4 GB+, recommended for 8 GB)",
     "ViTMatte Base (8 GB+, use tiling)",
+    "MEMatte ViT-S (AIM-500, high resolution / 4 GB+)",
+    "MEMatte ViT-B (Composition-1k, quality / 8 GB+)",
 )
 INPAINT_MODEL_IDS = ("lama-2025jan-onnx", "big-lama-native")
 INPAINT_MODEL_LABELS = (
@@ -212,9 +218,12 @@ def refine_payload(
     background_radius: int,
     tile_size: int = 0,
     tile_overlap: int = 64,
+    crop_mode: str | None = None,
+    context_padding: int = 128,
 ) -> dict[str, Any]:
+    effective_crop_mode = crop_mode or ("manual" if roi_enabled else "full")
     roi_payload = None
-    if roi_enabled:
+    if effective_crop_mode == "manual":
         roi_payload = roi_box(roi, image_height, image_width)
     return {
         "source": source,
@@ -223,7 +232,9 @@ def refine_payload(
         "trimap_output": trimap_output,
         "model_id": REFINE_MODEL_IDS[model_index],
         "profile": profile,
+        "crop_mode": effective_crop_mode,
         "roi": roi_payload,
+        "context_padding": int(context_padding),
         "generate_trimap": bool(generate_trimap),
         "foreground_radius": int(foreground_radius),
         "background_radius": int(background_radius),
