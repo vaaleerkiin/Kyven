@@ -26,6 +26,9 @@ def _json_default(value: Any) -> Any:
 
 
 def manifest_path(output: Path) -> Path:
+    work_root = output.parent / "_kyven_work"
+    if work_root.is_dir():
+        return work_root / "manifests" / f"{output.name}.kyven.json"
     return output.with_suffix(output.suffix + ".kyven.json")
 
 

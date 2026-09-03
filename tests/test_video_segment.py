@@ -13,6 +13,7 @@ from kyven.segment.models import BoxPrompt, ExecutionProfile, PointPrompt, Provi
 from kyven.segment.output import write_mask_png_atomic
 from kyven.segment.providers.base import SegmentationProvider
 from kyven.segment.providers.registry import ProviderRegistry
+from kyven.segment.providers.sam2 import _key_frame_polish_neighbour
 from kyven.segment.video import (
     VideoCorrection,
     VideoDirection,
@@ -23,6 +24,24 @@ from kyven.segment.video import (
 
 
 class VideoSegmentRequestTests(unittest.TestCase):
+    def test_key_frame_polish_prefers_forward_then_falls_back_backward(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = VideoSegmentRequest(
+                frames_dir=root,
+                output_pattern=root / "matte.%04d.png",
+                first_frame=1001,
+                last_frame=1003,
+                key_frame=1002,
+                direction=VideoDirection.BOTH,
+                points=(PointPrompt(1, 1),),
+                polish_key_frame=True,
+            )
+
+            self.assertEqual(_key_frame_polish_neighbour(request, {0, 1, 2}), 2)
+            self.assertEqual(_key_frame_polish_neighbour(request, {0, 1}), 0)
+            self.assertIsNone(_key_frame_polish_neighbour(request, {1}))
+
     def test_multiple_corrections_are_translated_for_each_animated_roi(self) -> None:
         captured = {}
 

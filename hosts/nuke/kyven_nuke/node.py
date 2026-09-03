@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+import os
+import re
 import shutil
 import threading
 import time
@@ -312,6 +314,9 @@ def prompt_knob_changed() -> None:
     }:
         sync_prompt_visibility(nuke.thisNode())
     node = nuke.thisNode()
+    if knob_name in {"cache_root", "roto_name", "cache_version"}:
+        _defer_ui_action(_apply_artist_cache_fields, str(node.fullName()))
+        return
     if knob_name in {"inputChange", "prompt_box", "box_enabled"}:
         _clamp_bbox_knob(node, "prompt_box", 0)
     if knob_name in {"fill_holes", "max_hole_area"}:
@@ -355,7 +360,7 @@ def request_mask_postprocess(node: Any, delay_seconds: float = 0.18) -> None:
 def request_confidence_trimap(node: Any, delay_seconds: float = 0.18) -> None:
     node_name = str(node.fullName())
     width = float(node["confidence_width"].value())
-    root = _cache_root_path(node)
+    root = _cache_work_root(node)
     with _postprocess_lock:
         revision = _confidence_revisions.get(node_name, 0) + 1
         _confidence_revisions[node_name] = revision
@@ -429,8 +434,11 @@ def _start_mask_postprocess(node_name: str, revision: int) -> None:
         timer.daemon = True
         timer.start()
         return
-    root = _cache_root(node)
-    frames = _cached_postprocess_frames(root)
+    root = _cache_work_root(node)
+    frames = _cached_postprocess_frames(
+        root,
+        _public_matte_pattern(node) if _uses_artist_cache(node) else None,
+    )
     if not frames:
         node["kyven_status"].setValue(
             "Mask post-process is ready after SAM has created a frame or sequence once."
@@ -447,13 +455,21 @@ def _start_mask_postprocess(node_name: str, revision: int) -> None:
     ).start()
 
 
-def _cached_postprocess_frames(root: Path) -> list[tuple[Path, Path]]:
+def _cached_postprocess_frames(
+    root: Path,
+    public_pattern: Path | None = None,
+) -> list[tuple[Path, Path]]:
     """Return every raw/final matte pair from image, range, and tracking caches."""
 
     pairs: list[tuple[Path, Path]] = []
     for raw in sorted(root.glob("raw_matte.*.png")):
         token = raw.name.removeprefix("raw_matte.")
-        pairs.append((raw, root / f"matte.{token}"))
+        output = (
+            _path_for_frame(public_pattern, int(token.removesuffix(".png")))
+            if public_pattern is not None
+            else root / f"matte.{token}"
+        )
+        pairs.append((raw, output))
     for raw in sorted(root.glob("raw_tracked_matte.*.png")):
         token = raw.name.removeprefix("raw_tracked_matte.")
         pairs.append((raw, root / f"tracked_matte.{token}"))
@@ -782,9 +798,10 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
         node["kyven_status"].setValue(f"Failed: {_job_error_text(job)}")
         return
     output = _nuke_file_path(Path(job["result"]["output"]))
-    _set_matte_read(node, output)
+    if not (_uses_artist_cache(node) and _load_artist_cache(node, report_status=False)):
+        _set_matte_read(node, output)
     frame = int(nuke.frame())
-    trimap = _cache_root(node) / f"confidence_trimap.{frame:04d}.png"
+    trimap = _cache_work_root(node) / f"confidence_trimap.{frame:04d}.png"
     if trimap.is_file():
         _set_confidence_trimap_read(node, _nuke_file_path(trimap))
     metadata = job["result"].get("metadata") or {}
@@ -813,7 +830,7 @@ def _apply_range_result(
     if node is None:
         return
     _set_matte_read(node, output_pattern, first, last)
-    trimap_pattern = _cache_root(node) / "confidence_trimap.%04d.png"
+    trimap_pattern = _cache_work_root(node) / "confidence_trimap.%04d.png"
     _set_confidence_trimap_read(node, _nuke_file_path(trimap_pattern), first, last)
     node["kyven_status"].setValue(
         f"Range {first}-{last} ready - average score {average_score:.3f}"
@@ -833,14 +850,17 @@ def _apply_video_result(node_name: str, job: dict[str, Any]) -> None:
     first = int(result["first_frame"])
     last = int(result["last_frame"])
     _set_matte_read(node, output_pattern, first, last)
-    trimap_pattern = _cache_root(node) / "confidence_trimap.%04d.png"
+    trimap_pattern = _cache_work_root(node) / "confidence_trimap.%04d.png"
     if _path_for_frame(trimap_pattern, first).is_file():
         _set_confidence_trimap_read(node, _nuke_file_path(trimap_pattern), first, last)
-    roi = (result.get("metadata") or {}).get("processing_roi")
+    metadata = result.get("metadata") or {}
+    roi = metadata.get("processing_roi")
     suffix = f" | ROI {roi['width']}x{roi['height']}" if roi else ""
     postprocess = (result.get("metadata") or {}).get("postprocess")
     if postprocess and int(postprocess.get("filled_holes", 0)):
         suffix += f" | filled {int(postprocess['filled_holes'])} hole(s)"
+    if metadata.get("key_frame_polished"):
+        suffix += f" | seamless key from {metadata['key_frame_polish_source']}"
     node["kyven_status"].setValue(
         f"SAM 2 tracking ready: {first}-{last} ({result['direction']}){suffix}"
     )
@@ -1027,7 +1047,177 @@ def _cache_root(node: Any) -> Path:
     return root
 
 
+_ARTIST_CACHE_NAME_FIELDS = ("roto_name", "refine_name", "inpaint_name")
+
+
+def _artist_cache_name_field(node: Any) -> str | None:
+    knobs = node.knobs() if hasattr(node, "knobs") else {}
+    return next((name for name in _ARTIST_CACHE_NAME_FIELDS if name in knobs), None)
+
+
+def _uses_artist_cache(node: Any) -> bool:
+    knobs = node.knobs() if hasattr(node, "knobs") else {}
+    return (
+        "cache_root" in knobs
+        and "cache_version" in knobs
+        and _artist_cache_name_field(node) is not None
+    )
+
+
+def _artist_cache_name(node: Any) -> str:
+    field = _artist_cache_name_field(node)
+    if field is None:
+        raise RuntimeError("Enter a cache Name before processing.")
+    label = {
+        "roto_name": "Roto Name",
+        "refine_name": "Refine Name",
+        "inpaint_name": "Inpaint Name",
+    }[field]
+    return _cache_path_component(node[field].value(), label)
+
+
+def _cache_work_root(node: Any) -> Path:
+    root = _cache_root(node)
+    if not _uses_artist_cache(node):
+        return root
+    work = root / "_kyven_work"
+    work.mkdir(parents=True, exist_ok=True)
+    source_root = work / "source"
+    source_root.mkdir(parents=True, exist_ok=True)
+    for source_pattern in ("source.*", "refine_source.*", "inpaint_source.*"):
+        for source_parent in (root, work):
+            for exported_source in source_parent.glob(source_pattern):
+                try:
+                    exported_source.replace(source_root / exported_source.name)
+                except OSError:
+                    pass
+    internal_patterns = (
+        "refine_mask.*",
+        "trimap.*",
+        "trimap_preview*",
+        "inpaint_mask.*",
+        "inpaint_model_mask.*",
+        "inpaint_processed_mask.*",
+        "inpaint_patch.*",
+    )
+    for internal_pattern in internal_patterns:
+        for internal_file in root.glob(internal_pattern):
+            try:
+                internal_file.replace(work / internal_file.name)
+            except OSError:
+                pass
+    for legacy_range in work.glob("sam2_video_*"):
+        if not legacy_range.is_dir():
+            continue
+        target = source_root / legacy_range.name.removeprefix("sam2_video_")
+        try:
+            if not target.exists():
+                legacy_range.replace(target)
+        except OSError:
+            pass
+    manifests = work / "manifests"
+    for sidecar in root.glob("*.png.kyven.json"):
+        try:
+            manifests.mkdir(parents=True, exist_ok=True)
+            sidecar.replace(manifests / sidecar.name)
+        except OSError:
+            pass
+    return work
+
+
+def _public_matte_pattern(node: Any) -> Path:
+    root = _cache_root_path(node)
+    if not _uses_artist_cache(node):
+        return root / "matte.%04d.png"
+    roto_name = _artist_cache_name(node)
+    version = _cache_path_component(node["cache_version"].value(), "Version")
+    return root / f"{roto_name}_{version}.%04d.png"
+
+
+def _sequence_frame_range(pattern: Path) -> tuple[int, int] | None:
+    prefix, separator, suffix = pattern.name.partition("%04d")
+    if not separator or not pattern.parent.is_dir():
+        return None
+    expression = re.compile(
+        f"{re.escape(prefix)}(-?[0-9]+){re.escape(suffix)}"
+    )
+    frames = []
+    for candidate in pattern.parent.iterdir():
+        match = expression.fullmatch(candidate.name)
+        if candidate.is_file() and match is not None:
+            frames.append(int(match.group(1)))
+    return (min(frames), max(frames)) if frames else None
+
+
+def _load_artist_cache(node: Any, *, report_status: bool = True) -> bool:
+    """Connect an existing public sequence selected by the three artist fields."""
+
+    try:
+        pattern = _public_matte_pattern(node)
+    except RuntimeError as exc:
+        if report_status:
+            node["kyven_status"].setValue(str(exc))
+        return False
+    frame_range = _sequence_frame_range(pattern)
+    if frame_range is None:
+        if report_status:
+            node["kyven_status"].setValue(
+                f"No cached sequence at {_nuke_file_path(pattern)}"
+            )
+        return False
+    first, last = frame_range
+    _set_matte_read(node, _nuke_file_path(pattern), first, last)
+    work = _cache_work_root(node)
+    trimap_pattern = work / "confidence_trimap.%04d.png"
+    if _path_for_frame(trimap_pattern, first).is_file():
+        _set_confidence_trimap_read(
+            node,
+            _nuke_file_path(trimap_pattern),
+            first,
+            last,
+        )
+    if report_status:
+        node["kyven_status"].setValue(
+            f"Loaded {pattern.name}: frames {first}-{last}"
+        )
+        _refresh_node_output(node)
+    return True
+
+
+def _apply_artist_cache_fields(node_name: str) -> None:
+    """Apply cache field edits after Nuke completes the knobChanged callback."""
+
+    node = _nuke().toNode(node_name)
+    if node is None:
+        return
+    if "kyven_busy" in node.knobs() and bool(node["kyven_busy"].value()):
+        node["kyven_status"].setValue(
+            "Cancel the active operation before changing cache."
+        )
+        return
+    if "previous_cache_location" in node.knobs():
+        node.removeKnob(node["previous_cache_location"])
+    _disconnect_cached_matte(node)
+    if "kyven_job_id" in node.knobs():
+        node["kyven_job_id"].setValue("")
+    if "kyven_live_frame" in node.knobs():
+        node["kyven_live_frame"].setValue(-2147483647)
+    _load_artist_cache(node)
+
+
 def _cache_root_path(node: Any) -> Path:
+    if _uses_artist_cache(node):
+        root_value = str(node["cache_root"].value()).strip()
+        roto_name = _artist_cache_name(node)
+        version = _cache_path_component(node["cache_version"].value(), "Version")
+        if not root_value:
+            raise RuntimeError("Choose Cache Folder before processing.")
+        cache_root = Path(os.path.expandvars(os.path.expanduser(root_value))).resolve()
+        target = (cache_root / roto_name / version).resolve()
+        if cache_root not in target.parents:
+            raise RuntimeError("Kyven cache path is outside the selected Cache Folder.")
+        return target
+
     _ensure_unique_cache_uuid(node)
     cache_root = config.cache_dir().resolve()
     node_id = str(node["kyven_uuid"].value()).strip()
@@ -1037,6 +1227,19 @@ def _cache_root_path(node: Any) -> Path:
     if target.parent != cache_root:
         raise RuntimeError("Kyven node cache path is outside the configured cache directory.")
     return target
+
+
+def _cache_path_component(value: Any, label: str) -> str:
+    """Validate one user-visible cache directory component."""
+
+    component = str(value).strip()
+    if not component:
+        raise RuntimeError(f"Enter {label} before processing.")
+    if component in {".", ".."} or any(character in component for character in '<>:"/\\|?*'):
+        raise RuntimeError(f"{label} must be a single valid folder name.")
+    if component.endswith((".", " ")):
+        raise RuntimeError(f"{label} cannot end with a dot or space.")
+    return component
 
 
 def _ensure_unique_cache_uuid(node: Any) -> bool:
@@ -1136,6 +1339,34 @@ def create_new_cache_version() -> None:
     if "kyven_busy" in node.knobs() and bool(node["kyven_busy"].value()):
         node["kyven_status"].setValue("Cancel the active operation before changing cache.")
         return
+    knobs = node.knobs()
+    if _uses_artist_cache(node):
+        old_path = _cache_root_path(node)
+        current = str(node["cache_version"].value()).strip()
+        match = re.fullmatch(r"([A-Za-z_-]*?)([0-9]+)", current)
+        prefix, number, width = (
+            (match.group(1), int(match.group(2)), len(match.group(2)))
+            if match
+            else ("v", 0, 3)
+        )
+        while True:
+            number += 1
+            next_version = f"{prefix}{number:0{width}d}"
+            node["cache_version"].setValue(next_version)
+            new_path = _cache_root_path(node)
+            if not new_path.exists():
+                break
+        new_path.mkdir(parents=True, exist_ok=False)
+        _disconnect_cached_matte(node)
+        if "kyven_job_id" in knobs:
+            node["kyven_job_id"].setValue("")
+        if "kyven_live_frame" in knobs:
+            node["kyven_live_frame"].setValue(-2147483647)
+        node["kyven_status"].setValue(
+            f"Cache version changed to {next_version}. Previous cache preserved: {_nuke_file_path(old_path)}"
+        )
+        return
+
     old_id = str(node["kyven_uuid"].value()).strip()
     old_path = config.cache_dir().resolve() / old_id if old_id else None
     new_id = uuid.uuid4().hex
@@ -1227,20 +1458,20 @@ def delete_all_cache() -> None:
 
 
 def _cache_paths(node: Any, frame: int) -> tuple[Path, Path, Path]:
-    root = _cache_root(node)
+    root = _cache_work_root(node)
     return (
-        root / f"source.{frame:04d}.png",
+        root / "source" / f"source.{frame:04d}.png",
         root / f"raw_matte.{frame:04d}.png",
-        root / f"matte.{frame:04d}.png",
+        _path_for_frame(_public_matte_pattern(node), frame),
     )
 
 
 def _cache_patterns(node: Any) -> tuple[Path, Path, Path]:
-    root = _cache_root(node)
+    root = _cache_work_root(node)
     return (
-        root / "source.%04d.png",
+        root / "source" / "source.%04d.png",
         root / "raw_matte.%04d.png",
-        root / "matte.%04d.png",
+        _public_matte_pattern(node),
     )
 
 
@@ -1249,14 +1480,26 @@ def _video_cache_paths(
     first: int,
     last: int,
 ) -> tuple[Path, Path, Path, Path]:
-    root = _cache_root(node)
-    frames_dir = root / f"sam2_video_{first}_{last}"
+    root = _cache_work_root(node)
+    frames_dir = (
+        root / "source" / f"{first}_{last}"
+        if _uses_artist_cache(node)
+        else root / f"sam2_video_{first}_{last}"
+    )
     frames_dir.mkdir(parents=True, exist_ok=True)
     for stale in frames_dir.glob("*.jpg"):
         stale.unlink(missing_ok=True)
     source_pattern = frames_dir / "%05d.jpg"
-    raw_output_pattern = root / "raw_tracked_matte.%04d.png"
-    output_pattern = root / "tracked_matte.%04d.png"
+    raw_output_pattern = (
+        root / "raw_matte.%04d.png"
+        if _uses_artist_cache(node)
+        else root / "raw_tracked_matte.%04d.png"
+    )
+    output_pattern = (
+        _public_matte_pattern(node)
+        if _uses_artist_cache(node)
+        else root / "tracked_matte.%04d.png"
+    )
     return frames_dir, source_pattern, raw_output_pattern, output_pattern
 
 
@@ -1289,8 +1532,9 @@ def _payload_for_paths(
     matte_path: Path,
 ) -> dict[str, Any]:
     frame_token = matte_path.stem.rsplit(".", 1)[-1]
-    logits_path = matte_path.parent / f"sam_logits.{frame_token}.npz"
-    trimap_path = matte_path.parent / f"confidence_trimap.{frame_token}.png"
+    work_root = _cache_work_root(node)
+    logits_path = work_root / f"sam_logits.{frame_token}.npz"
+    trimap_path = work_root / f"confidence_trimap.{frame_token}.png"
     return segment_payload(
         source=str(source_path.resolve()),
         output=str(matte_path.resolve()),
@@ -1679,6 +1923,9 @@ def _arrange_tracking_controls(node: Any) -> None:
     if "add_correction" not in node.knobs():
         return
     anchor = "add_correction"
+    if "polish_key_frame" in node.knobs():
+        _place_knob_after(node, "polish_key_frame", anchor)
+        anchor = "polish_key_frame"
     for name in ("propagate_backward", "propagate_both", "propagate_forward"):
         if name in node.knobs():
             _place_knob_after(node, name, anchor)
@@ -1869,14 +2116,23 @@ def propagate_video(direction: str) -> None:
         last_frame=last,
         key_frame=key_frame,
         direction=direction,
+        polish_key_frame=(
+            bool(node["polish_key_frame"].value())
+            if "polish_key_frame" in node.knobs()
+            else False
+        ),
         fill_holes=bool(node["fill_holes"].value()) if "fill_holes" in node.knobs() else False,
         max_hole_area=(
             int(node["max_hole_area"].value()) if "max_hole_area" in node.knobs() else 2_048
         ),
         animated_rois=animated_rois,
         corrections=corrections,
-        logits_output_pattern=str((_cache_root(node) / "sam_logits.%04d.npz").resolve()),
-        trimap_output_pattern=str((_cache_root(node) / "confidence_trimap.%04d.png").resolve()),
+        logits_output_pattern=str(
+            (_cache_work_root(node) / "sam_logits.%04d.npz").resolve()
+        ),
+        trimap_output_pattern=str(
+            (_cache_work_root(node) / "confidence_trimap.%04d.png").resolve()
+        ),
         confidence_width=(
             float(node["confidence_width"].value())
             if "confidence_width" in node.knobs()
@@ -2122,6 +2378,7 @@ def _restyle_node_ui(node: Any) -> None:
         "propagate_forward": "Forward \u2192",
         "propagate_backward": "\u2190 Backward",
         "propagate_both": "\u2194 Both Directions",
+        "polish_key_frame": "Seamless Key Frame",
         "create_matte_read": "Create Matte Read",
         "delete_node_cache": "Delete Node Cache",
         "delete_all_cache": "Delete All Kyven Cache",
@@ -2157,12 +2414,14 @@ def _restyle_node_ui(node: Any) -> None:
         node["delete_all_cache"].setFlag(nuke.STARTLINE)
     if "propagate_backward" in node.knobs():
         node["propagate_backward"].setFlag(nuke.STARTLINE)
+    if "polish_key_frame" in node.knobs():
+        node["polish_key_frame"].setFlag(nuke.STARTLINE)
     _ensure_processing_layout(node)
     _arrange_tracking_controls(node)
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 30</font>'
+            '<font color="#91a3b0">SAM 2 | Local inference | API 32</font>'
         )
     if "output_help" in node.knobs():
         node["output_help"].setValue(
@@ -2331,16 +2590,24 @@ def _ensure_output_controls(node: Any) -> None:
         node.end()
 
 
-def _ensure_cache_controls(node: Any) -> None:
+def _ensure_cache_controls(
+    node: Any,
+    *,
+    name_field: str = "roto_name",
+    name_label: str = "Roto Name",
+    name_default: str = "roto",
+) -> None:
     """Add shared cache versioning and maintenance controls."""
     nuke = _nuke()
     if "cache_section" not in node.knobs():
         _add_section(nuke, node, "cache_section", "CACHE")
     if "cache_location" not in node.knobs() and "cache_folder" not in node.knobs():
-        cache_location = nuke.String_Knob("cache_location", "Cache Folder")
-        cache_location.setValue(_nuke_file_path(_cache_root_path(node)))
-        cache_location.setFlag(nuke.READ_ONLY)
-        _add_knob(nuke, node, cache_location)
+        _ensure_artist_cache_fields(
+            node,
+            name_field=name_field,
+            name_label=name_label,
+            name_default=name_default,
+        )
     if "create_matte_read" not in node.knobs():
         _add_knob(
             nuke,
@@ -2362,7 +2629,8 @@ def _ensure_cache_controls(node: Any) -> None:
                 "kyven_nuke.node.delete_node_cache()",
             ),
         )
-    if "delete_all_cache" not in node.knobs():
+    artist_layout = _uses_artist_cache(node)
+    if not artist_layout and "delete_all_cache" not in node.knobs():
         _add_knob(
             nuke,
             node,
@@ -2378,11 +2646,39 @@ def _ensure_cache_controls(node: Any) -> None:
     )
 
 
+def _ensure_artist_cache_fields(
+    node: Any,
+    *,
+    name_field: str,
+    name_label: str,
+    name_default: str,
+) -> None:
+    nuke = _nuke()
+    if "cache_root" not in node.knobs():
+        cache_root = nuke.File_Knob("cache_root", "Cache Folder")
+        cache_root.setValue("")
+        cache_root.setTooltip("Choose the directory that will contain this cache.")
+        _add_knob(nuke, node, cache_root)
+    if name_field not in node.knobs():
+        cache_name = nuke.String_Knob(name_field, name_label)
+        cache_name.setValue(name_default)
+        cache_name.setTooltip("Nodes with the same Name and Version share this cache.")
+        _add_knob(nuke, node, cache_name)
+    if "cache_version" not in node.knobs():
+        cache_version = nuke.String_Knob("cache_version", "Version")
+        cache_version.setValue("v001")
+        cache_version.setTooltip("Cache version, for example v001.")
+        _add_knob(nuke, node, cache_version)
+
+
 def _ensure_cache_version_control(node: Any) -> None:
     """Add the non-destructive cache rollover button to any Kyven Group."""
 
     nuke = _nuke()
-    if "previous_cache_location" not in node.knobs():
+    artist_layout = _uses_artist_cache(node)
+    if artist_layout and "previous_cache_location" in node.knobs():
+        node.removeKnob(node["previous_cache_location"])
+    elif not artist_layout and "previous_cache_location" not in node.knobs():
         previous = nuke.String_Knob("previous_cache_location", "Previous Cache")
         previous.setFlag(nuke.READ_ONLY)
         previous.setVisible(False)
@@ -2408,14 +2704,16 @@ def _ensure_cache_version_control(node: Any) -> None:
     anchor = next(
         (
             name
-            for name in ("cache_location", "cache_folder")
+            for name in ("cache_version", "cache_location", "cache_folder")
             if name in node.knobs()
         ),
         None,
     )
-    if anchor is not None:
+    if anchor is not None and not artist_layout:
         _place_knob_after(node, "previous_cache_location", anchor)
-    _place_knob_after(node, "new_cache_version", "previous_cache_location")
+        _place_knob_after(node, "new_cache_version", "previous_cache_location")
+    elif anchor is not None:
+        _place_knob_after(node, "new_cache_version", anchor)
 
 
 def _ensure_postprocess_controls(node: Any) -> None:
@@ -2572,6 +2870,22 @@ def _ensure_correction_controls(node: Any) -> None:
     _set_correction_frames(node, saved_frames)
 
 
+def _ensure_tracking_polish_control(node: Any) -> None:
+    """Add the optional neighbour-to-key cleanup pass to new and legacy nodes."""
+
+    nuke = _nuke()
+    if "polish_key_frame" not in node.knobs():
+        polish = nuke.Boolean_Knob("polish_key_frame", "Seamless Key Frame")
+        polish.setValue(False)
+        polish.setTooltip(
+            "After tracking, seed a fresh SAM 2 chain from the nearest tracked frame "
+            "and propagate one frame back to replace the key-frame matte."
+        )
+        _add_knob(nuke, node, polish)
+    if "add_correction" in node.knobs():
+        _place_knob_after(node, "polish_key_frame", "add_correction")
+
+
 def _ensure_point_remove_controls(node: Any) -> None:
     """Add a per-row remove button without recreating animated point knobs."""
 
@@ -2634,6 +2948,7 @@ def upgrade_selected_segment_node() -> None:
         _ensure_model_manager_control(node)
         _ensure_server_controls(node)
         _ensure_correction_controls(node)
+        _ensure_tracking_polish_control(node)
         _ensure_point_remove_controls(node)
         _upgrade_roi_controls(node)
         _restyle_node_ui(node)
@@ -2668,7 +2983,8 @@ def repair_segment_nodes() -> None:
             _ensure_server_controls(node)
             _ensure_cache_version_control(node)
             node_id = str(node["kyven_uuid"].value()).strip()
-            if not node_id or node_id in seen_ids:
+            artist_layout = _uses_artist_cache(node)
+            if not artist_layout and (not node_id or node_id in seen_ids):
                 node_id = uuid.uuid4().hex
                 node["kyven_uuid"].setValue(node_id)
                 _disconnect_cached_matte(node)
@@ -2686,6 +3002,7 @@ def repair_segment_nodes() -> None:
             if "propagate_forward" not in knobs or "kyven_uuid" not in knobs:
                 continue
             _ensure_correction_controls(node)
+            _ensure_tracking_polish_control(node)
             _restyle_node_ui(node)
         except Exception:  # noqa: BLE001, S112 - one legacy node must not block the script
             continue
@@ -2717,7 +3034,7 @@ def create_segment_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / SEGMENT</b></font><br>'
-            '<font color="#91a3b0">SAM 2 | Local inference | API 30</font>',
+            '<font color="#91a3b0">SAM 2 | Local inference | API 32</font>',
         ),
     )
 
@@ -2916,6 +3233,7 @@ def create_segment_node() -> Any:
         start_line=False,
     )
     _ensure_correction_controls(node)
+    _ensure_tracking_polish_control(node)
     _add_knob(
         nuke,
         node,

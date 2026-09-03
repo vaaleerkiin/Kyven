@@ -1,10 +1,22 @@
 # Kyven Refine
 
+[Documentation home](README.md) · [Nuke workflow](NUKE.md) · [Segment](SEGMENT.md) ·
+[Models](MODELS.md) · [Troubleshooting](TROUBLESHOOTING.md)
+
 Kyven Refine supports ViTMatte and the memory-efficient MEMatte ViT-S AIM-500 backend. Both consume
 the same source RGB and binary mask/trimap inputs and produce the same alpha/output branches.
 
 Refine converts a coarse mask into a soft alpha matte using ViTMatte while keeping model inference
 outside the compositing host.
+
+## On this page
+
+- [Nuke graph](#nuke-graph)
+- [Trimap option](#trimap-option)
+- [Processing and performance](#processing)
+- [Cache](#cache)
+- [CLI](#cli)
+- [Updating an existing node](#updating-an-existing-node)
 
 Kyven offers the official ViTMatte Small and Base backbone sizes. There is no official Medium
 variant. Small Composition-1k is the recommended 4–8 GB default; Base Distinctions-646 has 96.7 M
@@ -53,13 +65,16 @@ report through the node Status field instead of opening a new window after every
 
 Range input export uses two batched Nuke renders instead of two render calls per frame. Source is
 stored as fast lossless TIFF and the mask as PNG; ViTMatte jobs remain sequential after export.
+The selected provider loads once and remains resident across the range. For Full Frame, Kyven also
+avoids re-encoding the already exported Source into another temporary PNG; Auto/Manual crops still
+write a temporary cropped input as required.
 Inverted ROI corners are normalized, ROI is clamped to the input, and an empty/outside ROI safely
 falls back to the full input format.
 
-The cached files for a processed frame are `refine_source`, `refine_mask`, `refined_matte`, and
-`trimap`. Range processing writes matching `%04d` sequences and connects internal Reads to both the
-refined matte and trimap. `Create Matte Read` creates a Read for the refined matte; use
-the node's trimap output modes to inspect the cached trimap in context.
+The artist-facing output is `<Refine Name>_<Version>.%04d.png`. Source, mask, trimap, preview,
+manifest, and other implementation files are kept under `_kyven_work/`. Range processing connects
+internal Reads to both the public refined sequence and private trimap sequence. **Create Matte Read**
+creates a normal Read for the public output; use the node's trimap modes to inspect guidance.
 
 Trimap preview is independent of ViTMatte. Connecting or changing the Mask input, moving to another
 frame, or adjusting `Foreground Erosion`, `Background Dilation`, trimap mode, or ROI immediately
@@ -69,6 +84,15 @@ preview does not load or run ViTMatte; press Process only when the guidance look
 Processing ROI crops both image and mask before inference, then pastes the refined alpha into the
 full-size coarse mask. Low Memory uses 512 px tiles, Balanced uses 1024 px tiles, and Quality uses a
 full-frame pass unless a custom tile size is set. Overlap blending reduces tile seams.
+
+## Cache
+
+New Refine nodes use three artist fields: **Cache Folder**, **Refine Name**, and **Version**.
+The version root contains only the public sequence
+`<Refine Name>_<Version>.%04d.png` and `_kyven_work/`. Source exports are stored under
+`_kyven_work/source/`; masks, trimaps, previews, manifests, and other implementation files remain
+inside `_kyven_work/`. Current Frame and Frame Range share the same public sequence. Changing any
+of the three fields reconnects an existing matching sequence.
 
 ## CLI
 

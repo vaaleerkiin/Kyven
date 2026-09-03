@@ -15,6 +15,7 @@ from kyven_nuke.inpaint_node import (
     CATTERY_MODEL_COLORSPACE,
     INPAINT_OUTPUT_MODES,
     _colorspace_has_error,
+    _inpaint_public_pattern,
     _wire_generated_patch,
     _wire_patch_over_source,
 )
@@ -27,10 +28,16 @@ from kyven_nuke.inpaint_node import (
 from kyven_nuke.inpaint_node import (
     _ensure_input_order as ensure_inpaint_input_order,
 )
+from kyven_nuke.inpaint_node import (
+    _paths as inpaint_cache_paths,
+)
 from kyven_nuke.live import affects_live_result
 from kyven_nuke.node import (
     OUTPUT_MODES,
     _begin_node_operation,
+    _cache_path_component,
+    _cache_paths,
+    _cache_patterns,
     _cache_root_path,
     _cached_postprocess_frames,
     _clamped_bbox_values,
@@ -46,7 +53,9 @@ from kyven_nuke.node import (
     _point_knob_names,
     _prompt_defaults,
     _section_markup,
+    _sequence_frame_range,
     _set_busy,
+    _video_cache_paths,
 )
 from kyven_nuke.payload import (
     inpaint_payload,
@@ -60,10 +69,17 @@ from kyven_nuke.refine_node import (
 )
 from kyven_nuke.refine_node import (
     REFINE_OUTPUT_MODES,
+    _refine_public_pattern,
     _trimap_preview_paths,
 )
 from kyven_nuke.refine_node import (
     SOURCE_INPUT as REFINE_SOURCE_INPUT,
+)
+from kyven_nuke.refine_node import (
+    _cache_paths as refine_cache_paths,
+)
+from kyven_nuke.refine_node import (
+    _cache_patterns as refine_cache_patterns,
 )
 from kyven_nuke.refine_node import (
     _ensure_input_order as ensure_refine_input_order,
@@ -621,6 +637,148 @@ TCP 127.0.0.1:8766 0.0.0.0:0 ESTABLISHED 13"""
         ):
             _cache_root_path(Node())
 
+    def test_artist_cache_path_uses_folder_roto_name_and_version_without_uuid(self) -> None:
+        class Knob:
+            def __init__(self, value: str) -> None:
+                self._value = value
+
+            def value(self) -> str:
+                return self._value
+
+        class Node:
+            def __init__(self, root: str) -> None:
+                self._knobs = {
+                    "cache_root": Knob(root),
+                    "roto_name": Knob("hero_roto"),
+                    "cache_version": Knob("v003"),
+                    "kyven_uuid": Knob("ignored-uuid"),
+                }
+
+            def knobs(self):
+                return self._knobs
+
+            def __getitem__(self, name: str):
+                return self._knobs[name]
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = _cache_root_path(Node(directory))
+
+        self.assertEqual(path.parts[-2:], ("hero_roto", "v003"))
+        self.assertNotIn("ignored-uuid", path.parts)
+
+    def test_artist_cache_keeps_only_named_matte_sequence_in_public_root(self) -> None:
+        class Knob:
+            def __init__(self, value: str) -> None:
+                self._value = value
+
+            def value(self) -> str:
+                return self._value
+
+        class Node:
+            def __init__(self, root: str) -> None:
+                self._knobs = {
+                    "cache_root": Knob(root),
+                    "roto_name": Knob("phone"),
+                    "cache_version": Knob("v001"),
+                }
+
+            def knobs(self):
+                return self._knobs
+
+            def __getitem__(self, name: str):
+                return self._knobs[name]
+
+        with tempfile.TemporaryDirectory() as directory:
+            node = Node(directory)
+            source, raw, matte = _cache_paths(node, 1053)
+            source_pattern, _raw_pattern, matte_pattern = _cache_patterns(node)
+            frames, _video_source, video_raw, video_matte = _video_cache_paths(
+                node, 1001, 1074
+            )
+
+            self.assertEqual(matte.name, "phone_v001.1053.png")
+            self.assertEqual(matte_pattern.name, "phone_v001.%04d.png")
+            self.assertEqual(video_matte, matte_pattern)
+            self.assertEqual(source.parent.name, "source")
+            self.assertEqual(raw.parent.name, "_kyven_work")
+            self.assertEqual(source_pattern.parent.name, "source")
+            self.assertEqual(video_raw.parent.name, "_kyven_work")
+            self.assertEqual(frames.parent.name, "source")
+            self.assertEqual(frames.name, "1001_1074")
+
+    def test_refine_artist_cache_uses_named_public_sequence_and_work_inputs(self) -> None:
+        node = self._artist_cache_node("refine_name", "hair")
+        with tempfile.TemporaryDirectory() as directory:
+            node["cache_root"].setValue(directory)
+            source, mask, output, trimap = refine_cache_paths(node, 1005)
+            _source_pattern, _mask_pattern, output_pattern, _trimap_pattern = (
+                refine_cache_patterns(node)
+            )
+
+            self.assertEqual(output.name, "hair_v001.1005.png")
+            self.assertEqual(output_pattern.name, "hair_v001.%04d.png")
+            self.assertEqual(_refine_public_pattern(node), output_pattern)
+            self.assertEqual(source.parent.name, "source")
+            self.assertEqual(mask.parent.name, "_kyven_work")
+            self.assertEqual(trimap.parent.name, "_kyven_work")
+
+    def test_inpaint_artist_cache_uses_named_public_sequence_and_work_inputs(self) -> None:
+        node = self._artist_cache_node("inpaint_name", "cleanup")
+        with tempfile.TemporaryDirectory() as directory:
+            node["cache_root"].setValue(directory)
+            source, mask, model_mask, output, processed, patch = inpaint_cache_paths(
+                node, 1012
+            )
+
+            self.assertEqual(output.name, "cleanup_v001.1012.png")
+            self.assertEqual(_inpaint_public_pattern(node).name, "cleanup_v001.%04d.png")
+            self.assertEqual(source.parent.name, "source")
+            for internal in (mask, model_mask, processed, patch):
+                self.assertEqual(internal.parent.name, "_kyven_work")
+
+    @staticmethod
+    def _artist_cache_node(name_field: str, name_value: str):
+        class Knob:
+            def __init__(self, value: str) -> None:
+                self._value = value
+
+            def value(self) -> str:
+                return self._value
+
+            def setValue(self, value: str) -> None:
+                self._value = value
+
+        class Node:
+            def __init__(self) -> None:
+                self._knobs = {
+                    "cache_root": Knob(""),
+                    name_field: Knob(name_value),
+                    "cache_version": Knob("v001"),
+                }
+
+            def knobs(self):
+                return self._knobs
+
+            def __getitem__(self, name: str):
+                return self._knobs[name]
+
+        return Node()
+
+    def test_public_sequence_range_is_discovered_from_named_frames(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pattern = root / "hand_v012.%04d.png"
+            (root / "hand_v012.1001.png").write_bytes(b"mask")
+            (root / "hand_v012.1048.png").write_bytes(b"mask")
+            (root / "different_v012.2000.png").write_bytes(b"other")
+
+            self.assertEqual(_sequence_frame_range(pattern), (1001, 1048))
+
+    def test_artist_cache_components_reject_nested_or_parent_paths(self) -> None:
+        for value in ("../shared", "shot/roto", r"shot\roto", ".."):
+            with self.subTest(value=value), self.assertRaises(RuntimeError):
+                _cache_path_component(value, "Roto Name")
+
     def test_copied_kyven_node_receives_an_isolated_cache_uuid(self) -> None:
         class Knob:
             def __init__(self, value: str = "") -> None:
@@ -743,10 +901,12 @@ TCP 127.0.0.1:8766 0.0.0.0:0 ESTABLISHED 13"""
             last_frame=100,
             key_frame=50,
             direction="both",
+            polish_key_frame=True,
         )
 
         self.assertEqual(payload["key_frame"], 50)
         self.assertEqual(payload["direction"], "both")
+        self.assertTrue(payload["polish_key_frame"])
         self.assertEqual(payload["raw_output_pattern"], "D:/cache/raw_matte.%04d.png")
         self.assertTrue(payload["offload_video_to_cpu"])
         self.assertEqual(payload["points"][0]["y"], 880.0)

@@ -1,42 +1,39 @@
 # Kyven Tools for Nuke
 
-The Nuke adapter exposes independent Kyven Tools operations as native-looking Group nodes. The
-current Segment, Refine, and Inpaint nodes export frames to the local Kyven Server and read cached
-results back into the graph. They use the same host/server boundary and per-node cache conventions.
-Nuke remains responsive while server inference runs.
+[Documentation home](README.md) · [Install](INSTALLATION.md) · [Segment](SEGMENT.md) ·
+[Refine](REFINE.md) · [Inpaint](INPAINT.md) · [Troubleshooting](TROUBLESHOOTING.md)
 
-All Kyven mask, matte, and trimap cache files are explicitly marked as **raw data** on both Nuke
-Write and Read nodes. OCIO/ACES therefore never applies a display or color-space transform to mask
-RGB values before they are copied into alpha: black remains `0.0`, white remains `1.0`, and soft
-mask values round-trip unchanged apart from the selected file format's numeric precision.
+This guide covers behavior shared by all Kyven Nuke nodes. Task-specific controls live in the three
+node guides, with Segment first because roto is the primary Kyven workflow.
 
-Inpaint mirrors Cattery LaMa's native Nuke color graph: `Input Colorspace -> sRGB` before inference
-and `sRGB -> Input Colorspace` afterward, with **Linear** selected by default. The linked
-**Input Colorspace** knob exposes the same choices as Nuke's Colorspace node. The intervening cache
-Write and Reads are raw, preventing an extra file transform. The generated patch is then composited
-over the original Source inside Nuke. Public Inpaint alpha comes directly
-from the Nuke mask graph rather than from cached RGB, while the cached blend mask carries the exact
-inward feather used for the generated patch. The feather keeps the original Source on the mask
-boundary and starts the transition farther inside, preventing bright or dark colour fringes.
+## Choose a node
 
-## Portable install
+| Goal | Node | Detailed guide |
+| --- | --- | --- |
+| Roto one frame or track through a shot | **Kyven Segment** | [Segment](SEGMENT.md) |
+| Turn a coarse mask/trimap into soft alpha | **Kyven Refine** | [Refine](REFINE.md) |
+| Remove an object and rebuild background | **Kyven Inpaint** | [Inpaint](INPAINT.md) |
 
-Clone or extract Kyven into its final writable directory and double-click `install.cmd`. To launch
-the same installer from PowerShell, run from the repository root:
+Typical roto graph:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1
+```text
+Source -> Segment -----------------------> composite
+   |          |
+   |          +-- optional Trimap --+
+   |                                 v
+   +------------------------------> Refine -> composite
 ```
 
-All runtime files stay inside that repository. The installer does not require administrator access,
-does not alter `PATH`, and does not edit Nuke settings. It prints the exact plugin path when done.
-Its console menu allows one or several SAM 2, ViTMatte, and LaMa models to be selected according to
-available VRAM.
-Choose the final repository location before installing; after moving it, rerun `install.ps1`.
+Typical paint-out graph:
 
-## Connect Nuke manually
+```text
+Source ---------------------> Inpaint Source (left input)
+Paint / Segment removal mask -> Inpaint Mask (right input)
+```
 
-Add the repository host folder to the user's existing `.nuke/init.py`:
+## Connect Nuke
+
+Run `install.cmd`, then add the repository host folder to the user's existing `.nuke/init.py`:
 
 ```python
 import nuke
@@ -44,290 +41,147 @@ import nuke
 nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 ```
 
-The adapter discovers the repository from its own installed plugin path, so the folder may be placed
-anywhere. `KYVEN_ROOT` is only an optional override for custom deployments. Restart Nuke and choose
-`Kyven > Segment`, `Kyven > Refine`, or `Kyven > Inpaint` from the Nodes menu.
+Replace the path with the actual repository location and restart Nuke. Kyven appears under
+`Nodes > Kyven`. The installer deliberately does not edit Nuke settings. See
+[Installation](INSTALLATION.md) for requirements, updates, moving the repository, and unattended
+setup.
 
-Use `Kyven > Model Manager...` at any time to install or remove a trusted catalog model. The same
-button appears in every Kyven node. Model Manager installs a model's pinned runtime into Kyven's
-private environment when required, restarts only Kyven Server, and then downloads the checkpoint.
-Downloads show progress and become available only after exact size and SHA-256 verification; model
-removal does not delete rendered caches.
-Repository-backed downloads use audited revisions, while every single-file checkpoint is verified
-against its exact expected size and SHA-256.
+## Create and update nodes
 
-## Kyven branding and project link
-
-The Kyven logo is stored with the Nuke adapter at `hosts/nuke/icons/kyven_logo.png`. It is used for
-the Kyven group in Nuke's left-hand **Nodes** toolbar and appears at the top of Segment, Refine, and
-Inpaint nodes. Clicking the logo opens the [Kyven GitHub project](https://github.com/vaaleerkiin/Kyven).
-
-Every node also has **Start Server** and **Stop Server** directly below its Status field. Start
-validates an existing server or launches a fresh one. Stop asks for confirmation, authenticates the
-service before touching it, and can terminate an older Kyven process that predates the shutdown API.
-Use Stop followed by Start after updating Kyven or when a stale worker remains in memory.
-
-## Inpaint workflow
-
-For a focused control-by-control guide, see [Kyven Inpaint](INPAINT.md).
-
-Connect Source to the left **Source** connector (input 1) and a removal mask to the right **Mask**
-connector (input 0). Choose Alpha or Red for the mask channel.
-`Auto` Crop Mode finds the model-mask bounds and adds Context Padding; `Manual` exposes an
-animatable ROI; `Full` sends the complete frame. Grow gives the model enough area to replace object
-edges. `Model Mask Grow` affects what LaMa replaces; negative values erode. Threshold converts soft
-gray input pixels into LaMa's binary model mask. Pure black/white masks do not visibly change when
-Threshold moves. The clean soft input mask composites the default Result. Use the uncomposited
-Generated Patch output with external mask processing and Merge when custom edge treatment is needed. LaMa
-ONNX works on CPU and does not consume the 4 GB GPU
-budget. Its fixed 512-square input uses aspect-preserving letterboxing, so a tight ROI improves
-effective detail without stretching the shot. Big-LaMa Native instead preserves ROI resolution and
-is preferable when the fixed input loses texture detail. New nodes combine Source RGB and Mask alpha into one
-uncompressed TIFF export, avoiding the previous double graph evaluation. Live follows timeline and control changes; range mode queues independent frames and may
-flicker on difficult footage because LaMa is not a temporal model.
-
-With Big-LaMa Native selected, `Quality Mode = Refined` runs coarse-to-native feature optimization
-using the same checkpoint. Steps, Strength, and Scales appear only in that mode. Refined adds no
-download, reports every iteration in the progress window, and is intended for final-quality frames;
-use a tight Auto ROI on an 8 GB GPU. Standard remains the fast and memory-safe default.
-
-After updating Kyven, select an existing node and use the matching command:
-
-- `Kyven > Upgrade Selected Segment Node` preserves its UUID, cached matte, prompts, and input;
-- `Kyven > Upgrade Selected Refine Node` preserves its refined matte and adds current trimap outputs.
-- `Kyven > Upgrade Selected Inpaint Node` preserves its UUID and cached result sequence.
-
-A newly created node always receives the latest controls and output graph.
-
-## Live mode
-
-Both Segment and Refine have `Live Current Frame`. When enabled, moving to another timeline frame
-exports and submits that frame automatically. Only one GPU job runs at a time; rapid scrubbing does
-not create concurrent model copies. Editing a Segment point or Processing ROI also invalidates and
-regenerates the visible frame after a short debounce. Refine ROI changes do the same when Live is
-enabled. Trimap radii and Segment mask post-process settings use separate CPU-only previews and
-never rerun SAM or ViTMatte. Output-only controls do not rerun inference. Disable Live before
-rendering a range.
-
-## Segment controls
-
-### Model and performance
-
-- `Model` selects a SAM 2.1 checkpoint.
-- `Memory Profile` records Low Memory, Balanced, or Quality intent.
-- `Refresh Models` updates installation and VRAM advice from the server.
-- `Model Manager...` installs or removes trusted models without leaving Nuke.
-
-Numeric mask preparation controls use full-width sliders. Segment hole filling and Refine trimap
-construction update their cached CPU previews silently. Inpaint Live updates caused by mask sliders
-also stay non-modal: progress appears in Status, while an explicit Process Current Frame or frame
-range still opens the normal cancellable progress window.
-
-### Points
-
-Positive points identify the object to keep. Negative points remove unwanted areas. A newly created
-Segment node immediately keys its initial point on the current primary `Key Frame`. Each point type
-has an independent enable toggle, so its Viewer handles and payload can be hidden without deleting
-the saved coordinates. Up to 32 controls are available per type. Each visible point has a remove
-button on its right; deleting a row shifts later points up while preserving their animation curves.
-
-### Processing ROI
-
-The ROI is an inference crop, not a SAM box prompt:
-
-1. Nuke exports the full source frame.
-2. Kyven crops it to the enabled ROI.
-3. Point coordinates are translated into crop space.
-4. SAM receives only the cropped pixels.
-5. Kyven places the returned mask on a full-size black canvas.
-
-Inverted ROI corners are normalized and coordinates are clamped to the input format. A zero-size or
-fully outside ROI falls back to the full frame instead of failing the job.
-
-The final matte always has the source dimensions. A positive point must be inside the ROI;
-negative points outside it are ignored. `Reset ROI to Input` restores only the ROI to the input
-format and preserves all point positions and point animation.
-
-SAM 2 resizes inputs to a fixed encoder resolution. ROI improves focus and effective detail but
-does not guarantee proportional GPU-time or VRAM savings.
-
-### Mask post-process
-
-`Fill Enclosed Holes` removes black islands fully surrounded by the foreground mask. It runs after
-SAM and after ROI reconstruction, so it does not affect inference or point coordinates. The outer
-silhouette is never dilated or eroded.
-
-`Max Hole Area (px)` limits which connected holes are filled. The default is `2048`; use a smaller
-value to preserve intentional openings, or `0` to fill every enclosed hole. The Status field reports
-how many holes were filled. When a raw matte already exists, the Nuke adapter rebuilds the displayed
-result through the CPU preview endpoint instead of running SAM again.
-
-`Confidence Width` controls the gray unknown band of Segment's confidence trimap. Kyven stores SAM 2
-logits privately as float16 NPZ cache data and regenerates black / gray / white trimaps on CPU, so
-moving this control never reruns SAM. Use `Output = Trimap` and connect Segment directly
-to Refine with `Generate Trimap from Mask` disabled to feed ViTMatte SAM-derived uncertainty.
-
-### Processing modes
-
-`Process Current Frame` creates one matte for the playhead frame.
-
-`Process Frame Range` applies the same points and ROI independently to every frame between
-`Range First` and `Range Last`. Use this when temporal consistency is not required or tracking is
-not appropriate.
-
-`Cancel` requests cooperative cancellation of the active job or range.
-
-Range input sequences are exported with Nuke's native batch execution instead of invoking the
-render engine once per frame. Segment, Refine, and Inpaint then validate every expected frame path
-before submitting inference. Only the expected temporary input frames are cleared before export, so
-stale or unrelated files in a node cache cannot make an incomplete export look valid. Cancellation
-is checked between export stages and while server jobs are running;
-the node always leaves its busy state when a range succeeds, fails, or is cancelled.
-Processing is single-flight per node: repeated button clicks and overlapping Live callbacks cannot
-submit a second job while the first one is active. The guard is session-backed, so a stale persisted
-Busy value after a host crash does not permanently lock the node. Model install/remove operations
-use the same one-operation-per-model rule.
-
-### SAM 2 video tracking
-
-1. Move to a frame where the object is easy to identify.
-2. Place points and optionally limit the Processing ROI.
-3. Click `Set Current as Key`.
-4. Set `Range First` and `Range Last`.
-5. On later frames, adjust the points and click `+ Correction at Current Frame` to save corrections.
-6. Choose `Forward`, `Backward`, or `Both Directions`.
-
-Nuke exports high-quality temporary JPEG frames. Kyven creates one fresh SAM 2 tracking state,
-offloads frames and state to system RAM, propagates from the key frame, and writes lossless full-size
-PNG mattes. Points are evaluated explicitly on the selected key frame. An animated Processing ROI is
-evaluated separately on every frame without moving the timeline or changing its keyframes; Kyven
-crops each frame, normalizes the crop to the key-frame ROI size for tracking, then restores the matte
-to that frame's original full-size coordinates. The native Nuke progress window shows export and
-model stages, percentage, an estimated remaining time, and a Cancel control. Every saved correction
-is sampled from the animated point controls at its frame and added to the same SAM 2 tracking state.
-Saved corrections appear as editable frame rows. Change the frame number directly or use remove on
-the right to remove that row. Editing the number moves every point keyframe from the old correction
-frame to the new one; removing the row removes those point keyframes. New points immediately receive
-all saved correction keyframes by copying the previous point with a small position offset. Correction
-controls never create keyframes on enable toggles or Processing ROI.
-
-The primary `Key Frame` follows the same point-keyframe rules but remains separate from correction
-rows. Editing its number moves its point keyframes. `Set Current as Key` replaces the previous
-primary key and removes the old primary point keys. New points receive both primary and correction
-keys automatically.
-
-The primary key and every correction condition the same SAM 2 tracking state before propagation.
-The direction buttons are ordered `Backward`, `Both Directions`, then `Forward`; they control which
-part of the selected range is written, not which corrections are loaded.
-
-Points are sampled on the primary key and every saved correction. Each prompt is checked against the
-ROI at its own conditioning frame. Animated ROIs between conditioning frames guide only the per-frame
-crop and do not require any original point to remain inside them.
-
-## Output modes
-
-New Segment nodes default to `Source + Alpha`.
-
-| Mode | Result |
-| --- | --- |
-| `Source + Alpha` | Original RGB with the mask replacing alpha |
-| `Alpha` | Binary mask in RGB and alpha |
-| `Cutout` | Source premultiplied by the generated binary alpha |
-| `Source + Trimap` | Original RGB with the confidence trimap replacing alpha |
-| `Trimap` | SAM confidence as exact black, gray, and white in RGB and alpha |
-| `Bypass` | Unchanged input |
-
-Changing output mode uses native Nuke nodes and never reruns SAM.
-
-Refine has its own output list:
-
-| Mode | Result |
-| --- | --- |
-| `Refined Matte` | ViTMatte alpha in RGB and alpha |
-| `Source + Refined Alpha` | Original RGB with refined alpha; default |
-| `Refined Cutout` | Source premultiplied by refined alpha |
-| `Trimap` | Exact black / gray / white ViTMatte guidance in RGB and alpha |
-| `Source + Trimap Alpha` | Original RGB with the exact trimap in alpha |
-| `Trimap Cutout` | Source premultiplied by the trimap |
-| `Source (Bypass)` | Unchanged input |
-
-Trimap modes become exact after a Refine frame or range succeeds. Before the first result they show
-the selected input mask channel as a useful preview. Switching modes never reruns ViTMatte.
-
-## Cache
-
-Each Segment node owns a UUID folder under:
+Create nodes from:
 
 ```text
-D:/Kyven/.runtime/nuke_cache/<node-uuid>/
+Nodes > Kyven > Segment
+Nodes > Kyven > Refine
+Nodes > Kyven > Inpaint
 ```
 
-Typical files include exported source frames, displayed `matte.%04d.png`, CPU-preview source
-`raw_matte.%04d.png`, private `sam_logits.%04d.npz`, generated
-`confidence_trimap.%04d.png`, video JPEGs, `tracked_matte.%04d.png`, and
-`raw_tracked_matte.%04d.png`. Refine nodes add fast lossless `refine_source.%04d.tif`,
-`refine_mask.%04d.png`, `refined_matte.%04d.png`, exact processed trimaps, and lightweight
-`trimap_preview` files under their own UUID folder. Inpaint adds source, mask, and full-format
-`inpaint_result.%04d.png`, `inpaint_patch.%04d.png`, and the effective Inpaint-mask files. Inpaint
-outputs include opaque Result, default Result + Mask Alpha, Result Premult, Generated Patch,
-Difference, and Source. Generated Patch is rebuilt from the live Nuke Source and only takes returned
-RGB inside the binary model mask;
-this prevents LaMa's whole-ROI prediction from appearing as a shifted rectangular patch.
-Disable **Preprocess Input Mask** to use the untouched soft input for compositing; the preview still
-shows the unavoidable binary mask supplied to LaMa. **Preview Model Mask** is the only live mask
-override and reacts to Threshold and Model Grow natively inside Nuke without disk I/O, a server
-request, or a LaMa run. That exact native mask is exported when processing begins.
+After updating the repository, restart Nuke and upgrade old Groups when required:
 
-Kyven uses one cache policy rather than forcing every data type into one container:
+- `Kyven > Upgrade Selected Segment Node`;
+- `Kyven > Upgrade Selected Refine Node`;
+- `Kyven > Upgrade Selected Inpaint Node`.
 
-| Cached data | Format | Reason |
-|---|---|---|
-| Lossless RGB inference inputs | TIFF or PNG | Preserve source pixels and Nuke color handling |
-| Masks, mattes, trimaps, results | PNG | Lossless, portable, directly readable by Nuke |
-| SAM confidence logits | compressed float16 NPZ | Preserve signed confidence without rerunning SAM |
-| Temporary SAM 2 tracking frames | high-quality JPEG | Fast sequential loading with bounded disk usage |
+Upgrades preserve inputs, useful controls, hidden node identity, and existing readable cache. New
+artist cache fields may be added without moving or deleting a legacy UUID cache.
 
-All public image sequences use deterministic frame names and atomic server-side output writes.
-Different semantic data intentionally use different containers; mask PNG and numeric logits are not
-interchangeable.
+## Shared processing behavior
 
-Successful inference writes a `.kyven.json` sidecar beside the primary output. The manifest records
-the deterministic source/prompt/model signature and metadata. Independent Segment, Refine, and
-Inpaint ranges therefore reuse already valid frames after interruption; corrupt or missing outputs
-invalidate only their matching frame. A fully completed SAM 2 tracking range can also be reused.
-Partially completed temporal propagation is restarted because an incomplete SAM memory state cannot
-be resumed safely from isolated mask files.
+| Control | Behavior |
+| --- | --- |
+| **Live Current Frame** | Debounced asynchronous refresh while moving or editing |
+| **Process Current Frame** | Explicitly process and replace only the playhead frame |
+| **Process Frame Range** | Export the selected range and process frames sequentially |
+| **Cancel** | Cooperatively cancel export, queue wait, or inference |
 
-Inpaint offers two model choices. `LaMa ONNX Fast` is CPU-friendly and uses a fixed 512 model input,
-so it is the better Live option. `Big-LaMa Native` processes the selected ROI at native detail
-(internally padded only to a multiple of 8), which is slower but normally produces cleaner large
-repairs. The default Model Grow 12 removes antialiased object edges from the model input. `Edge Color Match` aligns the patch with nearby
-clean RGB; lower it only when deliberate brightness changes inside the repaired area are desired.
+Segment additionally provides SAM 2 temporal Forward/Backward/Both tracking. Refine and Inpaint are
+frame-independent. Their range renders can show temporal variation because each frame is inferred
+without memory.
 
-Big-LaMa Native also exposes Standard and Refined quality. Refined optimizes bottleneck features over
-up to four pyramid scales. It is slower, uses more memory, and has a profile-dependent ROI budget;
-Kyven returns a readable error before inference when that budget is exceeded.
+Explicit processing shows a native Nuke progress window with stage, percentage, ETA, and Cancel.
+Live work reports through Status to avoid opening a dialog after every timeline or control change.
+Disable Live before starting a range or tracking pass.
 
-- `Create Matte Read` creates a normal Nuke Read pointing to the current cached matte or sequence.
-- `Create Result Read` does the same for an Inpaint result, including a rendered frame range.
-- `Delete Node Cache` disconnects and removes only the current node's cache after confirmation.
-- `Delete All Kyven Cache` removes `.runtime/nuke_cache` after confirmation. Models and server settings
-  are preserved.
+Each node is single-flight: repeated button presses and overlapping Live callbacks cannot run two
+jobs for that node. The server also merges identical active requests into one job. A failed,
+cancelled, or interrupted operation releases the node's Busy state.
 
-## Server behavior
+## Inputs and channel handling
 
-The adapter starts an external hidden Python process on `127.0.0.1:18788` and requires API 30. A
-random token is stored in `.runtime/server.token`. Before startup, authenticated older Kyven server
-revisions are asked to unload their models so they do not keep unnecessary VRAM.
+- Segment has one Source input.
+- Refine and Inpaint show **Source** on the left and **Mask** on the right.
+- Refine/Inpaint can read a mask from Alpha or Red.
+- Masks, mattes, and trimaps are written/read as raw data so OCIO/ACES does not transform numeric
+  mask values.
+- Inpaint converts the selected **Input Colorspace** to sRGB for LaMa and back afterward; cache Reads
+  remain raw to avoid a second transform.
 
-Server output for the latest launch is written to `.runtime/server.log`.
+## Processing ROI
+
+Processing ROI is an optimization crop, not a final output crop. Kyven crops the inference input,
+translates prompts/masks, runs the selected provider, and restores the result to the full Source
+format. Invalid or empty ROIs safely fall back to the full frame.
+
+Segment can animate ROI during tracking. Refine and Inpaint support Auto/Manual/Full crop behavior
+described in their node guides. A smaller ROI can improve effective detail and reduce work, but model
+internals mean performance and VRAM do not always scale directly with crop area.
+
+## Artist cache
+
+New Segment, Refine, and Inpaint nodes share one public layout:
+
+```text
+<Cache Folder>/
+└── <Name>/
+    └── <Version>/
+        ├── <Name>_<Version>.1001.png
+        ├── <Name>_<Version>.1002.png
+        └── _kyven_work/
+```
+
+Name is labelled **Roto Name**, **Refine Name**, or **Inpaint Name**. The UUID is not part of the
+public path. Two nodes with the same Folder, Name, and Version intentionally share and may overwrite
+the same sequence.
+
+The version root contains only the public PNG sequence and `_kyven_work/`. Private data is organized
+below that directory:
+
+```text
+_kyven_work/
+├── source/       exported current/range frames and tracking range folders
+├── manifests/    deterministic cache metadata
+├── raw masks
+├── logits and confidence trimaps
+└── model-specific masks, previews, and generated patches
+```
+
+Current Frame, Frame Range, and Segment tracking write the same public sequence. Changing Cache
+Folder, Name, or Version reconnects an existing matching sequence. This lets another application or
+artist read `<Name>_<Version>.%04d.png` without understanding Kyven internals.
+
+Cache actions:
+
+- **Create Matte Read** creates a normal Read for Segment or Refine.
+- **Create Result Read** creates a normal Read for Inpaint.
+- **Delete Node Cache** removes only the selected Name/Version after confirmation.
+- **Delete All Kyven Cache** appears only on legacy UUID-cache nodes and affects only
+  `.runtime/nuke_cache`; it never deletes artist-selected cache roots or models.
+
+Successful outputs are atomic. Manifests include the source/prompt/settings/model identity and
+validate every required file. Independent ranges reuse valid frames after interruption. Incomplete
+SAM 2 temporal state is restarted even if individual mask files exist.
+
+## Outputs
+
+Output selection uses native Nuke branches and never reruns a model.
+
+- Segment: Source + Alpha, Alpha, Cutout, Source + Trimap, Trimap, Bypass.
+- Refine: Source + Refined Alpha, Refined Matte/Cutout, trimap views, Source bypass.
+- Inpaint: Result, Result + Mask Alpha, Result Premult, Generated Patch, Difference, Source.
+
+See the [Segment](SEGMENT.md), [Refine](REFINE.md), and [Inpaint](INPAINT.md) guides for exact output
+semantics.
+
+## Models and server controls
+
+**Model Manager...** installs or removes only trusted catalog models and their pinned runtimes.
+Downloads activate only after exact size and SHA-256 verification. **Refresh Models** updates the
+node list and hardware advice. See [Models and safety](MODELS.md).
+
+The adapter starts a hidden external Python process on `127.0.0.1:18788` and requires API 32. A
+random bearer token in `.runtime/server.token` protects every request. Nuke never imports PyTorch,
+CUDA, or model implementations.
+
+Each node exposes **Start Server** and **Stop Server** near Status. Use Stop followed by Start after
+an update if a stale process remains. The newest output is written to `.runtime/server.log`.
 
 ## Current limitations
 
 - one object per Segment node;
-- partial SAM 2 tracking-state resumption is not implemented; completed tracking ranges are cached;
-- Refine is frame-independent and has no temporal propagation yet;
-- the Nuke host adapter has been developed on Windows and still needs broader production testing.
+- partially completed SAM 2 tracking memory cannot yet resume;
+- Refine and Inpaint ranges are frame-independent;
+- the Nuke adapter is currently developed and tested primarily on Windows;
+- node layout and API may still change during pre-alpha.
 
-See [Installation](INSTALLATION.md), [Troubleshooting](TROUBLESHOOTING.md), and
-[Refine](REFINE.md) for the complete setup and trimap workflow.
+Continue with the [Segment](SEGMENT.md), [Refine](REFINE.md), or [Inpaint](INPAINT.md) guide. For
+failures, go directly to [Troubleshooting](TROUBLESHOOTING.md).

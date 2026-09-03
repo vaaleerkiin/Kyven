@@ -157,7 +157,11 @@ class MEMatteProvider(RefinementProvider):
 
     def predict(self, request: RefineRequest, cancellation: CancellationToken) -> RefinePrediction:
         request.validate()
-        cancellation.report_progress(0.18, "Loading MEMatte model")
+        if self._model is None:
+            cancellation.report_progress(0.18, "Loading MEMatte model")
+        else:
+            cancellation.report_progress(0.18, "Reusing loaded MEMatte model")
+        self._load(request)
         image = Image.open(request.source).convert("RGB")
         trimap = Image.open(request.mask).convert("L")
         if image.size != trimap.size:

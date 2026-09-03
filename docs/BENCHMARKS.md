@@ -1,5 +1,7 @@
 # Development benchmarks
 
+[Documentation home](README.md) · [Models](MODELS.md) · [Server API](SERVER.md)
+
 These measurements validate the current vertical slice; they are not release guarantees.
 
 ## SAM 2.1 Small - Windows development machine

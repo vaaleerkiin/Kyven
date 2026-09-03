@@ -30,6 +30,17 @@ if TYPE_CHECKING:
 _HYDRA_CONFIG_LOCK = RLock()
 
 
+def _key_frame_polish_neighbour(request: Any, produced_indices: set[int]) -> int | None:
+    """Choose the nearest produced frame in the active propagation direction."""
+
+    candidates = []
+    if request.direction.value in {"forward", "both"}:
+        candidates.append(request.key_index + 1)
+    if request.direction.value in {"backward", "both"}:
+        candidates.append(request.key_index - 1)
+    return next((index for index in candidates if index in produced_indices), None)
+
+
 def _make_standard_decoder_hq_predictor_compatible(model: Any) -> None:
     """Ignore the HQ-only predictor kwarg when the selected model has a standard decoder."""
     decoder = model.sam_mask_decoder
@@ -321,6 +332,7 @@ class Sam2Provider(SegmentationProvider):
             outputs: dict[int, Path] = {}
             expected_outputs = request.last_frame - request.first_frame + 1
             produced_indices: set[int] = set()
+            polished_from_frame: int | None = None
             with torch.inference_mode(), autocast:
                 cancellation.report_progress(0.18, "Initializing SAM 2 tracking state")
                 state = predictor.init_state(
@@ -389,6 +401,45 @@ class Sam2Provider(SegmentationProvider):
                             0.25 + 0.60 * len(produced_indices) / expected_outputs,
                             f"Propagated {len(produced_indices)}/{expected_outputs} frames",
                         )
+                if request.polish_key_frame:
+                    neighbour_index = _key_frame_polish_neighbour(
+                        request,
+                        produced_indices,
+                    )
+                    if neighbour_index is not None:
+                        neighbour_frame = request.frame_number(neighbour_index)
+                        cancellation.report_progress(
+                            0.86,
+                            f"Polishing key frame from frame {neighbour_frame}",
+                        )
+                        with Image.open(outputs[neighbour_index]) as image:
+                            neighbour_mask = np.asarray(image.convert("L")) > 127
+                        predictor.reset_state(state)
+                        predictor.add_new_mask(
+                            inference_state=state,
+                            frame_idx=neighbour_index,
+                            obj_id=1,
+                            mask=neighbour_mask,
+                        )
+                        reverse = neighbour_index > request.key_index
+                        for frame_index, _object_ids, mask_logits in predictor.propagate_in_video(
+                            state,
+                            start_frame_idx=neighbour_index,
+                            max_frame_num_to_track=1,
+                            reverse=reverse,
+                        ):
+                            cancellation.raise_if_cancelled()
+                            if frame_index != request.key_index:
+                                continue
+                            frame_logits = mask_logits[0].detach().cpu().float().numpy().squeeze()
+                            output = request.output_for_index(frame_index)
+                            write_mask_png_atomic(output, frame_logits > 0.0)
+                            logits_output = request.logits_output_for_frame(request.key_frame)
+                            if logits_output is not None:
+                                write_logits_npz_atomic(logits_output, frame_logits)
+                            outputs[frame_index] = output
+                            polished_from_frame = neighbour_frame
+                            cancellation.report_progress(0.90, "Key frame polish complete")
                 predictor.reset_state(state)
         except KyvenError:
             raise
@@ -418,6 +469,8 @@ class Sam2Provider(SegmentationProvider):
                 "correction_frames": [
                     correction.frame for correction in request.effective_corrections
                 ],
+                "key_frame_polished": polished_from_frame is not None,
+                "key_frame_polish_source": polished_from_frame,
             },
         )
 

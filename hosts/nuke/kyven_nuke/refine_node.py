@@ -13,11 +13,16 @@ from kyven_nuke.color_management import set_data_io
 from kyven_nuke.node import (
     _add_knob,
     _add_section,
+    _artist_cache_name,
     _begin_node_operation,
     _cache_root,
+    _cache_root_path,
+    _cache_work_root,
     _clamp_bbox_knob,
     _clear_sequence_frames,
     _create_group_at_cursor,
+    _defer_ui_action,
+    _disconnect_cached_matte,
     _ensure_cache_controls,
     _ensure_double_slider,
     _ensure_live_controls,
@@ -37,6 +42,7 @@ from kyven_nuke.node import (
     _progress_cancelled,
     _refresh_node_output,
     _section_markup,
+    _sequence_frame_range,
     _server_progress,
     _set_busy,
     _set_matte_read,
@@ -44,6 +50,7 @@ from kyven_nuke.node import (
     _set_status,
     _start_progress,
     _update_progress,
+    _uses_artist_cache,
 )
 from kyven_nuke.payload import REFINE_MODEL_IDS, REFINE_MODEL_LABELS, refine_payload, roi_box
 from kyven_nuke.preferences import default_model_index
@@ -151,23 +158,95 @@ def _ensure_input_order(node: Any) -> None:
 
 
 def _cache_paths(node: Any, frame: int) -> tuple[Path, Path, Path, Path]:
-    root = _cache_root(node)
+    root = _cache_work_root(node) if _uses_artist_cache(node) else _cache_root(node)
+    source_root = root / "source" if _uses_artist_cache(node) else root
+    source_root.mkdir(parents=True, exist_ok=True)
+    output = (
+        _path_for_frame(_refine_public_pattern(node), frame)
+        if _uses_artist_cache(node)
+        else root / f"refined_matte.{frame:04d}.png"
+    )
     return (
-        root / f"refine_source.{frame:04d}.tif",
+        source_root / f"refine_source.{frame:04d}.tif",
         root / f"refine_mask.{frame:04d}.png",
-        root / f"refined_matte.{frame:04d}.png",
+        output,
         root / f"trimap.{frame:04d}.png",
     )
 
 
 def _cache_patterns(node: Any) -> tuple[Path, Path, Path, Path]:
-    root = _cache_root(node)
+    root = _cache_work_root(node) if _uses_artist_cache(node) else _cache_root(node)
+    source_root = root / "source" if _uses_artist_cache(node) else root
+    source_root.mkdir(parents=True, exist_ok=True)
     return (
-        root / "refine_source.%04d.tif",
+        source_root / "refine_source.%04d.tif",
         root / "refine_mask.%04d.png",
-        root / "refined_matte.%04d.png",
+        (
+            _refine_public_pattern(node)
+            if _uses_artist_cache(node)
+            else root / "refined_matte.%04d.png"
+        ),
         root / "trimap.%04d.png",
     )
+
+
+def _refine_public_pattern(node: Any) -> Path:
+    root = _cache_root_path(node)
+    name = _artist_cache_name(node)
+    version = str(node["cache_version"].value()).strip()
+    pattern = root / f"{name}_{version}.%04d.png"
+    if root.is_dir():
+        for legacy in root.glob("refined_matte.*.png"):
+            token = legacy.name.removeprefix("refined_matte.")
+            try:
+                legacy.replace(root / f"{name}_{version}.{token}")
+            except OSError:
+                pass
+    return pattern
+
+
+def _load_refine_cache(node: Any, *, report_status: bool = True) -> bool:
+    try:
+        pattern = _refine_public_pattern(node)
+    except RuntimeError as exc:
+        if report_status:
+            node["kyven_status"].setValue(str(exc))
+        return False
+    frame_range = _sequence_frame_range(pattern)
+    if frame_range is None:
+        if report_status:
+            node["kyven_status"].setValue(
+                f"No cached sequence at {_nuke_file_path(pattern)}"
+            )
+        return False
+    first, last = frame_range
+    _set_matte_read(node, _nuke_file_path(pattern), first, last)
+    trimap_pattern = _cache_work_root(node) / "trimap.%04d.png"
+    if _path_for_frame(trimap_pattern, first).is_file():
+        _set_trimap_read(node, _nuke_file_path(trimap_pattern), first, last)
+    if report_status:
+        node["kyven_status"].setValue(
+            f"Loaded {pattern.name}: frames {first}-{last}"
+        )
+        _refresh_node_output(node)
+    return True
+
+
+def _apply_refine_cache_fields(node_name: str) -> None:
+    node = _nuke().toNode(node_name)
+    if node is None:
+        return
+    if "kyven_busy" in node.knobs() and bool(node["kyven_busy"].value()):
+        node["kyven_status"].setValue("Cancel the active operation before changing cache.")
+        return
+    if "previous_cache_location" in node.knobs():
+        node.removeKnob(node["previous_cache_location"])
+    _disconnect_cached_matte(node)
+    if "kyven_job_id" in node.knobs():
+        node["kyven_job_id"].setValue("")
+    if "kyven_live_frame" in node.knobs():
+        node["kyven_live_frame"].setValue(-2147483647)
+    _load_refine_cache(node)
 
 
 def _trimap_preview_paths(root: Path, frame: int, revision: int) -> tuple[Path, Path]:
@@ -251,7 +330,8 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
         node["kyven_status"].setValue(f"Refine failed: {_job_error_text(job)}")
         return
     result = job["result"]
-    _set_matte_read(node, _nuke_file_path(Path(result["output"])))
+    if not (_uses_artist_cache(node) and _load_refine_cache(node, report_status=False)):
+        _set_matte_read(node, _nuke_file_path(Path(result["output"])))
     trimap_output = result.get("trimap_output")
     if trimap_output:
         _set_trimap_read(node, _nuke_file_path(Path(trimap_output)))
@@ -363,7 +443,7 @@ def _start_trimap_preview(node_name: str, revision: int) -> None:
         timer.start()
         return
     frame = int(nuke.frame())
-    root = _cache_root(node)
+    root = _cache_work_root(node) if _uses_artist_cache(node) else _cache_root(node)
     mask_path, output_path = _trimap_preview_paths(root, frame, revision)
     writer = _inside(node, "KyvenRefineMaskWrite")
     _configure_export_writers(None, writer)
@@ -825,6 +905,9 @@ def knob_changed() -> None:
     nuke = _nuke()
     node = nuke.thisNode()
     name = nuke.thisKnob().name()
+    if name in {"cache_root", "refine_name", "cache_version"}:
+        _defer_ui_action(_apply_refine_cache_fields, str(node.fullName()))
+        return
     if name in {"inputChange", "processing_roi", "crop_mode", "roi_enabled"}:
         _clamp_bbox_knob(node, "processing_roi", SOURCE_INPUT)
     generated = bool(node["generate_trimap"].value())
@@ -943,7 +1026,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte + MEMatte | Source + Mask | API 30</font>'
+            '<font color="#91a3b0">ViTMatte + MEMatte | Source + Mask | API 32</font>'
         )
     created_selector = "output_mode" not in node.knobs()
     previous_label = str(node["output_mode"].value()) if not created_selector else None
@@ -1185,7 +1268,7 @@ def _restyle_refine_ui(node: Any) -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte + MEMatte | Source + Mask | API 30</font>'
+            '<font color="#91a3b0">ViTMatte + MEMatte | Source + Mask | API 32</font>'
         )
     if "trimap_help" in node.knobs():
         node["trimap_help"].setValue(REFINE_TRIMAP_HELP)
@@ -1246,7 +1329,7 @@ def create_refine_node() -> Any:
             "kyven_title",
             "",
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
-            '<font color="#91a3b0">ViTMatte + MEMatte | Source + Mask | API 30</font>',
+            '<font color="#91a3b0">ViTMatte + MEMatte | Source + Mask | API 32</font>',
         ),
     )
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
@@ -1382,7 +1465,12 @@ def create_refine_node() -> Any:
     internal_id.setValue(uuid.uuid4().hex)
     internal_id.setVisible(False)
     node.addKnob(internal_id)
-    _ensure_cache_controls(node)
+    _ensure_cache_controls(
+        node,
+        name_field="refine_name",
+        name_label="Refine Name",
+        name_default="refine",
+    )
     node["create_matte_read"].setCommand("kyven_nuke.node.create_read_from_current_matte()")
     _add_section(nuke, node, "status_section", "STATUS")
     status = nuke.String_Knob("kyven_status", "Status")

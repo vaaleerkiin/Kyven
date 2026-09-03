@@ -1,5 +1,8 @@
 # Kyven Tools Server
 
+[Documentation home](README.md) · [Project scope](../PROJECT_BIBLE.md) ·
+[Models](MODELS.md) · [Troubleshooting](TROUBLESHOOTING.md)
+
 Kyven Server is the shared execution layer for Kyven. It isolates PyTorch, CUDA, model loading, and
 task-specific inference from Nuke. Segment, Refine, and Inpaint extend the same provider/job system
 instead of placing inference inside a host adapter. The server binds only to `127.0.0.1` and
@@ -79,6 +82,7 @@ servers, avoiding a long sequential timeout across every historical port.
 | `raw_output_pattern` | Optional printf-style unmodified SAM matte sequence |
 | `first_frame`, `last_frame`, `key_frame` | Nuke frame range and prompt frame |
 | `direction` | `forward`, `backward`, or `both` |
+| `polish_key_frame` | When true, seed a fresh chain from the nearest completed neighbour and replace only the key matte |
 | `points` | Prompts sampled on the key frame |
 | `logits_output_pattern` | Internal compressed float16 SAM-logit cache sequence |
 | `trimap_output_pattern`, `confidence_width` | Confidence-trimap sequence and logit threshold |
@@ -130,7 +134,7 @@ It contains the deterministic cache key and result metadata. A repeated request 
 manifest and every required image/NPZ before returning a cache hit; missing or corrupt media forces
 a safe recalculation.
 
-API version 28 is the current Nuke/server contract. `GET /v1/jobs/{id}` returns `progress`
+API version 32 is the current Nuke/server contract. `GET /v1/jobs/{id}` returns `progress`
 (0.0-1.0) and `progress_message`. Segment video requests may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
 returned masks to the original dimensions. Restart Nuke after updating Kyven so the adapter does not

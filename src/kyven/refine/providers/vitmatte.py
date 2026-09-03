@@ -148,7 +148,11 @@ class VitMatteProvider(RefinementProvider):
 
     def predict(self, request: RefineRequest, cancellation: CancellationToken) -> RefinePrediction:
         request.validate()
-        cancellation.report_progress(0.18, "Loading ViTMatte model")
+        if self._model is None or self._processor is None:
+            cancellation.report_progress(0.18, "Loading ViTMatte model")
+        else:
+            cancellation.report_progress(0.18, "Reusing loaded ViTMatte model")
+        self._load()
         image = Image.open(request.source).convert("RGB")
         trimap = Image.open(request.mask).convert("L")
         if image.size != trimap.size:

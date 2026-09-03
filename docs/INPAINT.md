@@ -1,8 +1,21 @@
 # Kyven Inpaint
 
+[Documentation home](README.md) · [Nuke workflow](NUKE.md) · [Models](MODELS.md) ·
+[Troubleshooting](TROUBLESHOOTING.md)
+
 Kyven Inpaint removes masked content from a Source image and reconstructs the background inside a
 Processing ROI. It is designed for paint and clean-up work: the model sees only the useful crop,
 while Kyven restores the result to the untouched full input format.
+
+## On this page
+
+- [Nuke graph](#nuke-graph)
+- [Choosing a model](#choosing-a-model)
+- [Processing ROI](#processing-roi)
+- [Model mask and compositing](#model-mask-and-compositing)
+- [Processing modes](#processing-modes)
+- [Outputs](#outputs)
+- [Cache](#cache)
 
 ## Nuke graph
 
@@ -123,16 +136,21 @@ stabilization in the current node.
 
 ## Cache
 
-Every Inpaint node stores exported inputs, the exact `inpaint_model_mask.%04d.png` seen in preview,
-`inpaint_result.%04d.png`, the full-format
-`inpaint_patch.%04d.png`, and its effective Inpaint mask under its UUID folder.
-When a Kyven Group is copied or pasted, the first cache operation detects the duplicated UUID,
-assigns a new folder to that node, and disconnects inherited cached Reads. Two Inpaint nodes cannot
-therefore overwrite or display each other's newly rendered result.
+New Inpaint nodes use three artist fields: **Cache Folder**, **Inpaint Name**, and **Version**.
+The version root contains only the public result sequence
+`<Inpaint Name>_<Version>.%04d.png` and `_kyven_work/`. Source exports are stored under
+`_kyven_work/source/`; masks, generated patches, manifests, and other implementation files remain
+inside `_kyven_work/`. Current Frame and Frame Range share the same public sequence. Changing any
+of the three fields reconnects an existing matching sequence.
+
+The work directory stores exported inputs, the exact `inpaint_model_mask.%04d.png` seen in
+preview, the full-format `inpaint_patch.%04d.png`, and its effective Inpaint mask. Two nodes using
+the same Folder, Inpaint Name, and Version intentionally share and may overwrite the same result.
+Legacy Inpaint nodes retain their existing isolated UUID cache.
 
 - **Create Result Read** creates a normal Nuke Read for the cached frame or sequence.
 - **Delete Node Cache** removes only this Inpaint node's generated files.
-- **Delete All Kyven Cache** clears all Kyven Nuke caches but keeps models and source media.
+- **Delete All Kyven Cache** remains available only for legacy isolated caches.
 
 After updating Kyven, select an existing Inpaint Group and choose
 `Kyven > Upgrade Selected Inpaint Node`. The current Cache controls are added without changing the

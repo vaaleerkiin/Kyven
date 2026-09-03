@@ -1,5 +1,23 @@
 # Troubleshooting
 
+[Documentation home](README.md) · [Install](INSTALLATION.md) · [Nuke workflow](NUKE.md) ·
+[Models](MODELS.md)
+
+Start with the symptom below. Preserve the node Status text and `.runtime/server.log` before
+restarting when you need to report a reproducible failure.
+
+## Symptom index
+
+- [Installer fails](#portable-installer-fails)
+- [Server does not become ready](#server-does-not-become-ready)
+- [Refine fails or returns the coarse mask](#refine-fails-or-returns-the-coarse-mask-unchanged)
+- [Trimap is missing or incorrect](#trimap-output-is-missing-or-shows-only-the-input-mask)
+- [CUDA or model loading fails](#cuda-or-model-loading-fails)
+- [Processing ROI fails](#processing-roi-fails)
+- [Mask contains black holes](#the-mask-contains-small-black-holes)
+- [Read or cache is wrong](#read-or-cache-problems)
+- [Inpaint has a rectangular color shift](#inpaint-result-has-a-rectangular-color-shift)
+
 ## Portable installer fails
 
 Double-click `install.cmd`, or run the installer from the repository root in PowerShell:
@@ -29,8 +47,8 @@ The Nuke adapter launches `python.exe -I -m kyven.server.bootstrap`. On Windows 
 the DLL directory inherited from Nuke before importing PyTorch; this prevents the common
 `c10.dll` / `WinError 1114` startup failure.
 
-Kyven API 30 uses port `18788`. Older development servers may remain on 8765-8769 or 18768-18787,
-but the adapter asks authenticated older servers to unload their models before starting API 30.
+Kyven API 32 uses port `18788`. Older development servers may remain on 8765-8769 or 18768-18787,
+but the adapter asks authenticated older servers to unload their models before starting API 32.
 The Windows launcher now checks `netstat` once and contacts only ports that are actually listening;
 it no longer waits through every historical port. While starting, the node Status shows the current
 phase plus elapsed and timeout seconds. A failure includes the path to `.runtime/server.log`.
@@ -103,8 +121,9 @@ The panel displays the exact cache directory for the current node. Use `Create M
 Segment/Refine or `Create Result Read` for Inpaint only after processing succeeds. Both buttons copy
 the active internal Read, including its frame range. If files were deleted externally, process again.
 
-`Delete Node Cache` affects one UUID folder. `Delete All Kyven Cache` affects only
-`.runtime/nuke_cache`; it does not remove models, `.venv`, the authentication token, or source media.
+For current nodes, `Delete Node Cache` affects the selected `<Cache Folder>/<Name>/<Version>/` only.
+`Delete All Kyven Cache` is limited to legacy `.runtime/nuke_cache` nodes; it does not remove
+artist-selected cache roots, models, `.venv`, the authentication token, or source media.
 
 ## Inpaint Result has a rectangular color shift
 

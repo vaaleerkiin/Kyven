@@ -1,5 +1,8 @@
 # Portable Windows installation
 
+[Documentation home](README.md) · [Nuke workflow](NUKE.md) · [Models](MODELS.md) ·
+[Troubleshooting](TROUBLESHOOTING.md)
+
 Kyven is installed inside the repository folder. It does not require an EXE installer,
 administrator access, registry changes, or a system-wide Python environment.
 
@@ -50,7 +53,7 @@ Nothing is added to the system `PATH`, and the installer intentionally does not 
 ## Update
 
 Pull or replace the repository files, then run `install.cmd` again. Existing verified checkpoints
-and downloads are reused. Restart Nuke so Python modules and API 30 are reloaded, then update older
+and downloads are reused. Restart Nuke so Python modules and API 32 are reloaded, then update older
 Groups from the Nodes menu:
 
 - `Kyven > Upgrade Selected Segment Node`;

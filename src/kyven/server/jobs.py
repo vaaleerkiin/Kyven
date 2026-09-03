@@ -321,6 +321,7 @@ class JobManager:
             last_frame=int(payload["last_frame"]),
             key_frame=int(payload["key_frame"]),
             direction=VideoDirection(str(payload.get("direction", "both"))),
+            polish_key_frame=bool(payload.get("polish_key_frame", False)),
             corrections=corrections,
             points=points,
             box=box,

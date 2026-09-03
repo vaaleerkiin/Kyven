@@ -76,6 +76,19 @@ class CacheManifestTests(unittest.TestCase):
             self.assertEqual(payload["metadata"]["revision"], 2)
             self.assertTrue(manifest_path(output).is_file())
 
+    def test_public_roto_manifest_is_kept_inside_work_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "_kyven_work").mkdir()
+            output = root / "phone_v001.1053.png"
+
+            path = manifest_path(output)
+
+            self.assertEqual(
+                path,
+                root / "_kyven_work" / "manifests" / "phone_v001.1053.png.kyven.json",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

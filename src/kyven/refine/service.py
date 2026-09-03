@@ -117,12 +117,14 @@ class RefineService:
                 cache_key=cache_key,
                 metadata=metadata,
             )
-        token.report_progress(0.15, "Loading ViTMatte")
+        token.report_progress(0.15, "Preparing refinement inputs")
         with tempfile.TemporaryDirectory(prefix="kyven-refine-") as directory:
             root = Path(directory)
-            source_path = root / "source.png"
+            source_path = request.source
             trimap_path = root / "trimap.png"
-            source_crop.save(source_path)
+            if region != _full_region(source.width, source.height):
+                source_path = root / "source.png"
+                source_crop.save(source_path)
             Image.fromarray(trimap_pixels, mode="L").save(trimap_path)
             prepared = replace(
                 request,

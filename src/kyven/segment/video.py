@@ -52,6 +52,7 @@ class VideoSegmentRequest:
     last_frame: int
     key_frame: int
     direction: VideoDirection
+    polish_key_frame: bool = False
     corrections: tuple[VideoCorrection, ...] = ()
     points: tuple[PointPrompt, ...] = ()
     box: BoxPrompt | None = None
@@ -190,6 +191,7 @@ class VideoSegmentRequest:
             "last_frame": self.last_frame,
             "key_frame": self.key_frame,
             "direction": self.direction.value,
+            "polish_key_frame": self.polish_key_frame,
             "corrections": [
                 {
                     "frame": item.frame,

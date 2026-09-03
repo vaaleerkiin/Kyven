@@ -1,5 +1,8 @@
 # Kyven Tools model selection and safety
 
+[Documentation home](README.md) · [Install](INSTALLATION.md) · [Segment](SEGMENT.md) ·
+[Refine](REFINE.md) · [Inpaint](INPAINT.md)
+
 Kyven treats model implementations and model sizes as selectable providers. A node stores a
 stable `model_id`, not a hard-coded Python class or checkpoint path.
 

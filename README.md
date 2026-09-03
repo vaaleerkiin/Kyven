@@ -1,77 +1,22 @@
 <h1><a href="https://github.com/vaaleerkiin/Kyven"><img src="hosts/nuke/icons/kyven_logo.png" alt="Kyven Tools logo" width="48" align="middle"></a>&nbsp;Kyven Tools</h1>
 
-**Local AI tools for node-based compositing. Open source, portable, and host-safe.**
+**Local AI tools for Foundry Nuke: roto, alpha refinement, and inpaint.**
 
-Kyven Tools adds independent AI nodes to Foundry Nuke while keeping PyTorch, CUDA, model loading,
-and long-running inference outside the Nuke process. Results are returned as ordinary cached image
-sequences that remain usable without a live model connection.
+Kyven keeps PyTorch, CUDA, model loading, and long inference outside Nuke. The nodes communicate
+with a local authenticated server and return ordinary image sequences, so rendered work remains
+readable even when Kyven or its models are not running.
 
-> **Local-first and suitable for commercial work.** Kyven's code can be used commercially under
-> Apache-2.0. Inference stays local and source media is not uploaded. The currently shipped SAM 2,
-> ViTMatte and LaMa catalog entries use commercially permissive licenses.
+> **Status:** active pre-alpha, currently developed for Nuke on Windows.
 >
-> **Project status:** active pre-alpha. Segment, Refine, and Inpaint are working in Nuke on Windows.
+> **Privacy and licensing:** inference stays on the workstation. Kyven code is Apache-2.0; shipped
+> model entries are pinned, checksum-verified, and commercially permissive. Review
+> [third-party notices](THIRD_PARTY_NOTICES.md) before production distribution.
 
-## Tools available today
+## Start here
 
-| Node | Input | Purpose | Models |
-| --- | --- | --- | --- |
-| **Kyven Segment** | Source + Viewer prompts | Binary object masks and video propagation | SAM 2.1 Tiny / Small / Base+ / Large; HQ-SAM 2.1 Large Beta |
-| **Kyven Refine** | Source + mask or trimap | Soft alpha refinement and trimap inspection | ViTMatte Small / Base |
-| **Kyven Inpaint** | Source + removal mask | ROI-aware object removal and clean-up | LaMa ONNX Fast / Big-LaMa Native |
-
-All new nodes default to a compositing-friendly **Source + Alpha** or **Source + Refined Alpha**
-output where applicable.
-
-## Why Kyven runs a local server
-
-```text
-Nuke Group node
-      |
-      | authenticated HTTP · 127.0.0.1 only
-      v
-Kyven Server -> job queue -> provider registry -> selected local model
-      |
-      v
-Atomic per-node image cache -> ordinary Nuke Read
-```
-
-- Nuke never imports PyTorch or model implementations.
-- Only the selected provider stays resident; switching tools releases the previous model.
-- Jobs run asynchronously with progress, cancellation, and clear errors.
-- Every node owns an isolated cache folder and can create a normal Nuke Read.
-- Atomic cache manifests validate every required output, reuse completed frames, and reject corrupt
-  or incomplete results without rerunning valid work.
-- Per-node and server-side single-flight guards prevent duplicate inference from repeated clicks or
-  identical active API requests.
-- The server accepts only loopback connections protected by a random local token.
-
-## Quick start · Windows + Nuke
-
-### 1. Install beside the repository
-
-Clone or extract Kyven into its final folder, then double-click **`install.cmd`**.
-
-PowerShell equivalent:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1
-```
-
-The console lets you choose one or more models. Pressing Enter installs the recommended 8 GB setup:
-SAM 2.1 Small and ViTMatte Small. Everything stays inside the repository:
-
-| Folder | Contents |
-| --- | --- |
-| `.venv/` | Private Python runtime and dependencies |
-| `models/` | Selected checkpoints verified by size and SHA-256 |
-| `.runtime/` | Server files, installer cache, logs, and Nuke caches |
-
-No administrator access, EXE installer, registry changes, or system-wide Python packages are used.
-
-### 2. Connect Nuke
-
-Add the path printed by the installer to your existing `.nuke/init.py`:
+1. Clone or extract Kyven into its final writable folder.
+2. Run `install.cmd` and choose the recommended models.
+3. Add the printed plugin path to the user's `.nuke/init.py`:
 
 ```python
 import nuke
@@ -79,136 +24,92 @@ import nuke
 nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 ```
 
-Replace `D:/Kyven` with your repository location, restart Nuke, then open:
+4. Restart Nuke and open `Nodes > Kyven`.
+5. Create a node, choose **Cache Folder**, enter its **Name** and **Version**, then process.
+
+The installer is portable: it does not require administrator access, modify the registry, or install
+system-wide Python packages. Read the [installation guide](docs/INSTALLATION.md) for requirements,
+updates, moving the repository, and unattended model selection.
+
+## Nodes
+
+| Node | Inputs | Use it for | Recommended starting model |
+| --- | --- | --- | --- |
+| **Kyven Segment** | Source + Viewer points | Single-frame roto and SAM 2 video tracking | SAM 2.1 Small |
+| **Kyven Refine** | Source + coarse mask/trimap | Soft alpha and difficult boundaries | ViTMatte Small |
+| **Kyven Inpaint** | Source + removal mask | Paint-out and background reconstruction | LaMa ONNX Fast |
+
+A common roto flow is:
 
 ```text
-Nodes > Kyven > Segment
-Nodes > Kyven > Refine
-Nodes > Kyven > Inpaint
+Source -> Kyven Segment -> optional Kyven Refine -> compositing nodes
 ```
 
-The installer deliberately does not edit `init.py` for the user.
+For temporal roto, set a key frame, add corrections where required, optionally enable
+**Seamless Key Frame**, and run Forward, Backward, or Both Directions. For paint-out, connect the
+original Source and a removal mask directly to Kyven Inpaint.
 
-Additional models can be installed later without leaving Nuke. Open **Kyven > Model Manager...**
-or press **Model Manager...** inside any Kyven node, select a trusted catalog model, and choose
-**Install Selected**. Nuke shows download progress and verifies the exact file size and SHA-256
-before the model becomes selectable. The same panel can safely remove an unused model without
-touching node caches or source media.
+## Cache contract
 
-## Model guide
+New Segment, Refine, and Inpaint nodes use the same artist-facing layout:
 
-| Workload | Recommended choice | Hardware guidance | Main trade-off |
-| --- | --- | --- | --- |
-| Segment on 4 GB | SAM 2.1 Tiny | 4 GB VRAM | Lowest memory use |
-| Segment on 8 GB | SAM 2.1 Small | 6 GB VRAM | Recommended balance |
-| Higher-detail Segment | SAM 2.1 Base+ | 8 GB VRAM | May require fallback on an 8 GB GPU |
-| Maximum Segment model | SAM 2.1 Large | 12 GB+ VRAM | Slowest and heaviest |
-| Fine-detail Segment | HQ-SAM 2.1 Large Beta | 12 GB+ VRAM | Higher-quality boundaries; optional beta runtime |
-| Refine on 4–8 GB | ViTMatte Small | 4 GB+ or tiled | Fastest and recommended default |
-| Maximum Refine quality | ViTMatte Base | 8 GB+ with tiling | 96.7 M parameters; slower and heavier |
-| Fast Inpaint / Live | LaMa ONNX Fast | CPU, no GPU required | Fixed 512 × 512 model input |
-| Detailed Inpaint | Big-LaMa Native | 4 GB+ or CPU | Native ROI detail, slower |
-| Final-quality Inpaint | Big-LaMa Refined | 8 GB with a tight ROI; CPU is supported but slow | Multi-scale feature optimization |
-
-Install a specific model non-interactively:
-
-```powershell
-.\install.ps1 -Model sam2.1-small,vitmatte-small-composition-1k
-.\install.ps1 -Model lama-2025jan-onnx,big-lama-native
+```text
+<Cache Folder>/
+└── <Name>/
+    └── <Version>/
+        ├── <Name>_<Version>.1001.png
+        ├── <Name>_<Version>.1002.png
+        └── _kyven_work/
 ```
 
-See [Model selection and safety](docs/MODELS.md) for exact downloads, licenses, and VRAM guidance.
+The version root contains the public sequence. Sources, manifests, logits, trimaps, masks, and other
+implementation files stay under `_kyven_work/`. Current Frame, Frame Range, and tracking write the
+same named sequence. Changing Cache Folder, Name, or Version reconnects a matching sequence.
 
-## Typical workflows
+## How it works
 
-### Segment
+```text
+Nuke Group node
+      |
+      | authenticated HTTP on 127.0.0.1
+      v
+Kyven Server -> single GPU job queue -> selected provider/model
+      |
+      v
+Atomic artist cache -> ordinary Nuke Read
+```
 
-1. Connect Source.
-2. Place a positive Viewer point on the object; add negative points where required.
-3. Optionally enable an animated Processing ROI.
-4. Choose **Process Current Frame**, **Process Frame Range**, or SAM 2 video propagation.
-5. Select Source + Alpha, Alpha, Cutout, Source + Trimap, Trimap, or Bypass.
-
-For confidence-guided refinement, set Segment to **Trimap**, connect it to the Refine mask input,
-and disable **Generate Trimap from Mask**. ViTMatte then receives SAM 2's own uncertainty instead of
-an eroded/dilated trimap reconstructed from the binary alpha. Adjusting **Confidence Width** rebuilds
-the trimap from cached logits and does not rerun SAM.
-
-### Refine
-
-1. Connect the original Source to the left **Source** connector (input 1) and a coarse mask to the
-   right **Mask** connector (input 0).
-2. Leave **Generate Trimap from Mask** enabled for Segment, Keyer, or Paint masks.
-3. Adjust the immediate CPU trimap preview, then process a frame or range with ViTMatte.
-4. Inspect the refined alpha, exact trimap, Source + Alpha, or cutout outputs.
-
-### Inpaint
-
-1. Connect Source to the left **Source** connector (input 1) and the removal mask to the right
-   **Mask** connector (input 0).
-2. Use Auto ROI for most shots; it crops around the mask plus Context Padding.
-3. Use LaMa ONNX for fast iteration or Big-LaMa Native when the 512 input loses detail.
-4. Use Model Grow and Edge Color Match to avoid missed edges and local color offsets.
-5. For a final still or selected hero frames, choose Big-LaMa Native and set Quality Mode to Refined.
-   Refinement reuses the same model, adds no download, and is intentionally much slower.
-
-## Cache controls
-
-Every Kyven node uses the same compact Cache block:
-
-| Control | Action |
-| --- | --- |
-| **Cache Folder** | Shows the exact folder owned by the node |
-| **Create Matte Read** | Creates a normal Read for Segment or Refine output |
-| **Create Result Read** | Creates a normal Read for an Inpaint frame or sequence |
-| **Delete Node Cache** | Removes only the selected node's generated files |
-| **Delete All Kyven Cache** | Removes all `.runtime/nuke_cache` data, never models or source media |
-
-## Updating
-
-Pull the latest repository, run `install.cmd` again, and restart Nuke. Verified models and downloads
-are reused. Existing Groups can then be updated without changing their UUID or cache:
-
-- `Kyven > Upgrade Selected Segment Node`
-- `Kyven > Upgrade Selected Refine Node`
-- `Kyven > Upgrade Selected Inpaint Node`
-
-## Privacy, safety, and licensing
-
-- Inference is local by default; the server binds only to `127.0.0.1`.
-- Model downloads are pinned and verified before activation.
-- Project code may be used commercially under the Apache-2.0 license.
-- Every catalog entry includes source, checksum, license, and commercial-use metadata. Review the
-  individual model license before distributing a production setup.
-- Model weights are downloaded during installation and are not committed to this repository.
-
-Review [Third-party notices](THIRD_PARTY_NOTICES.md) before distribution in a production pipeline.
+- Nuke never imports PyTorch or model packages.
+- The active provider remains resident between frames and jobs.
+- Long operations are asynchronous, cancellable, and report progress.
+- Cache manifests reject incomplete or mismatched results.
+- Identical active requests share one server job instead of duplicating inference.
 
 ## Documentation
 
-| Guide | What it covers |
-| --- | --- |
-| [Installation](docs/INSTALLATION.md) | Portable setup, updates, moving the repository |
-| [Nuke workflow](docs/NUKE.md) | Node controls, outputs, ranges, cache, and server behavior |
-| [Segment](docs/SEGMENT.md) | SAM prompts, ROI, tracking, CLI, and architecture |
-| [Refine](docs/REFINE.md) | ViTMatte, trimap preview, tiling, and outputs |
-| [Inpaint](docs/INPAINT.md) | LaMa models, ROI, edge-safe blending, outputs, and cache |
-| [Models](docs/MODELS.md) | Catalog, hardware guidance, verification, and licenses |
-| [Troubleshooting](docs/TROUBLESHOOTING.md) | Startup, CUDA, ROI, Read, cache, and log problems |
-| [Server API](docs/SERVER.md) | Authenticated endpoints and request fields |
-| [Benchmarks](docs/BENCHMARKS.md) | Development hardware observations |
+Open the **[documentation home](docs/README.md)**. It provides reading paths for artists,
+installation, troubleshooting, pipeline integration, and development.
+
+Most-used guides:
+
+- [Nuke workflow](docs/NUKE.md)
+- [Segment and video tracking](docs/SEGMENT.md)
+- [Refine](docs/REFINE.md)
+- [Inpaint](docs/INPAINT.md)
+- [Models and hardware](docs/MODELS.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
 
 ## Repository map
 
 ```text
-Kyven
-├── src/kyven/       server, providers, model catalog, CLI
+Kyven/
+├── src/kyven/       host-neutral engine, providers, server, and CLI
 ├── hosts/nuke/      Nuke adapter and Group-node builders
 ├── docs/            user and technical documentation
-├── tests/           host-neutral and adapter tests
-├── models/          locally installed weights (not committed)
-└── .runtime/        local logs and generated caches (not committed)
+├── tests/           engine, server, and adapter tests
+├── models/          locally installed weights; not committed
+└── .runtime/        local server state and logs; not committed
 ```
 
-Kyven Tools is under active development. Cached renders should be treated as working assets, while
-node layouts and provider APIs may still change between pre-alpha revisions.
+Kyven is pre-alpha. Treat cached renders as working assets, while node layouts and provider APIs may
+still change between revisions.

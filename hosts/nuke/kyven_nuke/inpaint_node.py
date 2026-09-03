@@ -14,11 +14,17 @@ from kyven_nuke.color_management import set_data_io
 from kyven_nuke.node import (
     _add_knob,
     _add_section,
+    _artist_cache_name,
     _begin_node_operation,
     _cache_root,
+    _cache_root_path,
+    _cache_work_root,
     _clamp_bbox_knob,
     _clear_sequence_frames,
     _create_group_at_cursor,
+    _defer_ui_action,
+    _disconnect_cached_matte,
+    _ensure_artist_cache_fields,
     _ensure_cache_version_control,
     _ensure_double_slider,
     _ensure_live_controls,
@@ -34,12 +40,14 @@ from kyven_nuke.node import (
     _place_knob_after,
     _progress_cancelled,
     _refresh_node_output,
+    _sequence_frame_range,
     _server_progress,
     _set_busy,
     _set_operation_controls,
     _set_status,
     _start_progress,
     _update_progress,
+    _uses_artist_cache,
 )
 from kyven_nuke.payload import INPAINT_MODEL_IDS, INPAINT_MODEL_LABELS, inpaint_payload
 from kyven_nuke.preferences import default_model_index
@@ -166,15 +174,87 @@ def _ensure_input_order(node: Any) -> None:
 
 
 def _paths(node: Any, frame: int) -> tuple[Path, Path, Path, Path, Path, Path]:
-    root = _cache_root(node)
+    root = _cache_work_root(node) if _uses_artist_cache(node) else _cache_root(node)
+    source_root = root / "source" if _uses_artist_cache(node) else root
+    source_root.mkdir(parents=True, exist_ok=True)
+    output = (
+        Path(str(_inpaint_public_pattern(node)) % frame)
+        if _uses_artist_cache(node)
+        else root / f"inpaint_result.{frame:04d}.png"
+    )
     return (
-        root / f"inpaint_source.{frame:04d}.tif",
+        source_root / f"inpaint_source.{frame:04d}.tif",
         root / f"inpaint_mask.{frame:04d}.png",
         root / f"inpaint_model_mask.{frame:04d}.png",
-        root / f"inpaint_result.{frame:04d}.png",
+        output,
         root / f"inpaint_processed_mask.{frame:04d}.png",
         root / f"inpaint_patch.{frame:04d}.png",
     )
+
+
+def _inpaint_public_pattern(node: Any) -> Path:
+    root = _cache_root_path(node)
+    name = _artist_cache_name(node)
+    version = str(node["cache_version"].value()).strip()
+    pattern = root / f"{name}_{version}.%04d.png"
+    if root.is_dir():
+        for legacy in root.glob("inpaint_result.*.png"):
+            token = legacy.name.removeprefix("inpaint_result.")
+            try:
+                legacy.replace(root / f"{name}_{version}.{token}")
+            except OSError:
+                pass
+    return pattern
+
+
+def _load_inpaint_cache(node: Any, *, report_status: bool = True) -> bool:
+    try:
+        pattern = _inpaint_public_pattern(node)
+    except RuntimeError as exc:
+        if report_status:
+            _set_status(str(node.fullName()), str(exc))
+        return False
+    frame_range = _sequence_frame_range(pattern)
+    if frame_range is None:
+        if report_status:
+            _set_status(
+                str(node.fullName()),
+                f"No cached sequence at {_nuke_file_path(pattern)}",
+            )
+        return False
+    first, last = frame_range
+    work = _cache_work_root(node)
+    _set_result(node, pattern, first, last)
+    processed = work / "inpaint_processed_mask.%04d.png"
+    patch = work / "inpaint_patch.%04d.png"
+    if Path(str(processed) % first).is_file():
+        _set_processed_mask(node, processed, first, last)
+    if Path(str(patch) % first).is_file():
+        _set_patch(node, patch, first, last)
+    if report_status:
+        _set_status(
+            str(node.fullName()),
+            f"Loaded {pattern.name}: frames {first}-{last}",
+        )
+        _refresh_node_output(node)
+    return True
+
+
+def _apply_inpaint_cache_fields(node_name: str) -> None:
+    node = _nuke().toNode(node_name)
+    if node is None:
+        return
+    if "kyven_busy" in node.knobs() and bool(node["kyven_busy"].value()):
+        _set_status(node_name, "Cancel the active operation before changing cache.")
+        return
+    if "previous_cache_location" in node.knobs():
+        node.removeKnob(node["previous_cache_location"])
+    _disconnect_cached_matte(node)
+    if "kyven_job_id" in node.knobs():
+        node["kyven_job_id"].setValue("")
+    if "kyven_live_frame" in node.knobs():
+        node["kyven_live_frame"].setValue(-2147483647)
+    _load_inpaint_cache(node)
 
 
 def _payload(node: Any, source: Any, source_path: Path, mask_path: Path, model_mask_path: Path, output_path: Path, processed_mask_path: Path, patch_path: Path, mask_channel: str) -> dict[str, Any]:
@@ -491,9 +571,10 @@ def _apply(
     if job["status"] != "succeeded":
         _set_status(node_name, f"{display_name} failed: {_job_error_text(job)}")
         return
-    _set_result(node, output)
-    _set_processed_mask(node, processed_mask)
-    _set_patch(node, patch)
+    if not (_uses_artist_cache(node) and _load_inpaint_cache(node, report_status=False)):
+        _set_result(node, output)
+        _set_processed_mask(node, processed_mask)
+        _set_patch(node, patch)
     metadata = (job.get("result") or {}).get("metadata", {})
     roi = metadata.get("processing_roi")
     suffix = f" | crop {roi['width']}x{roi['height']}" if roi else ""
@@ -636,7 +717,19 @@ def process_frame_range_for_node(
     if _inside(node, "KyvenInpaintModelMaskWrite") is None:
         _ensure_inpaint_preview_graph(node)
     _configure_color_io(node)
-    root = _cache_root(node); source_pattern = root / "inpaint_source.%04d.tif"; mask_pattern = root / "inpaint_mask.%04d.png"; model_mask_pattern = root / "inpaint_model_mask.%04d.png"; output_pattern = root / "inpaint_result.%04d.png"; processed_mask_pattern = root / "inpaint_processed_mask.%04d.png"; patch_pattern = root / "inpaint_patch.%04d.png"
+    root = _cache_work_root(node) if _uses_artist_cache(node) else _cache_root(node)
+    source_root = root / "source" if _uses_artist_cache(node) else root
+    source_root.mkdir(parents=True, exist_ok=True)
+    source_pattern = source_root / "inpaint_source.%04d.tif"
+    mask_pattern = root / "inpaint_mask.%04d.png"
+    model_mask_pattern = root / "inpaint_model_mask.%04d.png"
+    output_pattern = (
+        _inpaint_public_pattern(node)
+        if _uses_artist_cache(node)
+        else root / "inpaint_result.%04d.png"
+    )
+    processed_mask_pattern = root / "inpaint_processed_mask.%04d.png"
+    patch_pattern = root / "inpaint_patch.%04d.png"
     source_writer = _inside(node, "KyvenInpaintSourceWrite")
     model_mask_writer = _inside(node, "KyvenInpaintModelMaskWrite")
     combined = _inside(node, "KyvenInpaintCombined") is not None
@@ -816,6 +909,9 @@ def reset_roi_to_input() -> None:
 
 def knob_changed() -> None:
     nuke = _nuke(); node = nuke.thisNode(); knob_name = nuke.thisKnob().name()
+    if knob_name in {"cache_root", "inpaint_name", "cache_version"}:
+        _defer_ui_action(_apply_inpaint_cache_fields, str(node.fullName()))
+        return
     if knob_name in {"inputChange", "processing_roi", "crop_mode"}:
         _clamp_bbox_knob(node, "processing_roi", SOURCE_INPUT)
     if knob_name in {
@@ -1025,7 +1121,9 @@ def _restyle_inpaint_cache(node: Any) -> None:
             "kyven_nuke.inpaint_node.delete_this_node_cache()"
         )
     _ensure_cache_version_control(node)
-    if "delete_all_cache" in node.knobs():
+    if _uses_artist_cache(node) and "delete_all_cache" in node.knobs():
+        node.removeKnob(node["delete_all_cache"])
+    elif "delete_all_cache" in node.knobs():
         node["delete_all_cache"].setFlag(nuke.STARTLINE)
         node["delete_all_cache"].setCommand("kyven_nuke.node.delete_all_cache()")
 
@@ -1041,7 +1139,7 @@ def _repair_inpaint_interface(node: Any) -> None:
 
     if "kyven" not in node.knobs():
         node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint"))
-    add(nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 30</font>'))
+    add(nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 32</font>'))
     if "model_section" not in node.knobs():
         _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     if "model" not in node.knobs():
@@ -1120,14 +1218,17 @@ def _repair_inpaint_interface(node: Any) -> None:
     if "cache_section" not in node.knobs():
         _add_section(nuke, node, "cache_section", "CACHE")
     if "cache_location" not in node.knobs():
-        folder = nuke.String_Knob("cache_location", "Cache Folder")
-        folder.setFlag(nuke.READ_ONLY)
-        folder.setValue(str(_cache_root(node)))
-        add(folder)
+        _ensure_artist_cache_fields(
+            node,
+            name_field="inpaint_name",
+            name_label="Inpaint Name",
+            name_default="inpaint",
+        )
     add(nuke.PyScript_Knob("create_result_read", "Create Result Read", "kyven_nuke.inpaint_node.create_read_from_current_result()"))
     _ensure_cache_version_control(node)
     add(nuke.PyScript_Knob("delete_node_cache", "Delete Node Cache", "kyven_nuke.inpaint_node.delete_this_node_cache()"), start_line=False)
-    add(nuke.PyScript_Knob("delete_all_cache", "Delete All Kyven Cache", "kyven_nuke.node.delete_all_cache()"))
+    if not _uses_artist_cache(node):
+        add(nuke.PyScript_Knob("delete_all_cache", "Delete All Kyven Cache", "kyven_nuke.node.delete_all_cache()"))
     if "kyven_job_id" not in node.knobs():
         job = nuke.String_Knob("kyven_job_id", "Job ID")
         job.setVisible(False)
@@ -1159,7 +1260,7 @@ def create_inpaint_node() -> Any:
     nuke = _nuke(); selected = nuke.selectedNodes(); source = selected[0] if selected else None; mask = selected[1] if len(selected) > 1 else None
     node = _create_group_at_cursor(nuke, "KyvenInpaint"); node.setInput(SOURCE_INPUT, source); node.setInput(MASK_INPUT, mask)
     node["label"].setValue("[value kyven_status]"); node.addKnob(nuke.Tab_Knob("kyven", "Kyven Inpaint")); add_node_branding(node, nuke)
-    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 30</font>'))
+    _add_knob(nuke, node, nuke.Text_Knob("kyven_title", "", '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br><font color="#91a3b0">LaMa | Source + Mask | API 32</font>'))
     _add_section(nuke, node, "model_section", "MODEL AND PERFORMANCE")
     _add_knob(nuke, node, nuke.Enumeration_Knob("model", "Model", list(INPAINT_MODEL_LABELS)))
     node["model"].setValue(default_model_index("inpaint", INPAINT_MODEL_IDS))
@@ -1196,11 +1297,15 @@ def create_inpaint_node() -> Any:
     _add_knob(nuke, node, nuke.Text_Knob("output_help", "", "Result is opaque RGB with an inward-softened edge. Result + Mask Alpha and Result Premult use the exact mask sent to LaMa. Generated Patch is rebuilt from the live Nuke Source and only uses returned RGB inside that mask."))
     uid = nuke.String_Knob("kyven_uuid", "UUID"); uid.setValue(uuid.uuid4().hex); uid.setVisible(False); node.addKnob(uid)
     _add_section(nuke, node, "cache_section", "CACHE")
-    folder = nuke.String_Knob("cache_location", "Cache Folder"); folder.setFlag(nuke.READ_ONLY); folder.setValue(str(_cache_root(node))); _add_knob(nuke, node, folder)
+    _ensure_artist_cache_fields(
+        node,
+        name_field="inpaint_name",
+        name_label="Inpaint Name",
+        name_default="inpaint",
+    )
     _add_knob(nuke, node, nuke.PyScript_Knob("create_result_read", "Create Result Read", "kyven_nuke.inpaint_node.create_read_from_current_result()"))
     _ensure_cache_version_control(node)
     _add_knob(nuke, node, nuke.PyScript_Knob("delete_node_cache", "Delete Node Cache", "kyven_nuke.inpaint_node.delete_this_node_cache()"), start_line=False)
-    _add_knob(nuke, node, nuke.PyScript_Knob("delete_all_cache", "Delete All Kyven Cache", "kyven_nuke.node.delete_all_cache()"))
     job = nuke.String_Knob("kyven_job_id", "Job ID"); job.setVisible(False); node.addKnob(job)
     _add_section(nuke, node, "status_section", "STATUS"); status = nuke.String_Knob("kyven_status", "Status"); status.setFlag(nuke.READ_ONLY); status.setValue("Ready"); _add_knob(nuke, node, status); _ensure_server_controls(node)
     node["knobChanged"].setValue("kyven_nuke.inpaint_node.knob_changed()")
@@ -1251,12 +1356,12 @@ def upgrade_selected_inpaint_node() -> None:
     if not has_inpaint_graph:
         nuke.message("The selected Group is not a Kyven Inpaint node.")
         return
-    legacy_api = "kyven_title" not in node.knobs() or "API 30" not in str(node["kyven_title"].value())
+    legacy_api = "kyven_title" not in node.knobs() or "API 32" not in str(node["kyven_title"].value())
     _repair_inpaint_interface(node)
     if legacy_api:
         _apply_inpaint_api26_defaults(node)
-    isolated_cache = _cache_root(node)
     if "cache_location" in node.knobs():
+        isolated_cache = _cache_root(node)
         node["cache_location"].setValue(str(isolated_cache))
     _ensure_inpaint_mask_sliders(node)
     _ensure_refinement_controls(node)
@@ -1284,7 +1389,7 @@ def upgrade_selected_inpaint_node() -> None:
             start_line=False,
         )
     _place_knob_after(node, "open_model_manager", "refresh_models")
-    if "delete_all_cache" not in node.knobs():
+    if not _uses_artist_cache(node) and "delete_all_cache" not in node.knobs():
         tail = [
             node[name]
             for name in ("kyven_job_id", "status_section", "kyven_status")
@@ -1309,7 +1414,7 @@ def upgrade_selected_inpaint_node() -> None:
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / INPAINT</b></font><br>'
-            '<font color="#91a3b0">LaMa | Source + Mask | API 30</font>'
+            '<font color="#91a3b0">LaMa | Source + Mask | API 32</font>'
         )
     if "mask_help" in node.knobs():
         node["mask_help"].setValue(
