@@ -93,7 +93,7 @@ installation, troubleshooting, pipeline integration, and development.
 Most-used guides:
 
 - [Nuke workflow](docs/NUKE.md)
-- [Segment and video tracking](docs/SEGMENT.md)
+- [Segment](docs/SEGMENT.md)
 - [Refine](docs/REFINE.md)
 - [Inpaint](docs/INPAINT.md)
 - [Models and hardware](docs/MODELS.md)
