@@ -24,6 +24,12 @@ def _select_model(node):
 
 def on_create():
     node = nuke.thisNode()
+    if 'kyven_logo' in node.knobs():
+        logo = (Path(__file__).resolve().parent / 'kyven_logo.png').as_posix()
+        node['kyven_logo'].setValue(
+            '<a href="https://github.com/vaaleerkiin/Kyven" title="Open Kyven on GitHub">'
+            f'<img src="{logo}" width="48" height="48"></a>'
+        )
     _select_model(node)
     inference = node.node('Inference1')
     node['channelsIn'].setValue('RGB current frame + RGB adjacent frame (sRGB)')

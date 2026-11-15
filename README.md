@@ -1,6 +1,6 @@
 <h1><a href="https://github.com/vaaleerkiin/Kyven"><img src="hosts/nuke/icons/kyven_logo.png" alt="Kyven Tools logo" width="48" align="middle"></a>&nbsp;Kyven Tools</h1>
 
-**Local AI tools for Foundry Nuke: roto, alpha refinement, inpaint, and optional RTX neural reconstruction.**
+**Local AI tools for Foundry Nuke: roto, alpha refinement, inpaint, WAFT SmartVector optical flow, and optional RTX neural reconstruction.**
 
 Kyven's Segment, Refine, Inpaint and DLSS nodes keep model loading and long inference outside Nuke. These nodes communicate
 with a local authenticated server and return ordinary image sequences, so rendered work remains
@@ -26,6 +26,21 @@ Nuke Inference nodes, with embedded models and no Kyven server. See [WAFT](docs/
 Full preview ZIP/wheel bundles can include the NVIDIA DLSS component locally.
 They still use the managed runtime setup. WAFT remains an independent native
 Nuke plugin with its models beside the gizmo.
+
+**Download ZIP:** choose **Code > Download ZIP** and extract the archive. This
+repository includes Git LFS models in GitHub archives, so both WAFT models arrive
+inside the folder; Git and Git LFS are not required for ZIP installation.
+
+**Clone with Git:** install Git LFS first, then run:
+
+```bash
+git lfs install
+git clone https://github.com/vaaleerkiin/Kyven.git
+```
+
+For an existing clone, run `git lfs install` and `git lfs pull` from its root.
+WAFT alone only needs the Nuke plugin path below; the server installer and model
+selection are for the other Kyven tools.
 
 1. Clone with Git LFS installed, or extract a complete Kyven bundle into its final
    writable folder. For an existing checkout, run `git lfs install` and `git lfs pull`

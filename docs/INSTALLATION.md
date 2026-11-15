@@ -29,6 +29,35 @@ clones download the pinned component during managed runtime installation.
 
 ## Install
 
+### Download ZIP
+
+Choose **Code > Download ZIP** on GitHub and extract it into a permanent writable
+folder. **Include Git LFS objects in archives** is enabled for this repository,
+so both WAFT `.cat` models are included as actual binaries. End users do not need
+Git or Git LFS for this route.
+
+### Clone with Git
+
+Install Git LFS, then run:
+
+```bash
+git lfs install
+git clone https://github.com/vaaleerkiin/Kyven.git
+```
+
+Both WAFT models download during cloning. For an existing clone:
+
+```bash
+cd Kyven
+git lfs install
+git lfs pull
+```
+
+If `GIT_LFS_SKIP_SMUDGE` was enabled, run `git lfs pull` to fetch the model
+binaries. A `.cat` file should be about 124 or 244 MiB, not a small text pointer.
+
+### Configure Nuke and server tools
+
 1. Clone or extract Kyven into its final writable folder.
 2. Double-click `install.cmd`, or run this from the repository root:
 

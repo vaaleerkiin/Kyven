@@ -11,6 +11,9 @@ Output resolution and bounds follow the connected source.
 
 ## Install
 
+GitHub **Code > Download ZIP** includes both model binaries. Extract it and follow
+the setup below; Git and Git LFS are unnecessary for ZIP installation.
+
 In a Kyven checkout, both models are versioned through Git LFS. Install Git LFS
 before cloning; for an existing checkout run `git lfs install` and `git lfs pull`
 from the repository root. Connect Kyven through your `.nuke/init.py`:
@@ -29,6 +32,10 @@ The final path must be `.nuke/Cattery/WAFT/cat.json`. Restart Nuke and choose
 path. See [INSTALL.md](INSTALL.md).
 
 ## Use
+
+WAFT uses the same Kyven logo and header style as the other Kyven tools, with
+native sections for Model and Performance, Input, Output, and Vector Cleanup.
+All branding assets are included in this portable folder.
 
 Connect an image sequence to the single input. Set **Input Colorspace** to the
 source colorspace; the internal graph converts frames to sRGB for inference.

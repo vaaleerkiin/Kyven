@@ -130,6 +130,38 @@ push $waft_output
  }
  Output {
   name Output1''', 1)
+# Keep the native graph and existing control names while matching Kyven's layout.
+ui_start = text.index(' addUserKnob {20 WAFT}')
+ui_end = text.index('\n}', ui_start)
+controls = {}
+for line in text[ui_start:ui_end].splitlines():
+    match = re.match(r' addUserKnob \{\d+ (\w+)\b', line)
+    if match:
+        controls[match[1]] = line
+
+
+def section(name, title):
+    return f' addUserKnob {{26 {name} l "" T "<br><font color=\'#9fc7e8\'><b>{title}</b></font>"}}'
+
+
+layout = [
+    ' addUserKnob {20 WAFT l "Kyven WAFT"}',
+    ' addUserKnob {26 kyven_logo l ""}',
+    ' addUserKnob {26 kyven_title l "" T "<font size=\'5\' color=\'#dce9f2\'><b>KYVEN / WAFT</b></font><br><font color=\'#91a3b0\'>SmartVector | Native Nuke inference</font>"}',
+    section('model_section', 'MODEL AND PERFORMANCE'),
+    controls['model_info'], controls['precision'], controls['useGPUIfAvailable'],
+    ' useGPUIfAvailable true', controls['localGPU'], controls['gpuName'],
+    controls['processing'],
+    section('input_section', 'INPUT'),
+    controls['in_colorspace'], controls['channelsIn'],
+    section('output_section', 'OUTPUT'),
+    controls['output_mode'],
+    section('cleanup_section', 'VECTOR CLEANUP'),
+    controls['grid_cleanup'], ' grid_cleanup 1',
+    controls['cleanup_range'], ' cleanup_range 0.25',
+]
+text = text[:ui_start] + '\n'.join(layout) + text[ui_end:]
+text = text.replace('Gizmo {\n', 'Gizmo {\n icon WAFT.png\n', 1)
 (target / 'WAFT.gizmo').write_text(text, encoding='utf-8')
 (target / 'cat.json').write_text(json.dumps({
     'minimum_nuke_version_required': 16.0,
@@ -138,7 +170,9 @@ push $waft_output
     'description': 'Warping-Alone Field Transforms. WAFT-a1, motion and SmartVector outputs.',
     'cats': [{'filepath': 'WAFT.gizmo', 'name': 'WAFT', 'icon': 'WAFT.png'}]
 }, indent=4))
+icons = ROOT.parents[1] / 'hosts/nuke/icons'
 for suffix in ['.png', '@2x.png']:
-    shutil.copyfile(source / ('RAFT' + suffix), target / ('WAFT' + suffix))
+    shutil.copyfile(icons / 'kyven_logo_icon.png', target / ('WAFT' + suffix))
+shutil.copyfile(icons / 'kyven_logo.png', target / 'kyven_logo.png')
 shutil.copyfile(ROOT / 'WAFT-source/LICENSE', target / 'LICENSE-WAFT.txt')
 print(target)

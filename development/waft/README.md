@@ -15,6 +15,10 @@ This directory contains development sources. To use the finished node, use
 - `requirements-lock.txt`: installed package versions from the original Python 3.10.20 environment.
 
 The nested Git history was removed; the source commit is recorded in provenance.
+
+`tools/package_waft.py` also reproduces the Kyven layout and copies the shared
+logo assets into the portable plugin folder. Keep `kyven_logo.png` beside the
+callback module so standalone Cattery copies retain their branding.
 The dinov3 submodule was not initialized in the original environment and is not
 required for the WAFT-a1 export. Training datasets and the user's test video are
 not included.

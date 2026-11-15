@@ -1,27 +1,33 @@
 version 16.0 v4
 Gizmo {
+ icon WAFT.png
  onCreate "import cattery_waft; cattery_waft.on_create()"
  onDestroy "nuke.thisNode()\[\"knobChanged\"].setValue(\"\")"
  knobChanged "import cattery_waft; cattery_waft.knob_changed()"
  selected true
  xpos 178
  ypos -87
- addUserKnob {20 WAFT}
- addUserKnob {4 processing l "Processing Resolution" t "Limits the longest edge used by WAFT. Output always returns to the input source format, with vector lengths scaled accordingly. Lower settings use less VRAM and can lose fine detail." M {"512 (Low VRAM)" "768 (Balanced)" "1024 (High)" "Full Source"}}
+ addUserKnob {20 WAFT l "Kyven WAFT"}
+ addUserKnob {26 kyven_logo l ""}
+ addUserKnob {26 kyven_title l "" T "<font size='5' color='#dce9f2'><b>KYVEN / WAFT</b></font><br><font color='#91a3b0'>SmartVector | Native Nuke inference</font>"}
+ addUserKnob {26 model_section l "" T "<br><font color='#9fc7e8'><b>MODEL AND PERFORMANCE</b></font>"}
+ addUserKnob {26 model_info l "Model" T "WAFT-a1 / 5 iterations / v4"}
  addUserKnob {4 precision l "Precision" t "GPU FP16 uses half precision weights and attention, with float32 flow accumulation. FP32 supports CPU. Turning off GPU automatically selects the FP32 model." M {"GPU FP16 (Fast)" "FP32 (Compatible)"}}
+ addUserKnob {6 useGPUIfAvailable l "Use GPU if available" t "Select this to render on the <b>Local GPU</b>, if available.\n\nYou can select this even if no GPU is currently available on your machine. The GPU will then be used whenever the script is opened on a machine which does have a GPU available. You should also select this if you wish to render from the command line with the <b>--gpu</b> option.\n\nIf this node requires full frames from its inputs, and is therefore unable to reduce its memory overhead, it will fall back to the CPU if an attempt to render a frame on the GPU fails due to lack of memory. When this occurs, a warning message will be printed to the console." +STARTLINE}
+ useGPUIfAvailable true
+ addUserKnob {26 localGPU l "Local GPU:" T ""}
+ addUserKnob {26 gpuName l "" -STARTLINE T ""}
+ addUserKnob {4 processing l "Processing Resolution" t "Limits the longest edge used by WAFT. Output always returns to the input source format, with vector lengths scaled accordingly. Lower settings use less VRAM and can lose fine detail." M {"512 (Low VRAM)" "768 (Balanced)" "1024 (High)" "Full Source"}}
+ addUserKnob {26 input_section l "" T "<br><font color='#9fc7e8'><b>INPUT</b></font>"}
+ addUserKnob {41 in_colorspace l "Input Colorspace" t "Define the colorspace that the input image is in." T Colorspace1.colorspace_in}
+ addUserKnob {26 channelsIn l "Channels In:" t "The channels the model expects as input." T "rgba.red, rgba.green, rgba.blue"}
+ addUserKnob {26 output_section l "" T "<br><font color='#9fc7e8'><b>OUTPUT</b></font>"}
  addUserKnob {4 output_mode l "Output Mode" t "Motion Vectors: native Nuke motion channels via VectorToMotion. Smart Vectors: the same smartvector layer as RAFT Cattery." M {"Motion Vectors" "Smart Vectors"}}
+ addUserKnob {26 cleanup_section l "" T "<br><font color='#9fc7e8'><b>VECTOR CLEANUP</b></font>"}
  addUserKnob {7 grid_cleanup l "Grid Suppression" t "Edge-aware smoothing of fine grid/ripple in the vector field before resizing. 0 preserves the raw model output, 1 applies full cleanup. May remove small real motion variations." R 0 1}
  grid_cleanup 1
  addUserKnob {7 cleanup_range l "Edge Threshold" t "Vector difference, in working-resolution pixels, over which smoothing is reduced. Lower values preserve smaller motion boundaries; higher values suppress stronger ripple." R 0.01 2}
  cleanup_range 0.25
- addUserKnob {26 model_info l "Model" T "WAFT-a1 / 5 iterations / v4"}
- addUserKnob {26 localGPU l "Local GPU:" T ""}
- addUserKnob {26 gpuName l "" -STARTLINE T ""}
- addUserKnob {6 useGPUIfAvailable l "Use GPU if available" t "Select this to render on the <b>Local GPU</b>, if available.\n\nYou can select this even if no GPU is currently available on your machine. The GPU will then be used whenever the script is opened on a machine which does have a GPU available. You should also select this if you wish to render from the command line with the <b>--gpu</b> option.\n\nIf this node requires full frames from its inputs, and is therefore unable to reduce its memory overhead, it will fall back to the CPU if an attempt to render a frame on the GPU fails due to lack of memory. When this occurs, a warning message will be printed to the console." +STARTLINE}
- useGPUIfAvailable true
- addUserKnob {26 ""}
- addUserKnob {26 channelsIn l "Channels In:" t "The channels the model expects as input." T "rgba.red, rgba.green, rgba.blue"}
- addUserKnob {41 in_colorspace l "Input Colorspace" t "Define the colorspace that the input image is in." T Colorspace1.colorspace_in}
 }
  Input {
   inputs 0

@@ -10,6 +10,11 @@ Model Manager download. Package version 4 uses five model iterations.
 
 ## First use
 
+GitHub **Code > Download ZIP** includes both model binaries because LFS objects
+are enabled in this repository's archives. No Git installation is needed for ZIP
+users. For cloning, install Git LFS and run `git lfs install` before `git clone`;
+use `git lfs pull` to restore models in an existing clone.
+
 1. Use Nuke 16; this package was tested in NukeX 16.0v4.
 2. Check `plugins/Cattery/WAFT/` contains both `WAFT.cat` and `WAFT_FP32.cat`,
    `WAFT.gizmo`, `cattery_waft.py`, `cat.json`, icons and `LICENSE-WAFT.txt`.
@@ -38,6 +43,10 @@ For WAFT alone, no external Python environment, pip packages, compiler or Kyven
 server installation is required. Core Kyven nodes still use their standard setup.
 
 ## Controls
+
+The node uses the shared Kyven logo and header, with Model and Performance,
+Input, Output, and Vector Cleanup sections. Its logo assets are included inside
+the portable WAFT folder, so the same appearance works in standalone Cattery.
 
 | Control | Behavior |
 | --- | --- |

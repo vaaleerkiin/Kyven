@@ -1,5 +1,9 @@
 # Installing WAFT in Kyven or Cattery
 
+For GitHub **Code > Download ZIP**, extract the archive; both models are included
+and Git is not required. For `git clone`, install Git LFS and run `git lfs install`
+before cloning. Run `git lfs pull` from the root of an existing clone if needed.
+
 This complete folder is portable. It includes `WAFT.cat` (GPU FP16) and
 `WAFT_FP32.cat` (FP32, including CPU). In a Git checkout, obtain both binaries
 with Git LFS; they must not be small text pointer files.
