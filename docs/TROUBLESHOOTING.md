@@ -27,7 +27,7 @@ restarting when you need to report a reproducible failure.
   `cattery_waft.py`, `WAFT.cat` and `WAFT_FP32.cat`. Both models are tracked by
   Git LFS. If missing or only a small text pointer, run `git lfs install` and
   `git lfs pull` from the repository root. Alternatively follow the
-  [rebuild guide](../development/waft/README_RU.md). Kyven's installer and Model
+  [rebuild guide](../development/waft/README.md). Kyven's installer and Model
   Manager do not restore WAFT models.
 - For Cattery discovery, the standalone path must be `.nuke/Cattery/WAFT/cat.json`,
   with no extra nested `WAFT/Cattery` level. Avoid keeping multiple WAFT installs

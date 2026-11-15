@@ -14,6 +14,6 @@ installed, a normal clone checks out both models beside the gizmo. For an existi
 checkout run `git lfs install` and `git lfs pull` from the repository root.
 Distribute this complete directory, including both `.cat` files, in release archives.
 
-The lightweight development sources and [recovery instructions](../development/waft/README_RU.md)
+The lightweight development sources and [recovery instructions](../development/waft/README.md)
 are preserved in `../development/waft/`. Generated environments, exports and model
 copies are excluded from Git and are unnecessary for deployment.

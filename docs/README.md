@@ -6,6 +6,11 @@
 This is the main index for Kyven documentation. Choose the path that matches what you are trying to
 do; you do not need to read every guide in order.
 
+For a new installation: WAFT's complete Cattery folder and models arrive through
+Git LFS; connect it directly to Nuke. DLSS uses a managed runtime installation.
+Segment, Refine and Inpaint use separately installed model variants. See the
+[installation overview](INSTALLATION.md#what-is-ready-after-checkout).
+
 ## I am an artist using Nuke
 
 1. [Install Kyven](INSTALLATION.md).
@@ -38,11 +43,11 @@ Move to heavier models only when the shot demonstrates a quality limitation.
 4. [Instructions for coding agents](../CODEX.md) contains repository constraints and the definition
    of done.
 5. [ADR 0001](adr/0001-selectable-model-catalog.md) records the selectable model-catalog decision.
-6. [WAFT development recovery](../development/waft/README_RU.md) covers source provenance,
+6. [WAFT development recovery](../development/waft/README.md) covers source provenance,
    environment recreation, model export, testing and standalone packaging;
    [ADR 0008](adr/0008-standalone-waft.md) records its independent native Nuke runtime.
 
-`OWNER_NOTES_RU.md` is an owner-maintained product note, not an end-user manual.
+`OWNER_NOTES.md` is an owner-maintained product note, not an end-user manual.
 
 ## Guide map
 
@@ -55,7 +60,7 @@ Move to heavier models only when the shot demonstrates a quality limitation.
 | [Inpaint](INPAINT.md) | Paint artist | Models, ROI, masks, blending, quality modes |
 | [DLSS (optional RTX)](DLSS.md) | Artist / TD | Local runtime, external vectors, alpha guides, live and temporal behavior |
 | [WAFT SmartVector](WAFT.md) | Artist / TD | Embedded optical-flow models, motion/smart outputs, portable Cattery folder |
-| [WAFT development recovery](../development/waft/README_RU.md) | Developer | Recreate dependencies, checkpoints and model builds from lightweight sources |
+| [WAFT development recovery](../development/waft/README.md) | Developer | Recreate dependencies, checkpoints and model builds from lightweight sources |
 | [DLSS temporal research](DLSS_TEMPORAL.md) | Artist / TD | Native vector tools, finite history buffer, rejection and measured limits |
 | [Models](MODELS.md) | Artist / TD | VRAM, model trade-offs, downloads, licenses |
 | [Troubleshooting](TROUBLESHOOTING.md) | Everyone | Symptoms, checks, logs, recovery |

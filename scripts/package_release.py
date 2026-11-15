@@ -1,4 +1,4 @@
-"""Build an installable Kyven distribution with its verified DLSS runtime."""
+"""Build an installable Kyven distribution with DLSS and embedded WAFT models."""
 
 from __future__ import annotations
 
@@ -10,13 +10,26 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-FOLDERS = ("src", "hosts", "native", "docs", "requirements", "scripts")
+FOLDERS = ("src", "hosts", "native", "docs", "requirements", "scripts", "plugins")
 ROOT_FILES = ("install.cmd", "install.ps1", "pyproject.toml", "README.md", "LICENSE",
-              "THIRD_PARTY_NOTICES.md", "PROJECT_BIBLE.md", "CODEX.md", "OWNER_NOTES_RU.md")
+              "THIRD_PARTY_NOTICES.md", "PROJECT_BIBLE.md", "CODEX.md", "OWNER_NOTES.md")
 
 
 def package_release(root: Path, output: Path) -> Path:
     root = root.resolve()
+    waft = root / "plugins/Cattery/WAFT"
+    if waft.is_dir():
+        model_manifest = json.loads((waft / "model-manifest.json").read_text(encoding="utf-8"))
+        for name, expected in model_manifest["models"].items():
+            model = waft / name
+            if not model.is_file() or model.stat().st_size != expected["size_bytes"]:
+                raise ValueError(f"WAFT model missing or an LFS pointer: run git lfs pull ({name})")
+            with model.open("rb") as stream:
+                digest = hashlib.sha256()
+                for block in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+                    digest.update(block)
+            if digest.hexdigest() != expected["sha256"]:
+                raise ValueError(f"WAFT model checksum mismatch: {name}")
     package = root / "src/kyven/resources/dlss/windows_x64"
     manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
     vendor = package / "nvngx_dlssnr.dll"

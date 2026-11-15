@@ -11,6 +11,13 @@ artistic effect of its experimental guide inputs.
 
 ## Setup
 
+The Git repository contains Kyven's worker, shim and pinned runtime metadata.
+It does not contain `nvngx_dlssnr.dll`; a plain clone obtains that NVIDIA component
+through the managed runtime installation below. Complete preview ZIP/wheel bundles
+can include it and install it locally. DLSS still needs runtime preparation and the
+private OpenEXR dependency. Standalone [WAFT](WAFT.md) is ready independently after
+an LFS-enabled checkout and does not use this setup.
+
 Open **Nodes > Kyven > Model Manager**, select **Kyven DLSS Runtime**, then **Install Selected**.
 The manager installs the bundled, checksum-verified `KyvenDLSSWorker.exe`, shim and pinned OpenEXR
 dependency in Kyven's private environment. End users do not need Git, a compiler, NDK or pip commands.

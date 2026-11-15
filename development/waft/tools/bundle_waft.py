@@ -18,6 +18,14 @@ validation['report_origins'] = report_origins
 validation['source_commit'] = json.loads((root / 'provenance.json').read_text())['source_commit']
 model = package / 'Cattery/WAFT/WAFT.cat'
 validation['cat_sha256'] = hashlib.sha256(model.read_bytes()).hexdigest()
+model_manifest = {'models': {}}
+for name in ('WAFT.cat', 'WAFT_FP32.cat'):
+    path = model.parent / name
+    model_manifest['models'][name] = {
+        'size_bytes': path.stat().st_size,
+        'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+(model.parent / 'model-manifest.json').write_text(json.dumps(model_manifest, indent=2) + '\n')
 validation['precision'] = 'FP16 on GPU; FP32 flow accumulation; optional FP32 model for CPU'
 validation['package_version'] = 4
 validation['default_processing_long_edge'] = 512

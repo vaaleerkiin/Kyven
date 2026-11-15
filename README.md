@@ -17,6 +17,16 @@ Nuke Inference nodes, with embedded models and no Kyven server. See [WAFT](docs/
 
 ## Start here
 
+| Tool | What comes with the repository | First-use setup |
+| --- | --- | --- |
+| WAFT SmartVector | Complete Cattery folder and two Git LFS models | Clone with Git LFS, connect the Nuke plugin path; no server or Model Manager |
+| DLSS | Kyven worker, shim and runtime metadata | Install **Kyven DLSS Runtime** in Model Manager; a plain Git clone downloads the NVIDIA component during that setup |
+| Segment, Refine, Inpaint | Node code and selectable model catalogs | Install the desired model variants through the installer or Model Manager |
+
+Full preview ZIP/wheel bundles can include the NVIDIA DLSS component locally.
+They still use the managed runtime setup. WAFT remains an independent native
+Nuke plugin with its models beside the gizmo.
+
 1. Clone with Git LFS installed, or extract a complete Kyven bundle into its final
    writable folder. For an existing checkout, run `git lfs install` and `git lfs pull`
    to obtain the embedded WAFT models.
@@ -120,7 +130,7 @@ Most-used guides:
 - [Inpaint](docs/INPAINT.md)
 - [DLSS (optional RTX)](docs/DLSS.md)
 - [WAFT SmartVector](docs/WAFT.md)
-- [WAFT development recovery](development/waft/README_RU.md)
+- [WAFT development recovery](development/waft/README.md)
 - [Models and hardware](docs/MODELS.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 

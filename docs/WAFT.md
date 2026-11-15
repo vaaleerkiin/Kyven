@@ -1,7 +1,7 @@
 # WAFT SmartVector
 
 [Documentation home](README.md) · [Install](INSTALLATION.md) ·
-[Nuke workflow](NUKE.md) · [Development recovery](../development/waft/README_RU.md)
+[Nuke workflow](NUKE.md) · [Development recovery](../development/waft/README.md)
 
 WAFT-a1 estimates optical flow between adjacent frames and outputs either Motion
 Vectors or Smart Vectors. It is a self-contained Cattery plugin bundled alongside
@@ -16,7 +16,7 @@ Model Manager download. Package version 4 uses five model iterations.
    Both models are included in the repository through Git LFS. Install Git LFS
    before cloning; for an existing checkout run `git lfs install` and `git lfs pull`
    in the repository root. The files must be binary models (about 124 and 244 MiB),
-   not small LFS pointer text. You can also [rebuild from source](../development/waft/README_RU.md).
+   not small LFS pointer text. You can also [rebuild from source](../development/waft/README.md).
 3. Connect Kyven once through your existing `.nuke/init.py`:
 
    ```python
@@ -95,7 +95,7 @@ nodes can retain their previous internal graph. For deployment, include the enti
 plugin folder, both model files, icons and license; `development/` is unnecessary.
 Never distribute only the gizmo or expect the server installer to restore its models.
 
-[Development recovery](../development/waft/README_RU.md) describes how to recreate
+[Development recovery](../development/waft/README.md) describes how to recreate
 Python 3.10 dependencies, download the checksum-verified checkpoint, export both
 models, test the graph and build the standalone archive. Sources are retained in
 Git. Both deployed `.cat` files are versioned with Git LFS; regenerated environments,

@@ -1,0 +1,12 @@
+{
+  "models": {
+    "WAFT.cat": {
+      "size_bytes": 130442609,
+      "sha256": "105bfd914a5990a696b71817d42950a7cde219645fa04c77d553460e1367c042"
+    },
+    "WAFT_FP32.cat": {
+      "size_bytes": 256147894,
+      "sha256": "28c25baef720db392e110964dfcdd27a0d1f60706793c1888fc7cfa99aabf210"
+    }
+  }
+}

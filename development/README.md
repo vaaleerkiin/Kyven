@@ -1,6 +1,6 @@
 # WAFT development
 
-The lightweight, rebuildable source workspace and [recovery guide](waft/README_RU.md)
+The lightweight, rebuildable source workspace and [recovery guide](waft/README.md)
 are under `waft/`. Source, local changes, export/package/test scripts, licenses,
 baseline reports, dependency versions and provenance are retained in Git.
 Virtual environments, checkpoints, model copies and generated renders are ignored.
