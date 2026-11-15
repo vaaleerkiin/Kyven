@@ -17,7 +17,9 @@ Nuke Inference nodes, with embedded models and no Kyven server. See [WAFT](docs/
 
 ## Start here
 
-1. Clone or extract Kyven into its final writable folder.
+1. Clone with Git LFS installed, or extract a complete Kyven bundle into its final
+   writable folder. For an existing checkout, run `git lfs install` and `git lfs pull`
+   to obtain the embedded WAFT models.
 2. Run `install.cmd` and choose the recommended models.
 3. Add the printed plugin path to the user's `.nuke/init.py`:
 
@@ -39,7 +41,8 @@ updates, moving the repository, and unattended model selection.
 **WAFT SmartVector** is also bundled locally as a standalone Nuke 16 Cattery
 plugin, with its FP16 and FP32 models inside `plugins/Cattery/WAFT/`. Open
 **Nodes > Kyven > WAFT SmartVector**; no Kyven server or model-manager download
-is required. The complete folder can be copied into `.nuke/Cattery/`.
+is required. Both deployed models are versioned through Git LFS. The complete
+folder can be copied into `.nuke/Cattery/`.
 See [standalone plugins](plugins/README.md) for packaging and portability.
 
 | Node | Inputs | Use it for | Recommended starting model |

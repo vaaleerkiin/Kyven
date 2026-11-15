@@ -1,9 +1,10 @@
 # Third-party notices
 
-Kyven does not commit or redistribute model weights in this repository.
+Kyven's server model weights are downloaded separately. The standalone WAFT
+Cattery models are included in the repository through Git LFS.
 
-The local standalone WAFT bundle under `plugins/Cattery/WAFT/` includes FP16
-and FP32 model binaries outside Git history. Its Princeton Vision & Learning Lab
+The standalone WAFT bundle under `plugins/Cattery/WAFT/` includes FP16
+and FP32 model binaries versioned through Git LFS. Its Princeton Vision & Learning Lab
 BSD-3-Clause license is preserved in `LICENSE-WAFT.txt` within that folder.
 Development sources, upstream notices and recovery instructions are preserved
 under `development/waft/`. See [standalone plugin packaging](plugins/README.md).

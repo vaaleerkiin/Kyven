@@ -15,8 +15,10 @@ build/
 *.pth
 *.onnx
 *.safetensors
-# Embedded local WAFT models ship with the plugin bundle, outside Git history.
+# Generated Cattery models are ignored; deployed WAFT models are versioned via LFS.
 *.cat
+!/plugins/Cattery/WAFT/WAFT.cat
+!/plugins/Cattery/WAFT/WAFT_FP32.cat
 # WAFT development sources are kept; generated environments and artifacts are not.
 /development/waft/checkpoints/
 /development/waft/backups/

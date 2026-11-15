@@ -13,6 +13,8 @@ Inference exception: preserve `plugins/Cattery/WAFT/` as one portable folder
 with embedded local models. Keep lightweight development sources and recovery
 instructions under `development/waft/`; ignore regenerated weights, environments,
 exports and renders. Do not couple it to the Kyven server or Model Manager.
+The two deployed WAFT `.cat` files are explicitly versioned using Git LFS;
+the general rule against committing model weights applies to other models.
 
 ## Read first
 

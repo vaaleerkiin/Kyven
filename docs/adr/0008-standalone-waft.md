@@ -12,8 +12,9 @@ is an explicit exception to the server-only inference architecture for this
 optional external plugin; core Segment, Refine and Inpaint remain unchanged.
 
 Both FP16 and FP32 models remain inside the local plugin folder and complete
-release bundles. Large model binaries and generated development artifacts are
-excluded from Git history. Keep lightweight development sources and recovery
+release bundles. The two deployed `.cat` files are explicitly versioned through
+Git LFS so an LFS-enabled clone contains the complete plugin immediately.
+Generated development artifacts and model copies remain ignored. Keep lightweight development sources and recovery
 instructions in Git. Preserve upstream licenses and validation reports.
 Hardware and CPU behavior are those of the standalone WAFT package; the core
 Kyven CPU/4 GB support contract is not extended to this plugin.

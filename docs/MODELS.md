@@ -12,8 +12,8 @@ Standalone [WAFT SmartVector](WAFT.md) uses files in `plugins/Cattery/WAFT/`,
 outside the server model catalog: `WAFT.cat` (GPU FP16, about 124 MiB) and
 `WAFT_FP32.cat` (FP32/CPU, about 244 MiB). Both are embedded in the complete local
 plugin package and must travel with its gizmo. Model Manager does not install or
-remove them. A source-only Git checkout omits these binaries; see
-[recovery](../development/waft/README_RU.md).
+remove them. Both models are versioned using Git LFS and arrive with a normal
+LFS-enabled clone. For an existing checkout run `git lfs pull`; see [WAFT](WAFT.md).
 
 Use Processing Resolution 512 as the starting setting. Lower working resolution
 reduces memory needs; CPU selects FP32 and is slower. Standalone WAFT has its own

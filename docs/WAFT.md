@@ -13,9 +13,10 @@ Model Manager download. Package version 4 uses five model iterations.
 1. Use Nuke 16; this package was tested in NukeX 16.0v4.
 2. Check `plugins/Cattery/WAFT/` contains both `WAFT.cat` and `WAFT_FP32.cat`,
    `WAFT.gizmo`, `cattery_waft.py`, `cat.json`, icons and `LICENSE-WAFT.txt`.
-   Both models are included in the complete local/plugin bundle. A source-only
-   Git checkout excludes them; obtain a full bundle from your distributor or
-   [build them from source](../development/waft/README_RU.md).
+   Both models are included in the repository through Git LFS. Install Git LFS
+   before cloning; for an existing checkout run `git lfs install` and `git lfs pull`
+   in the repository root. The files must be binary models (about 124 and 244 MiB),
+   not small LFS pointer text. You can also [rebuild from source](../development/waft/README_RU.md).
 3. Connect Kyven once through your existing `.nuke/init.py`:
 
    ```python
@@ -97,5 +98,6 @@ Never distribute only the gizmo or expect the server installer to restore its mo
 [Development recovery](../development/waft/README_RU.md) describes how to recreate
 Python 3.10 dependencies, download the checksum-verified checkpoint, export both
 models, test the graph and build the standalone archive. Sources are retained in
-Git; regenerated environments, checkpoints, exports, archives and `.cat` binaries
-are ignored. See also [ADR 0008](adr/0008-standalone-waft.md).
+Git. Both deployed `.cat` files are versioned with Git LFS; regenerated environments,
+checkpoints, exports, archives and development model copies remain ignored.
+See also [ADR 0008](adr/0008-standalone-waft.md).

@@ -12,6 +12,9 @@
 *.pth binary
 *.onnx binary
 
+plugins/Cattery/WAFT/WAFT.cat filter=lfs diff=lfs merge=lfs -text
+plugins/Cattery/WAFT/WAFT_FP32.cat filter=lfs diff=lfs merge=lfs -text
+
 # Packaged runtime files are verified byte-for-byte against their manifest.
 src/kyven/resources/dlss/windows_x64/** -text whitespace=cr-at-eol
 

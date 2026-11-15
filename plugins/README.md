@@ -9,9 +9,10 @@ nodes and does not use Kyven Server or Model Manager.
 To use it independently, copy the entire `WAFT` folder into
 `%USERPROFILE%/.nuke/Cattery/`. Preserve its contents and layout.
 
-The local installation includes the models. Model binaries are excluded from Git;
-distribute this complete directory in a release archive, including both `.cat` files.
-A source-only Git checkout does not contain the embedded models.
+Both deployed models are included in the repository through Git LFS. With Git LFS
+installed, a normal clone checks out both models beside the gizmo. For an existing
+checkout run `git lfs install` and `git lfs pull` from the repository root.
+Distribute this complete directory, including both `.cat` files, in release archives.
 
 The lightweight development sources and [recovery instructions](../development/waft/README_RU.md)
 are preserved in `../development/waft/`. Generated environments, exports and model

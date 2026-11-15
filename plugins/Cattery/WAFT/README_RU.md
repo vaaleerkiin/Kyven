@@ -24,8 +24,9 @@ nuke.pluginAddPath('D:/Kyven/hosts/nuke')
 `.nuke/Cattery/`: файл должен оказаться по пути `.nuke/Cattery/WAFT/cat.json`.
 Тогда нода доступна через **Cattery → Optical Flow → WAFT**.
 Не оставляй две активные установки WAFT. Kyven Server и Model Manager не нужны.
-Git checkout не содержит моделей: они входят в полный пакет либо пересобираются
-по инструкции `development/waft/README_RU.md` в корне Kyven.
+Обе модели включены в репозиторий через Git LFS. Установи Git LFS перед клонированием;
+для существующей копии выполни `git lfs install` и `git lfs pull` в корне Kyven.
+При необходимости пересборка описана в `development/waft/README_RU.md`.
 
 ## Использование
 

@@ -24,8 +24,9 @@ restarting when you need to report a reproducible failure.
 - Use Nuke 16 and restart after connecting `Kyven/hosts/nuke`. Look for
   **Kyven > WAFT SmartVector** or Tab > WAFT.
 - Check that `plugins/Cattery/WAFT/` contains `cat.json`, `WAFT.gizmo`,
-  `cattery_waft.py`, `WAFT.cat` and `WAFT_FP32.cat`. A source-only Git clone
-  excludes models; install a complete plugin bundle or follow the
+  `cattery_waft.py`, `WAFT.cat` and `WAFT_FP32.cat`. Both models are tracked by
+  Git LFS. If missing or only a small text pointer, run `git lfs install` and
+  `git lfs pull` from the repository root. Alternatively follow the
   [rebuild guide](../development/waft/README_RU.md). Kyven's installer and Model
   Manager do not restore WAFT models.
 - For Cattery discovery, the standalone path must be `.nuke/Cattery/WAFT/cat.json`,

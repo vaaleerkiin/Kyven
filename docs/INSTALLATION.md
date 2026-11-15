@@ -43,10 +43,11 @@ The complete local/release package includes `plugins/Cattery/WAFT/` with both
 WAFT; restart Nuke 16 and choose **Kyven > WAFT SmartVector**. It uses native Nuke
 Inference without Kyven Server, a separate Python environment or a Model Manager download.
 
-A source-only Git checkout excludes model binaries. Obtain the complete WAFT
-package from the person distributing your Kyven bundle, or follow the
-[from-source recovery guide](../development/waft/README_RU.md) to build both models.
-The standard Kyven installer does not download WAFT models.
+Both deployed models are versioned with Git LFS. Install Git LFS before cloning
+to receive them automatically. For an existing checkout, run `git lfs install`
+and `git lfs pull` in the repository root. A ZIP must include the actual `.cat`
+files rather than LFS pointer text. The standard Kyven installer and Model Manager
+do not manage these models; see [WAFT](WAFT.md) for checks and recovery.
 
 For standalone Cattery installation, copy the complete `plugins/Cattery/WAFT/`
 folder into `.nuke/Cattery/`, preserving `cat.json` directly inside `WAFT/`.
