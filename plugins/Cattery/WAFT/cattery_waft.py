@@ -22,8 +22,28 @@ def _select_model(node):
         _updating = False
 
 
+def style_node(node):
+    """Keep the DAG tile plain and place panel sections on their own rows."""
+    node['icon'].setValue('')
+    if node.name() == 'WAFT' or (node.name().startswith('WAFT') and node.name()[4:].isdigit()):
+        node.setName('KyvenWAFT')
+    if 'WAFT' in node.knobs():
+        node['WAFT'].setLabel('Kyven WAFT')
+    if 'kyven_title' in node.knobs():
+        node['kyven_title'].setValue('<font size="5" color="#dce9f2"><b>KYVEN WAFT</b></font>')
+        node['kyven_title'].clearFlag(nuke.STARTLINE)
+    for name in (
+        'kyven_logo', 'model_section', 'model_info', 'precision', 'useGPUIfAvailable',
+        'localGPU', 'processing', 'input_section', 'in_colorspace', 'channelsIn',
+        'output_section', 'output_mode', 'cleanup_section', 'grid_cleanup', 'cleanup_range',
+    ):
+        if name in node.knobs():
+            node[name].setFlag(nuke.STARTLINE)
+
+
 def on_create():
     node = nuke.thisNode()
+    style_node(node)
     if 'kyven_logo' in node.knobs():
         logo = (Path(__file__).resolve().parent / 'kyven_logo.png').as_posix()
         node['kyven_logo'].setValue(

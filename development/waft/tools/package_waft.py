@@ -141,13 +141,13 @@ for line in text[ui_start:ui_end].splitlines():
 
 
 def section(name, title):
-    return f' addUserKnob {{26 {name} l "" T "<br><font color=\'#9fc7e8\'><b>{title}</b></font>"}}'
+    return f' addUserKnob {{26 {name} l "" +STARTLINE T "<br><font color=\'#9fc7e8\'><b>{title}</b></font>"}}'
 
 
 layout = [
     ' addUserKnob {20 WAFT l "Kyven WAFT"}',
-    ' addUserKnob {26 kyven_logo l ""}',
-    ' addUserKnob {26 kyven_title l "" T "<font size=\'5\' color=\'#dce9f2\'><b>KYVEN / WAFT</b></font><br><font color=\'#91a3b0\'>SmartVector | Native Nuke inference</font>"}',
+    ' addUserKnob {26 kyven_logo l "" +STARTLINE}',
+    ' addUserKnob {26 kyven_title l "" -STARTLINE T "<font size=\'5\' color=\'#dce9f2\'><b>KYVEN WAFT</b></font>"}',
     section('model_section', 'MODEL AND PERFORMANCE'),
     controls['model_info'], controls['precision'], controls['useGPUIfAvailable'],
     ' useGPUIfAvailable true', controls['localGPU'], controls['gpuName'],
@@ -161,7 +161,6 @@ layout = [
     controls['cleanup_range'], ' cleanup_range 0.25',
 ]
 text = text[:ui_start] + '\n'.join(layout) + text[ui_end:]
-text = text.replace('Gizmo {\n', 'Gizmo {\n icon WAFT.png\n', 1)
 (target / 'WAFT.gizmo').write_text(text, encoding='utf-8')
 (target / 'cat.json').write_text(json.dumps({
     'minimum_nuke_version_required': 16.0,

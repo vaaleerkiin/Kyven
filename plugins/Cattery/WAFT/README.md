@@ -36,6 +36,8 @@ path. See [INSTALL.md](INSTALL.md).
 WAFT uses the same Kyven logo and header style as the other Kyven tools, with
 native sections for Model and Performance, Input, Output, and Vector Cleanup.
 All branding assets are included in this portable folder.
+New nodes use the name `KyvenWAFT`, with a plain graph tile and the logo confined
+to the menu and properties header. Section headings occupy separate rows.
 
 Connect an image sequence to the single input. Set **Input Colorspace** to the
 source colorspace; the internal graph converts frames to sRGB for inference.

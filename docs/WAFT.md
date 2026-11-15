@@ -47,6 +47,9 @@ server installation is required. Core Kyven nodes still use their standard setup
 The node uses the shared Kyven logo and header, with Model and Performance,
 Input, Output, and Vector Cleanup sections. Its logo assets are included inside
 the portable WAFT folder, so the same appearance works in standalone Cattery.
+New nodes are named `KyvenWAFT` (with a numeric suffix when needed). The graph
+tile stays plain; the logo appears in the menu and properties header only.
+Section headings each start on their own row. Custom node names are preserved.
 
 | Control | Behavior |
 | --- | --- |
