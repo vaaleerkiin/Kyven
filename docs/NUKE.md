@@ -3,8 +3,7 @@
 [Documentation home](README.md) · [Install](INSTALLATION.md) · [Segment](SEGMENT.md) ·
 [Refine](REFINE.md) · [Inpaint](INPAINT.md) · [Troubleshooting](TROUBLESHOOTING.md)
 
-This guide covers behavior shared by all Kyven Nuke nodes. Task-specific controls live in the three
-node guides, with Segment first because roto is the primary Kyven workflow.
+This guide covers behavior shared by the four Kyven Nuke nodes. Each node also has a dedicated guide with its inputs, controls, processing, output and cache behavior.
 
 The owner-requested [optional DLSS node](DLSS.md) adds local RTX reconstruction with external
 motion and alpha guides. Its live/temporal and EXR-cache behavior is documented separately.
@@ -16,6 +15,7 @@ motion and alpha guides. Its live/temporal and EXR-cache behavior is documented 
 | Roto one frame or track through a shot | **Kyven Segment** | [Segment](SEGMENT.md) |
 | Turn a coarse mask/trimap into soft alpha | **Kyven Refine** | [Refine](REFINE.md) |
 | Remove an object and rebuild background | **Kyven Inpaint** | [Inpaint](INPAINT.md) |
+| Apply optional RTX neural reconstruction | **Kyven DLSS** | [DLSS](DLSS.md) |
 
 Typical roto graph:
 
@@ -57,13 +57,15 @@ Create nodes from:
 Nodes > Kyven > Segment
 Nodes > Kyven > Refine
 Nodes > Kyven > Inpaint
+Nodes > Kyven > DLSS (Optional RTX)
 ```
 
 After updating the repository, restart Nuke and upgrade old Groups when required:
 
 - `Kyven > Upgrade Selected Segment Node`;
 - `Kyven > Upgrade Selected Refine Node`;
-- `Kyven > Upgrade Selected Inpaint Node`.
+- `Kyven > Upgrade Selected Inpaint Node`;
+- `Kyven > Upgrade Selected DLSS Node`.
 
 Upgrades preserve inputs, useful controls, hidden node identity, and existing readable cache. New
 artist cache fields may be added without moving or deleting a legacy UUID cache.
@@ -92,6 +94,7 @@ cancelled, or interrupted operation releases the node's Busy state.
 ## Inputs and channel handling
 
 - Segment has one Source input.
+- DLSS has Source, Motion, Depth and Mask inputs; Motion is required for temporal processing. See [DLSS setup](DLSS.md#setup).
 - Refine and Inpaint show **Source** on the left and **Mask** on the right.
 - Refine/Inpaint can read a mask from Alpha or Red.
 - Masks, mattes, and trimaps are written/read as raw data so OCIO/ACES does not transform numeric
@@ -161,8 +164,9 @@ Output selection uses native Nuke branches and never reruns a model.
 - Segment: Source + Alpha, Alpha, Cutout, Source + Trimap, Trimap, Bypass.
 - Refine: Source + Refined Alpha, Refined Matte/Cutout, trimap views, Source bypass.
 - Inpaint: Result, Result + Mask Alpha, Result Premult, Generated Patch, Difference, Source.
+- DLSS: Result (reconstructed RGB with source alpha and auxiliary channels), Source.
 
-See the [Segment](SEGMENT.md), [Refine](REFINE.md), and [Inpaint](INPAINT.md) guides for exact output
+See the [Segment](SEGMENT.md), [Refine](REFINE.md), [Inpaint](INPAINT.md), and [DLSS](DLSS.md) guides for exact output
 semantics.
 
 ## Models and server controls
@@ -186,7 +190,7 @@ an update if a stale process remains. The newest output is written to `.runtime/
 - the Nuke adapter is currently developed and tested primarily on Windows;
 - node layout and API may still change during pre-alpha.
 
-Continue with the [Segment](SEGMENT.md), [Refine](REFINE.md), or [Inpaint](INPAINT.md) guide. For
+Continue with the [Segment](SEGMENT.md), [Refine](REFINE.md), [Inpaint](INPAINT.md), or [DLSS](DLSS.md) guide. For
 failures, go directly to [Troubleshooting](TROUBLESHOOTING.md).
 
 ## Input preparation and processing

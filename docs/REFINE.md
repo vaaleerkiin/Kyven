@@ -6,11 +6,11 @@
 Kyven Refine supports ViTMatte and the memory-efficient MEMatte ViT-S AIM-500 backend. Both consume
 the same source RGB and binary mask/trimap inputs and produce the same alpha/output branches.
 
-Refine converts a coarse mask into a soft alpha matte using ViTMatte while keeping model inference
-outside the compositing host.
+Refine converts a coarse mask into a soft alpha matte while keeping model inference outside the compositing host.
 
 ## On this page
 
+- [Quick start](#quick-start)
 - [Nuke graph](#nuke-graph)
 - [Trimap option](#trimap-option)
 - [Processing and performance](#processing)
@@ -22,6 +22,15 @@ Kyven offers the official ViTMatte Small and Base backbone sizes. There is no of
 variant. Small Composition-1k is the recommended 4–8 GB default; Base Distinctions-646 has 96.7 M
 parameters and is intended for 8 GB+ systems with tiling when required. Install either checkpoint
 from **Kyven > Model Manager...** without rerunning the portable installer.
+
+## Quick start
+
+1. Connect Source and a coarse Mask as shown below. Choose Alpha or Red for the mask channel.
+2. Choose an installed model and set Cache Folder, Refine Name and Version.
+3. Inspect **Trimap** output and adjust Foreground Erosion and Background Dilation; disable trimap generation if your input is already a trimap.
+4. Press **Process Current Frame** and inspect **Source + Refined Alpha**. Set the frame range and process it when the result is ready.
+
+Hover over controls for English help. See [shared processing and cache](NUKE.md#input-preparation-and-processing) for refreshing inputs after upstream edits.
 
 ## Nuke graph
 
@@ -63,11 +72,8 @@ Manual current-frame processing and frame-range processing open a native Nuke pr
 export stage, frame/tile progress, percentage, ETA, and Cancel. Live refreshes remain unobtrusive and
 report through the node Status field instead of opening a new window after every Viewer edit.
 
-Range input export uses two batched Nuke renders instead of two render calls per frame. Source is
-stored as fast lossless TIFF and the mask as PNG; ViTMatte jobs remain sequential after export.
-The selected provider loads once and remains resident across the range. For Full Frame, Kyven also
-avoids re-encoding the already exported Source into another temporary PNG; Auto/Manual crops still
-write a temporary cropped input as required.
+Range processing prepares reusable lossless TIFF snapshots for Source and Mask, then runs the selected provider sequentially. Use **Refresh Frames** after upstream changes; see [input preparation](NUKE.md#input-preparation-and-processing). The selected provider remains resident across the range.
+
 Inverted ROI corners are normalized, ROI is clamped to the input, and an empty/outside ROI safely
 falls back to the full input format.
 

@@ -9,6 +9,7 @@ while Kyven restores the result to the untouched full input format.
 
 ## On this page
 
+- [Quick start](#quick-start)
 - [Nuke graph](#nuke-graph)
 - [Choosing a model](#choosing-a-model)
 - [Processing ROI](#processing-roi)
@@ -17,6 +18,15 @@ while Kyven restores the result to the untouched full input format.
 - [Outputs](#outputs)
 - [Cache](#cache)
 
+## Quick start
+
+1. Connect Source and a removal Mask as shown below. White marks the area to replace.
+2. Choose an installed model, Cache Folder, Inpaint Name and Version.
+3. Enable **Preview Model Mask** to inspect the actual model mask; adjust preprocessing and ROI as needed, then turn preview off.
+4. Press **Process Current Frame**, inspect Result and adjust the mask or edge controls. Process a range after the test frame looks right.
+
+Hover over controls for English help. After upstream changes, use **Refresh Frames** for the affected input scope before processing again; see [input preparation](NUKE.md#input-preparation-and-processing).
+
 ## Nuke graph
 
 ```text
@@ -24,7 +34,7 @@ Source --------------------------> Kyven Inpaint (input 1, left)
 Paint / Segment mask -----------> Kyven Inpaint (input 0, right)
 ```
 
-Input 1 supplies Source RGB. Input 0 defines pixels to remove and supplies the default output alpha.
+Input 1 supplies Source RGB. Input 0 defines pixels to remove and supplies the mask used by mask-alpha output modes.
 The connector labels are the safest guide: Source is on the left and Mask is on the right. Choose
 Alpha or Red with **Mask Input Channel** and use **Invert Input Mask** when the mask convention is
 reversed.
@@ -149,7 +159,7 @@ the same Folder, Inpaint Name, and Version intentionally share and may overwrite
 Legacy Inpaint nodes retain their existing isolated UUID cache.
 
 - **Create Result Read** creates a normal Nuke Read for the cached frame or sequence.
-- **Delete Node Cache** removes only this Inpaint node's generated files.
+- **Delete Node Cache** removes the selected Name/Version cache after confirmation; other nodes sharing it are also affected.
 - **Delete All Kyven Cache** remains available only for legacy isolated caches.
 
 After updating Kyven, select an existing Inpaint Group and choose

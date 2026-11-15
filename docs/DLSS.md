@@ -52,6 +52,15 @@ Version to choose the output location. A blank folder reports an error and write
 | 2 | Depth | Optional guide; default `depth.Z`, runtime assumes inverted depth |
 | 3 | Mask | Artist alpha guide; used when Mask Alpha Input is Mask Input |
 
+## Quick start
+
+1. Install the runtime in Model Manager and create **DLSS (Optional RTX)**. Connect Source.
+2. Set Cache Folder, Name and Version. Choose a mask guide if you want to restrict changes.
+3. Press **Process Current Frame** and compare Result with Source. Reduce Processing Size if memory is insufficient.
+4. For a stable range, connect correctly directed external Motion vectors, configure their channels and units, enable Temporal and process forward from the shot start.
+
+Hover over controls for English help. For input snapshots and upstream changes, see [input preparation](NUKE.md#input-preparation-and-processing).
+
 ## Alpha as an inference guide
 
 **Mask Alpha Input** offers **Full Frame** (default), **Source Alpha** and **Mask Input**.
@@ -156,8 +165,7 @@ requests cancel obsolete work. A 100 ms timer finishes debounce even without ano
 It reads only the frame and the node's own settings; it does not validate or hash upstream nodes.
 
 Upstream image edits, rewires, file/runtime changes, Read reloads, cache publication, model refresh,
-status changes and redraws do not schedule or restart Live. Use **Process Current Frame** to refresh
-after an upstream edit on the same frame. Changing only output display or debounce timing also does
+status changes and redraws do not schedule or restart Live. After an upstream edit, select **Current Frame** under Input Frames and use **Refresh Frames**, then press **Process Current Frame** to regenerate the result. Changing only output display or debounce timing also does
 not request inference. Rapid own-setting changes coalesce. After cancellation for a newer actual
 intent finishes, that pending intent starts automatically; internal cancellation does not retry an
 unchanged intent. Disabling Live or deleting the node stops its wake-ups.
@@ -189,7 +197,7 @@ It never creates a vector generator or selects upstream Auto DIS mode.
 
 Full-frame mode processes RGB regardless of Source alpha; alpha is preserved on output.
 
-The runtime has no verified VRAM requirement here. A 1024 limit reduces memory but does not prove
+The runtime has no verified VRAM requirement here. Reducing Processing Size reduces memory but does not prove
 4 GB compatibility. There is no CPU DLSS inference; core Kyven tools retain CPU support. A runtime,
 OOM or timeout failure unloads the worker and suggests a lower limit. Provider switching unloads
 the previous provider, releasing its child process.

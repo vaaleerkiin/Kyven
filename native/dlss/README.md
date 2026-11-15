@@ -1,5 +1,8 @@
 # Kyven DLSS worker
 
+[Project overview](../../README.md) · [DLSS user guide](../../docs/DLSS.md) ·
+[Runtime architecture](../../docs/adr/0003-managed-dlss-runtime.md)
+
 Kyven-owned build target, installed with its checksummed runtime package through Model Manager.
 This is a maintained derivative of the MIT project-authored worker by Kai(KJ),
 revision `d61307ef4543c8991668730a4cab8019b3cb0096` of

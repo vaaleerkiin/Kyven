@@ -1,6 +1,6 @@
 <h1><a href="https://github.com/vaaleerkiin/Kyven"><img src="hosts/nuke/icons/kyven_logo.png" alt="Kyven Tools logo" width="48" align="middle"></a>&nbsp;Kyven Tools</h1>
 
-**Local AI tools for Foundry Nuke: roto, alpha refinement, and inpaint.**
+**Local AI tools for Foundry Nuke: roto, alpha refinement, inpaint, and optional RTX neural reconstruction.**
 
 Kyven keeps PyTorch, CUDA, model loading, and long inference outside Nuke. The nodes communicate
 with a local authenticated server and return ordinary image sequences, so rendered work remains
@@ -38,9 +38,9 @@ updates, moving the repository, and unattended model selection.
 | **Kyven Segment** | Source + Viewer points | Single-frame roto and SAM 2 video tracking | SAM 2.1 Small |
 | **Kyven Refine** | Source + coarse mask/trimap | Soft alpha and difficult boundaries | ViTMatte Small |
 | **Kyven Inpaint** | Source + removal mask | Paint-out and background reconstruction | LaMa ONNX Fast |
-| **Kyven DLSS (optional RTX)** | Source + external motion + optional depth/control mask | Neural reconstruction with temporal history | Kyven worker + separately licensed NVIDIA NR component |
+| **Kyven DLSS (optional RTX)** | Source + optional motion, depth and control mask | Neural reconstruction with temporal history | Kyven worker + separately licensed NVIDIA NR component |
 
-The [DLSS guide](docs/DLSS.md) covers setup, external vectors, alpha as an inference guide, live
+External motion is required when DLSS temporal processing is enabled. The [DLSS guide](docs/DLSS.md) covers setup, external vectors, alpha as an inference guide, live
 refresh and runtime limitations. Optional DLSS has no CPU inference provider.
 
 A common roto flow is:
@@ -69,6 +69,8 @@ New Segment, Refine, and Inpaint nodes use the same artist-facing layout:
 The version root contains the public sequence. Sources, manifests, logits, trimaps, masks, and other
 implementation files stay under `_kyven_work/`. Current Frame, Frame Range, and tracking write the
 same named sequence. Changing Cache Folder, Name, or Version reconnects a matching sequence.
+DLSS uses the same Folder / Name / Version layout with float EXR output instead of PNG; see
+the [DLSS cache guide](docs/DLSS.md#resolution-memory-and-cache).
 
 ## How it works
 
@@ -104,6 +106,7 @@ Most-used guides:
 - [Segment](docs/SEGMENT.md)
 - [Refine](docs/REFINE.md)
 - [Inpaint](docs/INPAINT.md)
+- [DLSS (optional RTX)](docs/DLSS.md)
 - [Models and hardware](docs/MODELS.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 

@@ -14,7 +14,8 @@ do; you do not need to read every guide in order.
 3. Open the guide for the task:
    - [Segment](SEGMENT.md) for point prompts, roto, correction frames, and SAM 2 tracking;
    - [Refine](REFINE.md) for trimaps, soft alpha, hair, and edge refinement;
-   - [Inpaint](INPAINT.md) for object removal and clean-up.
+   - [Inpaint](INPAINT.md) for object removal and clean-up;
+   - [DLSS](DLSS.md) for optional RTX neural reconstruction and temporal setup.
 4. Use [Troubleshooting](TROUBLESHOOTING.md) when the server, CUDA, a model, ROI, cache, or Read
    behaves unexpectedly.
 
@@ -64,7 +65,8 @@ Move to heavier models only when the shot demonstrates a quality limitation.
 | Improve a coarse edge | Refine + generated trimap | Inspect Trimap, then adjust erosion/dilation |
 | Use SAM uncertainty in Refine | Segment `Trimap` output | Disable Refine `Generate Trimap from Mask` |
 | Remove an object quickly | Inpaint + Auto ROI + LaMa ONNX | Switch to Big-LaMa Native when texture detail is insufficient |
-| Hand cache to another artist | Open `<Cache Folder>/<Name>/<Version>/` | Read `<Name>_<Version>.%04d.png` directly |
+| Reconstruct a shot on a supported RTX system | DLSS with Source | Add external Motion vectors for temporal stability |
+| Hand cache to another artist | Open `<Cache Folder>/<Name>/<Version>/` | Read `<Name>_<Version>.%04d.png` for Segment, Refine or Inpaint; DLSS uses `.exr` |
 
 ## Documentation conventions
 

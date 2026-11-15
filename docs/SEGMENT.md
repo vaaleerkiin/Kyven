@@ -32,6 +32,8 @@ temporally consistent SAM 2 video tracking.
 The first run loads the selected SAM model. Later frames and jobs reuse the resident provider until
 another model family is selected or the server is stopped.
 
+For an existing script, restart Nuke after updating Kyven and use **Kyven > Upgrade Selected Segment Node**. Hover over a control for its English explanation. See [input preparation](NUKE.md#input-preparation-and-processing) for caching and upstream edits.
+
 ## Inputs and controls
 
 Segment has one Source input. Its main control groups are:
@@ -99,7 +101,7 @@ keys rather than leaving hidden prompts behind.
 The direction controls which part of the selected range is written. Corrections inside the range are
 loaded into the state regardless of which direction button starts the job.
 
-Nuke exports high-quality JPEG tracking inputs under `_kyven_work/source/<first>_<last>/`. Kyven
+Nuke keeps high-quality JPEG inputs in the shared `_kyven_work/source/tracking_pool/`; tracking uses a temporary range view of that pool. Kyven
 offloads video frames and tracking state to system RAM where supported, writes lossless full-size PNG
 mattes, and preserves private SAM logits for confidence trimaps.
 
