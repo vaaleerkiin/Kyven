@@ -114,6 +114,10 @@ def build_parser() -> argparse.ArgumentParser:
     inpaint.add_argument("--processed-mask-output", type=Path)
     inpaint.add_argument("--processing-size", default=0, type=int)
 
+    dlss = subparsers.add_parser("dlss", help="Run optional local DLSS using a JSON request")
+    dlss.add_argument("--request", required=True, type=Path)
+    dlss.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
+
     serve = subparsers.add_parser("serve", help="Run the authenticated local inference server")
     _add_runtime_options(serve)
     serve.add_argument("--port", default=8765, type=int)
@@ -169,6 +173,24 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     catalog = ModelCatalog.builtin()
     try:
+        if args.command == "dlss":
+            from kyven.dlss.models import DlssRequest
+            from kyven.dlss.service import DlssService
+
+            try:
+                payload = json.loads(args.request.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict):
+                    raise TypeError("Request JSON must be an object")
+            except (OSError, ValueError, TypeError) as exc:
+                raise KyvenError(ErrorCode.INVALID_REQUEST, "Cannot read DLSS request JSON.",
+                                 technical_detail=str(exc)) from exc
+            registry = catalog.registry(Path("models").resolve(), args.device)
+            try:
+                result = DlssService(registry).run(DlssRequest.from_payload(payload))
+                print(json.dumps(result, indent=2))
+            finally:
+                registry.unload_all()
+            return 0
         if args.command == "segment":
             registry = catalog.registry(args.models_dir, args.device)
             request = SegmentRequest(
@@ -221,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         if args.command == "serve":
+            from kyven.dlss.service import DlssService
             from kyven.segment.video import VideoSegmentService
             from kyven.server.app import KyvenServer, ServerConfig
             from kyven.server.jobs import JobManager
@@ -241,6 +264,7 @@ def main(argv: list[str] | None = None) -> int:
                     VideoSegmentService(registry),
                     RefineService(registry),
                     InpaintService(registry),
+                    DlssService(registry),
                 ),
                 registry,
                 catalog,

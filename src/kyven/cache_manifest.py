@@ -36,6 +36,14 @@ def _valid_file(path: Path) -> bool:
     if not path.is_file() or path.stat().st_size <= 0:
         return False
     try:
+        if path.suffix.lower() == ".exr":
+            from kyven.dlss.images import read_channels
+            from kyven.errors import KyvenError
+
+            try:
+                return bool(read_channels(path))
+            except KyvenError:
+                return False
         if path.suffix.lower() == ".npz":
             with np.load(path, allow_pickle=False) as archive:
                 values = np.asarray(archive["logits"])

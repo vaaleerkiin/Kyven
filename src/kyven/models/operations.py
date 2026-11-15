@@ -11,6 +11,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from kyven.dlss.runtime import (
+    MODEL_ID,
+    bind_runtime,
+    bundled_vendor_available,
+    runtime_root,
+    unbind_runtime,
+)
 from kyven.errors import ErrorCode, KyvenError
 from kyven.models.catalog import ModelCatalog
 from kyven.segment.providers.registry import ProviderRegistry
@@ -27,6 +34,8 @@ class ModelOperation:
     created_at: float = field(default_factory=time.time)
     finished_at: float | None = None
     error: dict[str, Any] | None = None
+    source: str = ""
+    license_accepted: bool = False
     cancelled: threading.Event = field(default_factory=threading.Event)
 
     def snapshot(self) -> dict[str, Any]:
@@ -63,8 +72,17 @@ class ModelOperationManager:
         self._history_limit = 100
         self._lock = threading.RLock()
 
-    def submit(self, action: str, model_id: str) -> str:
-        self._catalog.get(model_id)
+    def submit(self, action: str, model_id: str, source: str | None = None,
+               license_accepted: bool = False) -> str:
+        if model_id != MODEL_ID:
+            self._catalog.get(model_id)
+        if source is not None and (model_id != MODEL_ID or not isinstance(source, str)
+                                   or not Path(source).is_absolute()):
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Local runtime source must be an absolute path.")
+        if (model_id == MODEL_ID and action == "download" and source is None
+                and license_accepted is not True and not bundled_vendor_available()):
+            raise KyvenError(ErrorCode.INVALID_REQUEST,
+                             "Review the DLSS community component source and terms in Model Manager first.")
         if action not in {"download", "remove"}:
             raise KyvenError(ErrorCode.INVALID_REQUEST, f"Unknown model action: {action}")
         key = (action, model_id)
@@ -82,6 +100,8 @@ class ModelOperationManager:
             for item in finished[: max(0, len(self._operations) - self._history_limit + 1)]:
                 self._operations.pop(item.operation_id, None)
             operation = ModelOperation(uuid.uuid4().hex, action, model_id)
+            operation.source = source or ""
+            operation.license_accepted = license_accepted
             self._operations[operation.operation_id] = operation
             self._active[key] = operation.operation_id
         self._executor.submit(self._run, operation)
@@ -152,6 +172,15 @@ class ModelOperationManager:
                     self._active.pop(key, None)
 
     def _download(self, operation: ModelOperation) -> None:
+        if operation.model_id == MODEL_ID:
+            self._unload_provider(MODEL_ID)
+            bind_runtime(runtime_root(self._models_dir),
+                         Path(operation.source) if operation.source else None,
+                         cancelled=operation.cancelled.is_set,
+                         download_vendor=operation.license_accepted,
+                         progress=lambda downloaded, total: self._report_runtime_download(
+                             operation, downloaded, total))
+            return
         def report(downloaded: int, total: int) -> None:
             with self._lock:
                 operation.progress = min(0.95, downloaded / max(1, total) * 0.95)
@@ -167,11 +196,19 @@ class ModelOperationManager:
             operation.progress = 0.98
             operation.message = "Checksum verified"
 
+    def _report_runtime_download(self, operation: ModelOperation, downloaded: int, total: int) -> None:
+        with self._lock:
+            operation.progress = min(0.95, downloaded / max(1, total) * 0.95)
+            operation.message = f"Downloading DLSS component {downloaded / 1024**2:.0f}/{total / 1024**2:.0f} MB"
+
     def _remove(self, operation: ModelOperation) -> None:
         with self._lock:
             operation.progress = 0.25
             operation.message = "Unloading model"
         self._unload_provider(operation.model_id)
+        if operation.model_id == MODEL_ID:
+            unbind_runtime(runtime_root(self._models_dir))
+            return
         self._catalog.remove(operation.model_id, self._models_dir)
 
     def shutdown(self) -> None:

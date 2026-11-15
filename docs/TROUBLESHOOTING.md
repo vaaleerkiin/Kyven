@@ -47,8 +47,8 @@ The Nuke adapter launches `python.exe -I -m kyven.server.bootstrap`. On Windows 
 the DLL directory inherited from Nuke before importing PyTorch; this prevents the common
 `c10.dll` / `WinError 1114` startup failure.
 
-Kyven API 32 uses port `18788`. Older development servers may remain on 8765-8769 or 18768-18787,
-but the adapter asks authenticated older servers to unload their models before starting API 32.
+Kyven API 35 uses port `18788`. Older development servers may remain on 8765-8769 or 18768-18787,
+but the adapter asks authenticated older servers to unload their models before starting API 35.
 The Windows launcher now checks `netstat` once and contacts only ports that are actually listening;
 it no longer waits through every historical port. While starting, the node Status shows the current
 phase plus elapsed and timeout seconds. A failure includes the path to `.runtime/server.log`.

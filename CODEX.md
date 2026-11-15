@@ -4,6 +4,9 @@
 
 Build Kyven as a production-oriented, local toolkit for Segment, Refine, and Inpaint in Nuke.
 
+The owner-requested optional DLSS node is scoped by `docs/adr/0002-optional-dlss-worker.md`
+and `docs/adr/0003-managed-dlss-runtime.md`.
+
 ## Read first
 
 Before changing architecture, read:

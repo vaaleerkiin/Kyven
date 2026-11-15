@@ -20,6 +20,24 @@ Built-in provider metadata currently references:
 | PyTorch | Optional inference runtime | BSD-style | https://github.com/pytorch/pytorch |
 | Pillow | Image I/O | HPND | https://github.com/python-pillow/Pillow |
 | NumPy | Array processing | BSD-3-Clause | https://github.com/numpy/numpy |
+| OpenEXR Python module (optional) | Scene-linear DLSS EXR transport | BSD-3-Clause | https://github.com/AcademySoftwareFoundation/openexr |
+
+Optional DLSS transport targets the protocol of
+[KJzzzKJ/DLSS5-for-Nuke](https://github.com/KJzzzKJ/DLSS5-for-Nuke) at commit
+`d61307ef4543c8991668730a4cab8019b3cb0096`. Its project-authored worker/shim source is MIT-licensed
+(copyright 2026 Kai(KJ)). The build helper preserves its LICENSE with locally built binaries.
+The maintained worker derivative under `native/dlss` preserves the upstream MIT license and attribution.
+Kyven builds and packages `KyvenDLSSWorker.exe` and its caller shim with a SHA-256 manifest.
+The owner-requested preview distribution includes the pinned NVIDIA Neural Rendering component
+`nvngx_dlssnr.dll`. Its licensing is separate; Kyven's Apache-2.0 license does not relicense it.
+
+The optional Model Manager DLSS install can download the pinned community release
+`KJzzzKJ/DLSS5-for-Nuke` v1.0.0 and extract only `runtime/nvngx_dlssnr.dll`, after presenting its
+source and terms. Exact archive/member checksums are recorded in `resources/dlss/vendor-source.json`.
+The archive contains this binary although the current upstream README describes a narrower runtime
+policy. Permission for Kyven to redistribute that NVIDIA binary has not been verified; the file is
+included in the owner-requested preview ZIP/wheel, with its source, exact size and SHA-256 recorded.
+The package does not install the upstream worker, ReShade or RenoDX.
 
 Every future provider must record separate code and model-weight licensing metadata before it
 can be enabled in the default distribution.

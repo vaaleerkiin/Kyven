@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from kyven.dlss.runtime import runtime_root, runtime_snapshot
 from kyven.errors import ErrorCode, KyvenError
 from kyven.models.catalog import ModelCatalog
 from kyven.models.operations import ModelOperationManager
@@ -25,7 +26,7 @@ from kyven.segment.providers.registry import ProviderRegistry
 from kyven.server.jobs import JobManager
 
 MAX_REQUEST_BYTES = 1024 * 1024
-SERVER_API_VERSION = 32
+SERVER_API_VERSION = 35
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,7 +144,7 @@ def _handler_type(
                             "models": [
                                 spec.snapshot(config.models_dir, config.available_vram_mb)
                                 for spec in catalog.list()
-                            ]
+                            ] + [runtime_snapshot(runtime_root(config.models_dir))]
                         },
                     )
                     return
@@ -165,6 +166,11 @@ def _handler_type(
             path = urlparse(self.path).path
             try:
                 payload = self._json_body()
+                if path == "/v1/jobs/dlss":
+                    job_id = manager.submit_dlss(payload)
+                    self._send(HTTPStatus.ACCEPTED,
+                               {"job_id": job_id, "status": manager.get(job_id)["status"]})
+                    return
                 if path == "/v1/jobs/segment":
                     model_id = str(payload.get("model_id", "sam2.1-small"))
                     catalog.get(model_id)
@@ -207,7 +213,9 @@ def _handler_type(
                     )
                     return
                 if path == "/v1/models/download":
-                    operation_id = model_operations.submit("download", str(payload.get("model_id", "")))
+                    operation_id = model_operations.submit(
+                        "download", str(payload.get("model_id", "")), source=payload.get("source"),
+                        license_accepted=payload.get("license_accepted", False))
                     self._send(HTTPStatus.ACCEPTED, {"operation_id": operation_id})
                     return
                 if path == "/v1/models/remove":

@@ -11,3 +11,6 @@
 *.pt binary
 *.pth binary
 *.onnx binary
+
+# Packaged runtime files are verified byte-for-byte against their manifest.
+src/kyven/resources/dlss/windows_x64/** -text whitespace=cr-at-eol

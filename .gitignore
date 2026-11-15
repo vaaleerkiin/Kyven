@@ -15,3 +15,4 @@ build/
 *.pth
 *.onnx
 *.safetensors
+src/kyven/resources/dlss/windows_x64/nvngx_dlssnr.dll

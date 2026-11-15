@@ -183,6 +183,10 @@ class ModelCatalog:
                         device=device,
                     ),
                 )
+        # Optional runtime: registration does not launch a worker or load a DLL.
+        from kyven.dlss.provider import ExternalDlssProvider
+
+        registry.register("dlss-external", lambda: ExternalDlssProvider(device=device))
         return registry
 
     def download(

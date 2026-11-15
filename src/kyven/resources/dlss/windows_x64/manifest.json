@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "product": "KyvenDLSSWorker",
+  "sha256": {
+    "KyvenDLSSWorker.exe": "b6333cedf67008221096fe78f4d9f9c5d9077b0b756b052997a6441bcb36f013",
+    "nvngx.dll": "ad30f2debd142c10c042d287cde7f3aa21ee23009f78191dbdc7d6c3c3619860",
+    "LICENSE.upstream": "a25d889a7dfbc101995096c5d42bca7fc6a69bbf768e45ba1709354f64dca90b",
+    "nvngx_dlssnr.dll": "6eb209e764f39872625debd6abaf45e2bb6322f6f270f781f70c059ae30b3927"
+  }
+}

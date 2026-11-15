@@ -6,6 +6,7 @@ import threading
 import time
 
 _last_scan = 0.0
+_scan_active = False
 _request_lock = threading.RLock()
 _request_revisions: dict[str, int] = {}
 
@@ -98,8 +99,32 @@ def _run_requested_update(node_name: str, revision: int) -> None:
     process_current_frame(node=node, live=True)
 
 
+def _root_groups(nuke: object) -> list[object]:
+    """UpdateUI may run inside a Group; enumerate from Root before pruning live states."""
+    root = nuke.root()
+    root.begin()
+    try:
+        try:
+            return list(nuke.allNodes("Group", recurseGroups=True))
+        except TypeError:
+            return list(nuke.allNodes("Group"))
+    finally:
+        root.end()
+
+
 def update_live_nodes() -> None:
     """Submit the visible timeline frame once for every enabled idle Kyven node."""
+    global _scan_active
+    if _scan_active:
+        return
+    _scan_active = True
+    try:
+        _update_live_nodes()
+    finally:
+        _scan_active = False
+
+
+def _update_live_nodes() -> None:
     global _last_scan
     now = time.monotonic()
     if now - _last_scan < 0.15:
@@ -110,11 +135,20 @@ def update_live_nodes() -> None:
     if nuke.executing():
         return
     frame = int(nuke.frame())
-    for node in nuke.allNodes("Group"):
+    nodes = _root_groups(nuke)
+    from kyven_nuke.dlss_node import prune_live_nodes
+
+    prune_live_nodes(nodes)
+    for node in nodes:
         knobs = node.knobs()
         if not {"live_mode", "kyven_live_frame", "kyven_busy"}.issubset(knobs):
             continue
         kind = str(node["kyven_kind"].value()) if "kyven_kind" in knobs else "segment"
+        if kind == "dlss":
+            from kyven_nuke.dlss_node import poll_live
+
+            poll_live(node)
+            continue
         if (
             kind == "refine"
             and "kyven_trimap_preview_frame" in knobs

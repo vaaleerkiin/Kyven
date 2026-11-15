@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "source_name": "KJzzzKJ/DLSS5-for-Nuke v1.0.0 community release",
+  "url": "https://github.com/KJzzzKJ/DLSS5-for-Nuke/releases/download/v1.0.0/DLSS5-for-Nuke-v1.0.0.zip",
+  "size_bytes": 154393529,
+  "sha256": "e6b0c8bb7c953bfaecda0095b3c7750702d72ce1c829dd46b239a0d19d301313",
+  "member": "runtime/nvngx_dlssnr.dll",
+  "member_size_bytes": 165830144,
+  "member_sha256": "6eb209e764f39872625debd6abaf45e2bb6322f6f270f781f70c059ae30b3927",
+  "license": "NVIDIA proprietary component in a community package; redistribution permission not verified",
+  "license_url": "https://github.com/KJzzzKJ/DLSS5-for-Nuke#runtime-policy",
+  "release_url": "https://github.com/KJzzzKJ/DLSS5-for-Nuke/releases/tag/v1.0.0",
+  "commercial_use": null,
+  "redistribution": false,
+  "license_acceptance_required": true
+}

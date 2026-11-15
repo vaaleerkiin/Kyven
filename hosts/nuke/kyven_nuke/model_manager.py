@@ -37,6 +37,8 @@ def _choice_label(model):
         if default_model_id(str(model.get("task", ""))) == str(model.get("model_id", ""))
         else ""
     )
+    if model.get("local_runtime"):
+        return f"DLSS | {model['display_name']} | {model.get('status_message', state)}"
     return (
         f"{str(model.get('task', '')).replace('_', ' ').title()} | {model['display_name']} | "
         f"{_format_size(model['size_bytes'])} | {state}{warning}{default}"
@@ -59,7 +61,7 @@ def show_model_manager():
     panel = nuke.Panel("Kyven Model Manager")
     panel.addEnumerationPulldown(
         "Action",
-        "{Install Selected} {Remove Selected} {Set as Default} {Open Models Folder}",
+        "{Install Selected} {Import NVIDIA Component} {Remove Selected} {Set as Default} {Open Models Folder}",
     )
     panel.addEnumerationPulldown(
         "Model",
@@ -70,7 +72,9 @@ def show_model_manager():
         "Downloads come only from the trusted Kyven catalog. Single-file models are verified "
         "by exact size and SHA-256; repository models are pinned to an audited revision. "
         "Required model runtimes are installed automatically into Kyven's private environment. "
-        "All model and runtime files stay inside the repository.",
+        "DLSS installs Kyven's portable worker and its bundled NVIDIA component locally, with "
+        "size/SHA-256 verification. OpenEXR is installed into Kyven's private environment when needed. "
+        "A distribution without the bundled component can use the pinned community download.",
     )
     if not panel.show():
         return
@@ -87,7 +91,18 @@ def show_model_manager():
         nuke.message("The selected catalog model could not be resolved.")
         return
     model = models[index]
+    if action == "Import NVIDIA Component":
+        if not model.get("local_runtime"):
+            nuke.message("Import NVIDIA Component applies to the DLSS entry.")
+            return
+        source = nuke.getFilename("Choose licensed nvngx_dlssnr.dll", "nvngx_dlssnr.dll")
+        if source:
+            _start_operation("download", model, source=str(source))
+        return
     if action == "Set as Default":
+        if model.get("local_runtime"):
+            nuke.message("DLSS automatically uses the runtime selected in Model Manager.")
+            return
         task = str(model.get("task", ""))
         try:
             set_default_model(task, str(model["model_id"]))
@@ -103,7 +118,16 @@ def show_model_manager():
         if model.get("installed") and not model.get("runtime"):
             nuke.message(f"{model['display_name']} is already installed.")
             return
-        if model.get("license_acceptance_required") and not nuke.ask(
+        if model.get("local_runtime") and model.get("license_acceptance_required"):
+            if not nuke.ask(
+                "Install the DLSS NVIDIA component from the pinned community release?\n\n"
+                f"Source: {model.get('source_url', '')}\n\n"
+                f"Terms: {model.get('license', '')}\n{model.get('license_url', '')}\n\n"
+                "Kyven's worker is built separately. Only the NVIDIA NR DLL is extracted. "
+                "This download is not presented as an official NVIDIA SDK or a redistribution grant.\n\n"
+                "Continue if you have reviewed the source and applicable terms."):
+                return
+        elif model.get("license_acceptance_required") and not nuke.ask(
             f"Install {model['display_name']}?\n\n"
             f"License: {model.get('license', 'See model card')}\n"
             "Commercial use is conditional on following the model license and use restrictions.\n\n"
@@ -116,6 +140,9 @@ def show_model_manager():
     if not model.get("installed"):
         nuke.message(f"{model['display_name']} is not installed.")
         return
+    if model.get("local_runtime"):
+        _start_operation("remove", model)
+        return
     if not nuke.ask(
         f"Remove this Kyven model?\n\n{model['display_name']}\n"
         f"{_format_size(model['size_bytes'])}\n\nIt can be installed again later."
@@ -124,7 +151,7 @@ def show_model_manager():
     _start_operation("remove", model)
 
 
-def _start_operation(action, model):
+def _start_operation(action, model, source=None):
     nuke = _nuke()
     key = str(model["model_id"])
     with _tasks_lock:
@@ -166,7 +193,9 @@ def _start_operation(action, model):
                     stop_server()
             client = ensure_server()
             operation_id = (
-                client.start_model_download(key)
+                (client.start_model_download(key, source=source) if source else
+                 client.start_model_download(key, license_accepted=True) if model.get("local_runtime") else
+                 client.start_model_download(key))
                 if action == "download"
                 else client.start_model_remove(key)
             )
@@ -256,6 +285,11 @@ def _refresh_all_nodes():
         for task in ("segment", "refine", "inpaint")
     }
     for node in nuke.allNodes("Group"):
+        if "kyven_kind" in node.knobs() and node["kyven_kind"].value() == "dlss":
+            from kyven_nuke.dlss_node import refresh_runtime
+
+            refresh_runtime(node)
+            continue
         if "model" not in node.knobs():
             continue
         kind = str(node["kyven_kind"].value()) if "kyven_kind" in node.knobs() else "segment"

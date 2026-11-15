@@ -67,6 +67,9 @@ class KyvenClient:
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise KyvenClientError(f"Could not communicate with Kyven server: {exc}") from exc
 
+    def submit_dlss(self, payload: dict[str, Any]) -> str:
+        return str(self._request("POST", "/v1/jobs/dlss", payload)["job_id"])
+
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/v1/health")
 
@@ -74,8 +77,14 @@ class KyvenClient:
         response = self._request("GET", "/v1/models")
         return list(response["models"])
 
-    def start_model_download(self, model_id: str) -> str:
-        response = self._request("POST", "/v1/models/download", {"model_id": model_id})
+    def start_model_download(self, model_id: str, *, source: str | None = None,
+                             license_accepted: bool = False) -> str:
+        payload: dict[str, Any] = {"model_id": model_id}
+        if source is not None:
+            payload["source"] = source
+        if license_accepted:
+            payload["license_accepted"] = True
+        response = self._request("POST", "/v1/models/download", payload)
         return str(response["operation_id"])
 
     def start_model_remove(self, model_id: str) -> str:

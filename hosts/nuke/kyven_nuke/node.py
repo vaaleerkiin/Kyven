@@ -1047,7 +1047,7 @@ def _cache_root(node: Any) -> Path:
     return root
 
 
-_ARTIST_CACHE_NAME_FIELDS = ("roto_name", "refine_name", "inpaint_name")
+_ARTIST_CACHE_NAME_FIELDS = ("roto_name", "refine_name", "inpaint_name", "dlss_name")
 
 
 def _artist_cache_name_field(node: Any) -> str | None:
@@ -1072,6 +1072,7 @@ def _artist_cache_name(node: Any) -> str:
         "roto_name": "Roto Name",
         "refine_name": "Refine Name",
         "inpaint_name": "Inpaint Name",
+        "dlss_name": "DLSS Name",
     }[field]
     return _cache_path_component(node[field].value(), label)
 
@@ -1404,6 +1405,7 @@ def _disconnect_cached_matte(node: Any) -> None:
             "KyvenProcessedMaskSwitch",
             "KyvenConfidenceTrimapSwitch",
             "KyvenPatchSwitch",
+            "KyvenDlssResultSwitch",
         ):
             switch = nuke.toNode(switch_name)
             if switch is not None and "which" in switch.knobs():

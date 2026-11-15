@@ -1,10 +1,15 @@
 # Kyven project scope
 
-Kyven is a local, Nuke-focused toolkit with exactly three product areas:
+Kyven is a local, Nuke-focused toolkit with three core product areas:
 
 1. Segment — promptable image segmentation and SAM 2 video mask propagation.
 2. Refine — trimap construction and ViTMatte alpha refinement.
 3. Inpaint — source-and-mask object removal with LaMa.
+
+An owner-requested optional DLSS reconstruction node is authorized by
+[ADR 0002](docs/adr/0002-optional-dlss-worker.md) and its installation update
+[ADR 0003](docs/adr/0003-managed-dlss-runtime.md). It uses a Kyven-managed Windows/RTX worker, external
+motion and alpha/control guides. It cannot replace or weaken the core CPU/4 GB baseline.
 
 ## Architecture
 

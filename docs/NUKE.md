@@ -6,6 +6,9 @@
 This guide covers behavior shared by all Kyven Nuke nodes. Task-specific controls live in the three
 node guides, with Segment first because roto is the primary Kyven workflow.
 
+The owner-requested [optional DLSS node](DLSS.md) adds local RTX reconstruction with external
+motion and alpha guides. Its live/temporal and EXR-cache behavior is documented separately.
+
 ## Choose a node
 
 | Goal | Node | Detailed guide |
@@ -168,7 +171,7 @@ semantics.
 Downloads activate only after exact size and SHA-256 verification. **Refresh Models** updates the
 node list and hardware advice. See [Models and safety](MODELS.md).
 
-The adapter starts a hidden external Python process on `127.0.0.1:18788` and requires API 32. A
+The adapter starts a hidden external Python process on `127.0.0.1:18788` and requires API 35. A
 random bearer token in `.runtime/server.token` protects every request. Nuke never imports PyTorch,
 CUDA, or model implementations.
 

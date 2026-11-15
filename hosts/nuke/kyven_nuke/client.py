@@ -52,14 +52,22 @@ class NukeKyvenClient:
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
             raise NukeKyvenClientError(f"Could not communicate with Kyven server: {exc}")
 
+    def submit_dlss(self, payload):
+        return str(self._request("POST", "/v1/jobs/dlss", payload)["job_id"])
+
     def health(self):
         return self._request("GET", "/v1/health")
 
     def models(self):
         return list(self._request("GET", "/v1/models")["models"])
 
-    def start_model_download(self, model_id):
-        response = self._request("POST", "/v1/models/download", {"model_id": model_id})
+    def start_model_download(self, model_id, source=None, license_accepted=False):
+        payload = {"model_id": model_id}
+        if source is not None:
+            payload["source"] = source
+        if license_accepted:
+            payload["license_accepted"] = True
+        response = self._request("POST", "/v1/models/download", payload)
         return str(response["operation_id"])
 
     def start_model_remove(self, model_id):

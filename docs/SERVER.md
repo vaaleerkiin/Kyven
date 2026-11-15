@@ -36,6 +36,7 @@ it must not be committed or logged.
 | `POST` | `/v1/jobs/segment-video` | Queue SAM 2 temporal mask propagation |
 | `POST` | `/v1/jobs/refine` | Queue ViTMatte alpha refinement |
 | `POST` | `/v1/jobs/inpaint` | Queue LaMa Source + Mask object removal |
+| `POST` | `/v1/jobs/dlss` | Queue optional local DLSS reconstruction with external motion/control guides |
 | `POST` | `/v1/preview/trimap` | Build trimap on CPU without ViTMatte |
 | `POST` | `/v1/preview/mask-postprocess` | Rebuild matte from raw SAM output on CPU |
 | `POST` | `/v1/preview/inpaint-mask` | Build exact LaMa model and final blend masks on CPU |

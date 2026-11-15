@@ -14,7 +14,7 @@ from kyven_nuke import config
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 
 PORT = 18788
-REQUIRED_API_VERSION = 32
+REQUIRED_API_VERSION = 35
 LEGACY_PORTS = (8765, 8766, 8767, 8768, 8769, 18768, 18769, 18770, 18771, 18772, 18773, 18774, 18775, 18776, 18777, 18778, 18779, 18780, 18781, 18782, 18783, 18784, 18785, 18786, 18787)
 _server_start_lock = threading.Lock()
 _server_state_lock = threading.RLock()
@@ -36,6 +36,9 @@ class RuntimeInstallCancelled(RuntimeError):
 
 
 def _runtime_probe(runtime_id: str) -> str:
+    if runtime_id == "dlss":
+        return ("from kyven.server.bootstrap import reset_inherited_dll_directory; "
+                "reset_inherited_dll_directory(); import OpenEXR; assert hasattr(OpenEXR, 'File')")
     if runtime_id == "hq-sam2":
         return (
             "from sam2.build_sam import build_sam2_hq_video_predictor; "
@@ -45,6 +48,8 @@ def _runtime_probe(runtime_id: str) -> str:
 
 
 def _runtime_install_command(runtime_id: str, executable: Path) -> list[str]:
+    if runtime_id == "dlss":
+        return [str(executable), "-m", "pip", "install", "--disable-pip-version-check", "OpenEXR==3.4.14"]
     if runtime_id != "hq-sam2":
         raise RuntimeError(f"Unknown Kyven model runtime: {runtime_id}")
     return [
@@ -107,7 +112,7 @@ def ensure_model_runtime(runtime_id: str, progress_callback=None, cancel_request
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creation_flags=creation_flags,
+        creationflags=creation_flags,
         check=False,
     )
     if verification.returncode != 0:
@@ -355,7 +360,8 @@ def ensure_server(timeout_seconds: float = 30.0, progress_callback=None) -> Nuke
                         str(config.token_file()),
                     ],
                     cwd=str(config.root()),
-                    env=_server_environment(executable_dir=executable.parent),
+                    env={**_server_environment(executable_dir=executable.parent),
+                         "KYVEN_RUNTIME_DIR": str(config.runtime_dir())},
                     stdin=subprocess.DEVNULL,
                     stdout=log,
                     stderr=subprocess.STDOUT,

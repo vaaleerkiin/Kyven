@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any
 
 from kyven.cancellation import CancellationToken
+from kyven.dlss.models import DlssRequest
+from kyven.dlss.service import DlssService
 from kyven.errors import ErrorCode, KyvenError
 from kyven.inpaint.models import InpaintRequest
 from kyven.inpaint.service import InpaintService
@@ -48,7 +50,7 @@ class JobStatus(str, Enum):
 @dataclass(slots=True)
 class JobRecord:
     job_id: str
-    request: SegmentRequest | VideoSegmentRequest | RefineRequest | InpaintRequest
+    request: SegmentRequest | VideoSegmentRequest | RefineRequest | InpaintRequest | DlssRequest
     cancellation: CancellationToken = field(default_factory=CancellationToken)
     status: JobStatus = JobStatus.QUEUED
     created_at: float = field(default_factory=time.time)
@@ -91,16 +93,19 @@ class JobManager:
         video_service: VideoSegmentService | None = None,
         refine_service: RefineService | None = None,
         inpaint_service: InpaintService | None = None,
+        dlss_service: DlssService | None = None,
     ) -> None:
         self._service = service
         self._video_service = video_service
         self._refine_service = refine_service
         self._inpaint_service = inpaint_service
+        self._dlss_service = dlss_service
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kyven-gpu")
         self._jobs: dict[str, JobRecord] = {}
         self._active_fingerprints: dict[str, str] = {}
         self._max_job_history = 500
         self._lock = threading.RLock()
+        self._shutdown = False
 
     def _prune_finished_jobs(self) -> None:
         overflow = len(self._jobs) - self._max_job_history + 1
@@ -120,7 +125,7 @@ class JobManager:
     @staticmethod
     def _payload_fingerprint(kind: str, payload: dict[str, Any]) -> str:
         input_state: dict[str, Any] = {}
-        for input_field in ("source", "mask", "model_mask"):
+        for input_field in ("source", "mask", "model_mask", "motion", "depth", "worker"):
             value = payload.get(input_field)
             if not value:
                 continue
@@ -470,6 +475,43 @@ class JobManager:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "The inpaint job payload is invalid.", technical_detail=str(exc)) from exc
         return self._enqueue("inpaint", payload, request, self._run_inpaint)
 
+    def submit_dlss(self, payload: dict[str, Any]) -> str:
+        if self._dlss_service is None:
+            raise KyvenError(ErrorCode.PROVIDER_UNAVAILABLE, "DLSS service is unavailable.")
+        request = DlssRequest.from_payload(payload)
+        return self._enqueue("dlss", payload, request, self._run_dlss)
+
+    def _run_dlss(self, record: JobRecord) -> None:
+        with self._lock:
+            if record.cancellation.is_cancelled:
+                record.status = JobStatus.CANCELLED
+                record.finished_at = time.time()
+                self._release_fingerprint(record)
+                return
+            record.status = JobStatus.RUNNING
+            record.started_at = time.time()
+        try:
+            result = self._dlss_service.run(record.request, record.cancellation)
+            with self._lock:
+                record.result = result
+                record.status = JobStatus.SUCCEEDED
+        except KyvenError as exc:
+            with self._lock:
+                record.status = (JobStatus.CANCELLED if exc.code is ErrorCode.CANCELLED
+                                 else JobStatus.FAILED)
+                record.error = exc.to_dict()
+        except Exception as exc:  # noqa: BLE001 - job boundary
+            with self._lock:
+                record.status = JobStatus.FAILED
+                record.error = KyvenError(
+                    ErrorCode.SERVER_ERROR, "DLSS job failed.", technical_detail=str(exc),
+                    recoverable=True, suggested_action="Check the server log and local DLSS runtime.",
+                ).to_dict()
+        finally:
+            with self._lock:
+                record.finished_at = time.time()
+                self._release_fingerprint(record)
+
     def _run(self, record: JobRecord) -> None:
         with self._lock:
             if record.cancellation.is_cancelled:
@@ -702,6 +744,9 @@ class JobManager:
 
     def shutdown(self) -> None:
         with self._lock:
+            if self._shutdown:
+                return
+            self._shutdown = True
             for record in self._jobs.values():
                 if record.status in {JobStatus.QUEUED, JobStatus.RUNNING}:
                     record.cancellation.cancel()
@@ -709,7 +754,12 @@ class JobManager:
                         record.status = JobStatus.CANCELLED
                         record.finished_at = time.time()
                         self._release_fingerprint(record)
-        self._executor.shutdown(wait=False, cancel_futures=True)
+        if self._dlss_service is not None:
+            # Unload behind active work after cooperative cancellation has finished.
+            self._executor.submit(self._dlss_service.registry.unload_all)
+            self._executor.shutdown(wait=False, cancel_futures=False)
+        else:
+            self._executor.shutdown(wait=False, cancel_futures=True)
 
     def unload_all(self, registry: ProviderRegistry) -> None:
         """Queue unloading behind active inference to avoid model races."""

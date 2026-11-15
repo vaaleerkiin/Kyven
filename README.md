@@ -38,6 +38,10 @@ updates, moving the repository, and unattended model selection.
 | **Kyven Segment** | Source + Viewer points | Single-frame roto and SAM 2 video tracking | SAM 2.1 Small |
 | **Kyven Refine** | Source + coarse mask/trimap | Soft alpha and difficult boundaries | ViTMatte Small |
 | **Kyven Inpaint** | Source + removal mask | Paint-out and background reconstruction | LaMa ONNX Fast |
+| **Kyven DLSS (optional RTX)** | Source + external motion + optional depth/control mask | Neural reconstruction with temporal history | Kyven worker + separately licensed NVIDIA NR component |
+
+The [DLSS guide](docs/DLSS.md) covers setup, external vectors, alpha as an inference guide, live
+refresh and runtime limitations. Optional DLSS has no CPU inference provider.
 
 A common roto flow is:
 

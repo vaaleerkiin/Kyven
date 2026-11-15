@@ -17,6 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dlss = ["OpenEXR==3.4.14"]
 dev = [
   "pytest>=8,<10",
   "ruff>=0.9,<1",
@@ -41,7 +42,7 @@ kyven = "kyven.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-kyven = ["resources/**/*.json", "resources/**/*.yaml"]
+kyven = ["resources/**/*.json", "resources/**/*.yaml", "resources/dlss/**/*"]
 
 [tool.ruff]
 line-length = 100
