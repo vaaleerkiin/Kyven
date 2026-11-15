@@ -2597,7 +2597,7 @@ def _ensure_cache_controls(
     *,
     name_field: str = "roto_name",
     name_label: str = "Roto Name",
-    name_default: str = "roto",
+    name_default: str = "segment",
 ) -> None:
     """Add shared cache versioning and maintenance controls."""
     nuke = _nuke()
