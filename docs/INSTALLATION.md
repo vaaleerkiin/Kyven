@@ -10,7 +10,7 @@ administrator access, registry changes, or a system-wide Python environment.
 
 - Windows 10 or 11;
 - Python 3.10-3.13 (Python 3.12 preferred);
-- a compatible NVIDIA GPU and driver for practical GPU inference (CPU fallback is supported);
+- a compatible NVIDIA GPU and driver for practical GPU inference (Segment, Refine and Inpaint support CPU fallback; optional DLSS requires Windows and an NVIDIA RTX GPU);
 - internet access for the first dependency and model download;
 - Foundry Nuke for the current host adapter.
 
@@ -45,7 +45,7 @@ path; setting `KYVEN_ROOT` is normally unnecessary. Restart Nuke after editing `
 | `.runtime/pip-cache/` | Reusable installer download cache |
 | `.runtime/server.token` | Private local bearer token |
 | `.runtime/server.log` | Latest server output |
-| `.runtime/nuke_cache/` | Per-node exported frames, raw/displayed mattes, and trimap previews |
+| `.runtime/nuke_cache/` | Legacy UUID-based node caches; current artist-selected caches live under Cache Folder / Name / Version |
 
 Nothing is added to the system `PATH`, and the installer intentionally does not edit Nuke's
 `init.py`.
@@ -58,7 +58,8 @@ Groups from the Nodes menu:
 
 - `Kyven > Upgrade Selected Segment Node`;
 - `Kyven > Upgrade Selected Refine Node`;
-- `Kyven > Upgrade Selected Inpaint Node`.
+- `Kyven > Upgrade Selected Inpaint Node`;
+- `Kyven > Upgrade Selected DLSS Node`.
 
 These operations preserve node UUIDs and cached results. Upgrading Inpaint also adds the current
 shared Cache controls without deleting an existing result sequence.
@@ -95,6 +96,8 @@ Choose **Remove Selected** to reclaim disk space. Removal waits for active proce
 the selected provider, and leaves source media, rendered node caches, and other models untouched.
 The manager never accepts arbitrary URLs: model files and runtimes use only the pinned,
 commercially approved catalog.
+
+For optional RTX reconstruction, install **Kyven DLSS Runtime** from Model Manager and follow the [DLSS setup guide](DLSS.md#setup).
 
 See [Model selection](MODELS.md) for VRAM guidance and [Troubleshooting](TROUBLESHOOTING.md) if the
 server or CUDA runtime does not start.

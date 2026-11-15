@@ -81,7 +81,7 @@ authenticated Kyven service on port `18788`; it does not terminate Nuke or unrel
   ViTMatte.
 - With Processing ROI enabled, black outside the ROI is expected: ViTMatte did not receive those
   pixels. The refined-alpha output still preserves the coarse mask outside the ROI.
-- Confirm that `.runtime/nuke_cache/<node-uuid>/trimap_preview_r<revision>.<frame>.png` exists.
+- Check the selected cache work directory for the trimap preview. Legacy nodes use `.runtime/nuke_cache/<node-uuid>/`.
 
 ## CUDA or model loading fails
 
@@ -118,10 +118,10 @@ extension means upstream hole filling was skipped, but Kyven's own post-process 
 ## Read or cache problems
 
 The panel displays the exact cache directory for the current node. Use `Create Matte Read` for
-Segment/Refine or `Create Result Read` for Inpaint only after processing succeeds. Both buttons copy
-the active internal Read, including its frame range. If files were deleted externally, process again.
+Segment/Refine or `Create Result Read` for Inpaint and DLSS only after processing succeeds. Both buttons copy
+the active internal Read, including its frame range. If files were deleted externally, process again. After upstream edits, use **Refresh Frames** for the affected scope before processing. For DLSS setup and temporal artifacts, see the [DLSS guide](DLSS.md) and [temporal guide](DLSS_TEMPORAL.md).
 
-For current nodes, `Delete Node Cache` affects the selected `<Cache Folder>/<Name>/<Version>/` only.
+For current Segment, Refine and Inpaint nodes, `Delete Node Cache` affects the selected `<Cache Folder>/<Name>/<Version>/` only.
 `Delete All Kyven Cache` is limited to legacy `.runtime/nuke_cache` nodes; it does not remove
 artist-selected cache roots, models, `.venv`, the authentication token, or source media.
 
@@ -146,7 +146,7 @@ the surviving internal Inpaint graph and reconstructs every missing control with
 | --- | --- |
 | `.runtime/server.log` | Latest server startup and inference output |
 | `.runtime/server.token` | Local bearer token; do not share or commit it |
-| `.runtime/nuke_cache/` | Exported frames, generated/refined mattes, and exact trimaps |
+| `.runtime/nuke_cache/` | Legacy UUID-based caches; current caches are under the selected Cache Folder / Name / Version |
 | `models/` | Verified model checkpoints |
 
 When reporting a failure, include the Status text, the latest `server.log`, Nuke version, selected

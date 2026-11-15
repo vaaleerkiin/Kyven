@@ -55,20 +55,19 @@ original Source and a removal mask directly to Kyven Inpaint.
 
 ## Cache contract
 
-New Segment, Refine, and Inpaint nodes use the same artist-facing layout:
+All four nodes use the same artist-facing Folder / Name / Version layout. Segment, Refine and Inpaint write PNG results; optional DLSS writes float EXR results:
 
 ```text
 <Cache Folder>/
 └── <Name>/
     └── <Version>/
-        ├── <Name>_<Version>.1001.png
-        ├── <Name>_<Version>.1002.png
+        ├── <Name>_<Version>.1001.png  (DLSS: .exr)
+        ├── <Name>_<Version>.1002.png  (DLSS: .exr)
         └── _kyven_work/
 ```
 
 The version root contains the public sequence. Sources, manifests, logits, trimaps, masks, and other
-implementation files stay under `_kyven_work/`. Current Frame, Frame Range, and tracking write the
-same named sequence. Changing Cache Folder, Name, or Version reconnects a matching sequence.
+implementation files stay under `_kyven_work/`. Current Frame and Frame Range write the same named sequence; Segment tracking does too. Changing Cache Folder, Name, or Version reconnects a matching sequence.
 DLSS uses the same Folder / Name / Version layout with float EXR output instead of PNG; see
 the [DLSS cache guide](docs/DLSS.md#resolution-memory-and-cache).
 

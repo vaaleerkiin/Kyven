@@ -31,4 +31,4 @@ should occupy accelerator memory.
 - Do not add unrelated tools or speculative product documentation without explicit approval.
 
 Detailed behavior lives in `docs/SEGMENT.md`, `docs/REFINE.md`, `docs/INPAINT.md`,
-`docs/NUKE.md`, and `docs/SERVER.md`.
+`docs/DLSS.md`, `docs/NUKE.md`, and `docs/SERVER.md`.

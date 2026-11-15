@@ -4,8 +4,7 @@
 [Models](MODELS.md) · [Troubleshooting](TROUBLESHOOTING.md)
 
 Kyven Server is the shared execution layer for Kyven. It isolates PyTorch, CUDA, model loading, and
-task-specific inference from Nuke. Segment, Refine, and Inpaint extend the same provider/job system
-instead of placing inference inside a host adapter. The server binds only to `127.0.0.1` and
+task-specific inference from Nuke. Segment, Refine, Inpaint, and optional DLSS use the provider/job system instead of placing inference inside a host adapter. DLSS uses a separate Windows/RTX worker. The server binds only to `127.0.0.1` and
 requires a random bearer token on every endpoint.
 
 ```text
@@ -135,7 +134,7 @@ It contains the deterministic cache key and result metadata. A repeated request 
 manifest and every required image/NPZ before returning a cache hit; missing or corrupt media forces
 a safe recalculation.
 
-API version 32 is the current Nuke/server contract. `GET /v1/jobs/{id}` returns `progress`
+API version 36 is the current Nuke/server contract. `GET /v1/jobs/{id}` returns `progress`
 (0.0-1.0) and `progress_message`. Segment video requests may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
 returned masks to the original dimensions. Restart Nuke after updating Kyven so the adapter does not

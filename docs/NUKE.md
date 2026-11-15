@@ -114,46 +114,47 @@ internals mean performance and VRAM do not always scale directly with crop area.
 
 ## Artist cache
 
-New Segment, Refine, and Inpaint nodes share one public layout:
+All four nodes use the same Folder / Name / Version layout. Segment, Refine and Inpaint write PNG sequences; DLSS writes float EXR sequences:
 
 ```text
 <Cache Folder>/
 └── <Name>/
     └── <Version>/
-        ├── <Name>_<Version>.1001.png
-        ├── <Name>_<Version>.1002.png
+        ├── <Name>_<Version>.1001.png  (DLSS: .exr)
+        ├── <Name>_<Version>.1002.png  (DLSS: .exr)
         └── _kyven_work/
 ```
 
-Name is labelled **Roto Name**, **Refine Name**, or **Inpaint Name**. The UUID is not part of the
+Name is labelled **Roto Name**, **Refine Name**, **Inpaint Name**, or **Name** on DLSS. The UUID is not part of the
 public path. Two nodes with the same Folder, Name, and Version intentionally share and may overwrite
 the same sequence.
 
-The version root contains only the public PNG sequence and `_kyven_work/`. Private data is organized
+The version root contains the public result sequence and `_kyven_work/`. Private data is organized
 below that directory:
 
 ```text
 _kyven_work/
-├── source/       exported current/range frames and tracking range folders
+├── source/       exported frames and the Segment tracking pool
 ├── manifests/    deterministic cache metadata
 ├── raw masks
 ├── logits and confidence trimaps
 └── model-specific masks, previews, and generated patches
 ```
 
-Current Frame, Frame Range, and Segment tracking write the same public sequence. Changing Cache
+Current Frame and Frame Range write the same public sequence for each node; Segment tracking writes to its sequence too. Changing Cache
 Folder, Name, or Version reconnects an existing matching sequence. This lets another application or
-artist read `<Name>_<Version>.%04d.png` without understanding Kyven internals.
+artist read `<Name>_<Version>.%04d.png` (or `.exr` for DLSS) without understanding Kyven internals.
 
 Cache actions:
 
 - **Create Matte Read** creates a normal Read for Segment or Refine.
-- **Create Result Read** creates a normal Read for Inpaint.
+- **Create Result Read** creates a normal Read for Inpaint or DLSS.
+- DLSS also provides **Load Cache** to reconnect a previously rendered sequence.
 - **Delete Node Cache** removes only the selected Name/Version after confirmation.
 - **Delete All Kyven Cache** appears only on legacy UUID-cache nodes and affects only
   `.runtime/nuke_cache`; it never deletes artist-selected cache roots or models.
 
-Successful outputs are atomic. Manifests include the source/prompt/settings/model identity and
+The delete actions above apply to Segment, Refine and Inpaint; consult the [DLSS cache guide](DLSS.md#resolution-memory-and-cache) for DLSS. Successful outputs are atomic. Manifests include the source/prompt/settings/model identity and
 validate every required file. Independent ranges reuse valid frames after interruption. Incomplete
 SAM 2 temporal state is restarted even if individual mask files exist.
 

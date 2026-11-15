@@ -1,7 +1,7 @@
 # Kyven Tools model selection and safety
 
 [Documentation home](README.md) · [Install](INSTALLATION.md) · [Segment](SEGMENT.md) ·
-[Refine](REFINE.md) · [Inpaint](INPAINT.md)
+[Refine](REFINE.md) · [Inpaint](INPAINT.md) · [DLSS](DLSS.md)
 
 Kyven treats model implementations and model sizes as selectable providers. A node stores a
 stable `model_id`, not a hard-coded Python class or checkpoint path.
@@ -78,7 +78,7 @@ kyven models download mematte-vitb-composition-1k --models-dir models
 
 In Nuke, Model Manager has **Set as Default**. It stores one default each for Segment, Refine, and
 Inpaint. The selection is applied only when a new node is created; existing scripts and nodes keep
-their explicit model selection.
+their explicit model selection. DLSS uses its own managed runtime rather than one of these selectable default models; see [DLSS setup](DLSS.md#setup).
 
 ## Inpaint catalog
 
