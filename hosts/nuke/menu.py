@@ -21,6 +21,9 @@ nuke.pluginAddPath(str(ICONS_ROOT))
 LOGO_ICON = "kyven_logo_icon.png"
 
 menu = nuke.menu("Nodes").addMenu("Kyven", icon=LOGO_ICON)
+if (KYVEN_ROOT / "plugins" / "Cattery" / "WAFT" / "WAFT.gizmo").is_file():
+    menu.addCommand("WAFT SmartVector", 'nuke.createNode("WAFT")', icon="WAFT.png")
+    menu.addSeparator()
 menu.addCommand("Model Manager...", kyven_nuke.show_model_manager, icon=LOGO_ICON)
 menu.addSeparator()
 menu.addCommand("Segment", kyven_nuke.create_segment_node, icon=LOGO_ICON)

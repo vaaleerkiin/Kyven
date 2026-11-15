@@ -1,0 +1,12 @@
+{
+  "source_url": "https://github.com/princeton-vl/WAFT.git",
+  "source_commit": "b152ff1cad1af8c185ee7b141997c48ff3334c87",
+  "submodules": "-94a96ac83c2446f15f9bdcfae23cad3c6a9d4988 thirdparty/dinov3",
+  "checkpoint": {
+    "filename": "waft-a1.pth",
+    "google_drive_id": "1CxzBQx0iSg6AyIgt6MF0ROlF_cAeZLPC",
+    "sha256": "9f4b24f48b3937eca690a12b73bc3190effde6d4d4c87db01998fe63d846397f"
+  },
+  "development_files_before_cleanup": 20252,
+  "development_bytes_before_cleanup": 7719669375
+}

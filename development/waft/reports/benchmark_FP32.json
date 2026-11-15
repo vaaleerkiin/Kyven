@@ -1,0 +1,10 @@
+{
+  "precision": "FP32",
+  "working_size": [
+    512,
+    288
+  ],
+  "seconds_per_pair": 0.1468683799728751,
+  "peak_allocated_mib": 491.1796875,
+  "model_bytes": 256147430
+}

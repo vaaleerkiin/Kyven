@@ -7,6 +7,10 @@ Kyven Server is the shared execution layer for Kyven. It isolates PyTorch, CUDA,
 task-specific inference from Nuke. Segment, Refine, Inpaint, and optional DLSS use the provider/job system instead of placing inference inside a host adapter. DLSS uses a separate Windows/RTX worker. The server binds only to `127.0.0.1` and
 requires a random bearer token on every endpoint.
 
+Standalone [WAFT SmartVector](WAFT.md) is registered alongside Kyven but runs
+inside Nuke's native Inference graph. It does not use these endpoints, the server
+job queue, Model Manager or the server cache contract.
+
 ```text
 kyven serve \
   --models-dir models \

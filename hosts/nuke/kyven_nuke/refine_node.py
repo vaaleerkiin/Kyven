@@ -22,6 +22,7 @@ from kyven_nuke.node import (
     _clamp_bbox_knob,
     _create_group_at_cursor,
     _defer_ui_action,
+    _disable_live_for_manual_process,
     _disconnect_cached_matte,
     _ensure_cache_controls,
     _ensure_double_slider,
@@ -637,6 +638,8 @@ def process_current_frame(node: Any | None = None, live: bool = False) -> None:
     show_progress = not live
     if not _begin_node_operation(node):
         return
+    if not live:
+        _disable_live_for_manual_process(node)
     with _range_cancel_lock:
         _range_cancellations.discard(node_name)
     if show_progress:
@@ -790,6 +793,7 @@ def process_frame_range() -> None:
     if not _begin_node_operation(node):
         return
     node_name = node.fullName()
+    _disable_live_for_manual_process(node)
     with _range_cancel_lock:
         _range_cancellations.discard(node_name)
     _start_progress(node_name, "Kyven ViTMatte Frame Range", "Preparing input export")

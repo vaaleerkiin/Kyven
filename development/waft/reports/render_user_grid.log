@@ -1,0 +1,13 @@
+NukeX 16.0v4, 64 bit, built Jun 13 2025.
+Copyright (c) 2025 The Foundry Visionmongers Ltd.  All Rights Reserved.
+
+[W TensorShape.cpp:3527] Warning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (function operator ())
+
+Writing D:/waft/build/user_nuke_raw.exr took 12.58 seconds
+Total render time: 13 seconds
+.9USER_RENDER raw 12.894468599930406
+
+Writing D:/waft/build/user_nuke_clean.exr took 0.08 seconds
+Total render time: 0.08 seconds
+USER_RENDER clean 0.08437300007790327
+USER_GRID_RENDER_PASSED

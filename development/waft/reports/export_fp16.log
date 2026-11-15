@@ -1,0 +1,18 @@
+xFormers not available
+xFormers not available
+D:\waft\.venv\lib\site-packages\torch\_utils.py:831: UserWarning: TypedStorage is deprecated. It will be removed in the future and UntypedStorage will be the only storage class. This should only matter to you if you are using storages directly.  To access UntypedStorage directly, use tensor.untyped_storage() instead of tensor.storage()
+  return self.fget.__get__(instance, owner)()
+Tracing FP16 + SDPA, five iterations
+D:\waft\WAFT-source\thirdparty\DepthAnythingV2\depth_anything_v2\dinov2_layers\patch_embed.py:73: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  assert H % patch_H == 0, f"Input image height {H} is not a multiple of patch height {patch_H}"
+D:\waft\WAFT-source\thirdparty\DepthAnythingV2\depth_anything_v2\dinov2_layers\patch_embed.py:74: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  assert W % patch_W == 0, f"Input image width {W} is not a multiple of patch width: {patch_W}"
+D:\waft\.venv\lib\site-packages\torch\functional.py:504: UserWarning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (Triggered internally at ..\aten\src\ATen\native\TensorShape.cpp:3527.)
+  return _VF.meshgrid(tensors, **kwargs)  # type: ignore[attr-defined]
+D:\waft\WAFT-source\model\backbone\patch_embed.py:73: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  assert H % patch_H == 0, f"Input image height {H} is not a multiple of patch height {patch_H}"
+D:\waft\WAFT-source\model\backbone\patch_embed.py:74: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  assert W % patch_W == 0, f"Input image width {W} is not a multiple of patch width: {patch_W}"
+FP16_CHECK {'shape': [160, 240], 'mean_error': 0.0014583481242880225, 'max_error': 0.006893157958984375}
+FP16_CHECK {'shape': [288, 512], 'mean_error': 0.001696056337095797, 'max_error': 0.00920867919921875}
+FP16_EXPORT_PASSED {'precision': 'FP16 weights/activations, FP32 flow', 'iterations': 5, 'attention': 'scaled_dot_product_attention', 'checks': [{'shape': [160, 240], 'mean_error': 0.0014583481242880225, 'max_error': 0.006893157958984375}, {'shape': [288, 512], 'mean_error': 0.001696056337095797, 'max_error': 0.00920867919921875}], 'gpu': 'NVIDIA GeForce RTX 4070 Laptop GPU', 'weights_bytes': 130442141, 'seconds_per_pair_512x288': 0.14618719990054765, 'peak_allocated_mib': 433.7021484375}

@@ -4,6 +4,11 @@
 
 These measurements validate the current vertical slice; they are not release guarantees.
 
+Standalone [WAFT SmartVector](WAFT.md) has separate saved baseline reports under
+`development/waft/reports/` and a post-migration render report at
+`plugins/Cattery/WAFT/kyven_validation.json`. These describe the tested package;
+rerun the [development checks](../development/waft/README_RU.md) after model changes.
+
 ## SAM 2.1 Small - Windows development machine
 
 - GPU: NVIDIA GeForce RTX 4070 Laptop GPU, 8,188 MiB VRAM

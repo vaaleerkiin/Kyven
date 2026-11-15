@@ -1,0 +1,145 @@
+NukeX 16.0v4, 64 bit, built Jun 13 2025.
+Copyright (c) 2025 The Foundry Visionmongers Ltd.  All Rights Reserved.
+
+NODE Median
+channels ChannelMask_Knob 'rgb' The effect is applied only to these channels
+channel ChannelMask_Knob 'rgb' The effect is applied only to these channels
+layer ChannelMask_Knob 'rgb' The effect is applied only to these channels
+size WH_Knob 3.0 
+Filter Size Obsolete_Knob None 
+ignore_top_line Boolean_Knob True This option replicates the behaviour found in 6.2v1 and before, where the box size is (width*2+1, height*2), resulting in a slight vertical shift of the image.  With this option disabled, the box size is (width*2+1, height*2+1).
+Mask Obsolete_Knob None 
+maskChannelMask Channel_Knob 'alpha' If the mask input is connected, use this channel from it to mix the output with the original input.
+maskChannelInput Channel_Knob 'none' Use this channel from the original input to mix the output with the original input.
+inject Boolean_Knob False Copy mask to the output mask.a channel
+invert_mask Boolean_Knob False Invert the use of the mask channel.
+fringe Boolean_Knob False Use 4*(1-mask)*mask to mix.
+maskFromFlag Boolean_Knob False 
+maskFrom Obsolete_Knob None 
+maskChannel Channel_Knob 'alpha' If the mask input is connected, use this channel from it to mix the output with the original input.
+mask Channel_Knob 'none' Use this channel from the original input to mix the output with the original input.
+process_mask Boolean_Knob False 
+mix Array_Knob 1.0 Dissolve between the original image at 0 and the full effect at 1.
+enable Array_Knob 1.0 Dissolve between the original image at 0 and the full effect at 1.
+name String_Knob 'Median1' Name of the node, used to refer to it in expressions.
+Valid names start with a letter or underscore and may only contain letters, digits and underscores.
+updateUI PythonKnob '' 
+autolabel PythonKnob '' 
+panel Obsolete_Knob None 
+tile_color ColorChip_Knob 0 Color of this node's icon in the graph.<br>/ indicates the color is unset and uses the Preferences/Node Colors value, if any.<br>Use the right click menu to revert to unset.
+gl_color ColorChip_Knob 0 Color for this node's controls in the viewer.<br>X indicates the color is unset and uses the Preferences/DefaultNodeGLColor value.<br>Use the right click menu to revert to unset.
+label Multiline_Eval_String_Knob '' Text to display on the node.
+Some html is accepted.
+note_font Font_Knob '' 
+note_font_size Array_Knob 11.0 
+note_font_color ColorChip_Knob 0 
+selected Boolean_Knob False 
+xpos Array_Knob -2147483648.0 
+ypos Array_Knob 0.0 
+icon File_Knob '' 
+indicators Array_Knob 0.0 
+hide_input Boolean_Knob False Don't draw the arrows going into this node when it is not selected.
+rootNodeUpdated EvalString_Knob '' 
+cached Boolean_Knob False Always keep the output of this in memory so that it can be read quickly when changing things connected to it.
+disable Disable_Knob False Pass default input through this node without any processing.
+dope_sheet Boolean_Knob False Always show this node's animation in the dopesheet.
+bookmark Boolean_Knob False Show this node in the bookmark list.
+postage_stamp Boolean_Knob False Display a small image on this node in the Node Graph indicating its output.
+postage_stamp_frame Array_Knob 1.0 Specify the frame number to use for a static postage stamp. This is only used when the postage stamp mode preference is set to 'Static frame'. If the frame number is outside the frame range for the node, it will be clamped.
+lifetimeStart Array_Knob 0.0 The start frame to enable the node from.
+lifetimeEnd Array_Knob 0.0 The end frame after which the node will behave as if disabled.
+useLifetime Boolean_Knob False When checked the node is only enabled between the specified frame ranges, outside of the frame ranges it behaves as if disabled.
+NODE Bilateral
+Size WH_Knob 3.0 
+PositionalSigma Array_Knob 0.4 Positional Sigma. Along with size, controls how much nearby pixels affect the blur.
+ColorSigma Array_Knob 0.4 Color Sigma. Controls the amount of blurring over edges.
+Mask Obsolete_Knob None 
+maskChannelMask Channel_Knob 'alpha' If the mask input is connected, use this channel from it to mix the output with the original input.
+maskChannelInput Channel_Knob 'none' Use this channel from the original input to mix the output with the original input.
+inject Boolean_Knob False Copy mask to the output mask.a channel
+invert_mask Boolean_Knob False Invert the use of the mask channel.
+fringe Boolean_Knob False Use 4*(1-mask)*mask to mix.
+maskFromFlag Boolean_Knob False 
+maskFrom Obsolete_Knob None 
+maskChannel Channel_Knob 'alpha' If the mask input is connected, use this channel from it to mix the output with the original input.
+mask Channel_Knob 'none' Use this channel from the original input to mix the output with the original input.
+process_mask Boolean_Knob False 
+mix Array_Knob 1.0 Dissolve between the original image at 0 and the full effect at 1.
+enable Array_Knob 1.0 Dissolve between the original image at 0 and the full effect at 1.
+name String_Knob 'Bilateral1' Name of the node, used to refer to it in expressions.
+Valid names start with a letter or underscore and may only contain letters, digits and underscores.
+updateUI PythonKnob '' 
+autolabel PythonKnob '' 
+panel Obsolete_Knob None 
+tile_color ColorChip_Knob 0 Color of this node's icon in the graph.<br>/ indicates the color is unset and uses the Preferences/Node Colors value, if any.<br>Use the right click menu to revert to unset.
+gl_color ColorChip_Knob 0 Color for this node's controls in the viewer.<br>X indicates the color is unset and uses the Preferences/DefaultNodeGLColor value.<br>Use the right click menu to revert to unset.
+label Multiline_Eval_String_Knob '' Text to display on the node.
+Some html is accepted.
+note_font Font_Knob '' 
+note_font_size Array_Knob 11.0 
+note_font_color ColorChip_Knob 0 
+selected Boolean_Knob False 
+xpos Array_Knob -2147483648.0 
+ypos Array_Knob 0.0 
+icon File_Knob '' 
+indicators Array_Knob 0.0 
+hide_input Boolean_Knob False Don't draw the arrows going into this node when it is not selected.
+rootNodeUpdated EvalString_Knob '' 
+cached Boolean_Knob False Always keep the output of this in memory so that it can be read quickly when changing things connected to it.
+disable Disable_Knob False Pass default input through this node without any processing.
+dope_sheet Boolean_Knob False Always show this node's animation in the dopesheet.
+bookmark Boolean_Knob False Show this node in the bookmark list.
+postage_stamp Boolean_Knob False Display a small image on this node in the Node Graph indicating its output.
+postage_stamp_frame Array_Knob 1.0 Specify the frame number to use for a static postage stamp. This is only used when the postage stamp mode preference is set to 'Static frame'. If the frame number is outside the frame range for the node, it will be clamped.
+lifetimeStart Array_Knob 0.0 The start frame to enable the node from.
+lifetimeEnd Array_Knob 0.0 The end frame after which the node will behave as if disabled.
+useLifetime Boolean_Knob False When checked the node is only enabled between the specified frame ranges, outside of the frame ranges it behaves as if disabled.
+NODE Blur
+channels ChannelMask_Knob 'all' The effect is applied only to these channels
+channel ChannelMask_Knob 'all' The effect is applied only to these channels
+layer ChannelMask_Knob 'all' The effect is applied only to these channels
+size WH_Knob 0.0 
+filter Enumeration_Knob 'gaussian' 
+quality Array_Knob 15.0 quality level: Lower numbers make it faster but not as smooth. The image is scaled down so the blur filter is no larger than this number, and then scaled up with linear interpolation after filtering.
+crop Boolean_Knob True If bounding box is at or inside the format, don't enlarge it past the format. This avoids creating oversized images that you don't use.
+Mask Obsolete_Knob None 
+maskChannelMask Channel_Knob 'alpha' If the mask input is connected, use this channel from it to mix the output with the original input.
+maskChannelInput Channel_Knob 'none' Use this channel from the original input to mix the output with the original input.
+inject Boolean_Knob False Copy mask to the output mask.a channel
+invert_mask Boolean_Knob False Invert the use of the mask channel.
+fringe Boolean_Knob False Use 4*(1-mask)*mask to mix.
+maskFromFlag Boolean_Knob False 
+maskFrom Obsolete_Knob None 
+maskChannel Channel_Knob 'alpha' If the mask input is connected, use this channel from it to mix the output with the original input.
+mask Channel_Knob 'none' Use this channel from the original input to mix the output with the original input.
+process_mask Boolean_Knob False 
+mix Array_Knob 1.0 Dissolve between the original image at 0 and the full effect at 1.
+enable Array_Knob 1.0 Dissolve between the original image at 0 and the full effect at 1.
+name String_Knob 'Blur1' Name of the node, used to refer to it in expressions.
+Valid names start with a letter or underscore and may only contain letters, digits and underscores.
+updateUI PythonKnob '' 
+autolabel PythonKnob '' 
+panel Obsolete_Knob None 
+tile_color ColorChip_Knob 0 Color of this node's icon in the graph.<br>/ indicates the color is unset and uses the Preferences/Node Colors value, if any.<br>Use the right click menu to revert to unset.
+gl_color ColorChip_Knob 0 Color for this node's controls in the viewer.<br>X indicates the color is unset and uses the Preferences/DefaultNodeGLColor value.<br>Use the right click menu to revert to unset.
+label Multiline_Eval_String_Knob '' Text to display on the node.
+Some html is accepted.
+note_font Font_Knob '' 
+note_font_size Array_Knob 11.0 
+note_font_color ColorChip_Knob 0 
+selected Boolean_Knob False 
+xpos Array_Knob -2147483648.0 
+ypos Array_Knob 0.0 
+icon File_Knob '' 
+indicators Array_Knob 0.0 
+hide_input Boolean_Knob False Don't draw the arrows going into this node when it is not selected.
+rootNodeUpdated EvalString_Knob '' 
+cached Boolean_Knob False Always keep the output of this in memory so that it can be read quickly when changing things connected to it.
+disable Disable_Knob False Pass default input through this node without any processing.
+dope_sheet Boolean_Knob False Always show this node's animation in the dopesheet.
+bookmark Boolean_Knob False Show this node in the bookmark list.
+postage_stamp Boolean_Knob False Display a small image on this node in the Node Graph indicating its output.
+postage_stamp_frame Array_Knob 1.0 Specify the frame number to use for a static postage stamp. This is only used when the postage stamp mode preference is set to 'Static frame'. If the frame number is outside the frame range for the node, it will be clamped.
+lifetimeStart Array_Knob 0.0 The start frame to enable the node from.
+lifetimeEnd Array_Knob 0.0 The end frame after which the node will behave as if disabled.
+useLifetime Boolean_Knob False When checked the node is only enabled between the specified frame ranges, outside of the frame ranges it behaves as if disabled.

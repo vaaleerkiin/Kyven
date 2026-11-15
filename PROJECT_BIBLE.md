@@ -13,6 +13,11 @@ motion and alpha/control guides. It cannot replace or weaken the core CPU/4 GB b
 
 ## Architecture
 
+The owner-requested standalone WAFT Cattery plugin is authorized by
+[ADR 0008](docs/adr/0008-standalone-waft.md). It keeps its embedded models and
+native Nuke Inference graph under `plugins/Cattery/WAFT/`, independent of the
+Kyven server. Its complete folder remains portable back to Cattery.
+
 Nuke is a thin host adapter. It exports frames, submits authenticated jobs to the local server,
 polls progress, and reads durable cached results. The host-independent backend owns model loading,
 validation, inference, cancellation, and atomic output writes. Backend modules must not import Nuke.

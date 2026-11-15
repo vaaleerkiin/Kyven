@@ -7,6 +7,13 @@ Build Kyven as a production-oriented, local toolkit for Segment, Refine, and Inp
 The owner-requested optional DLSS node is scoped by `docs/adr/0002-optional-dlss-worker.md`
 and `docs/adr/0003-managed-dlss-runtime.md`.
 
+The owner-requested standalone WAFT Cattery plugin is scoped by
+`docs/adr/0008-standalone-waft.md`. It is an explicit optional native Nuke
+Inference exception: preserve `plugins/Cattery/WAFT/` as one portable folder
+with embedded local models. Keep lightweight development sources and recovery
+instructions under `development/waft/`; ignore regenerated weights, environments,
+exports and renders. Do not couple it to the Kyven server or Model Manager.
+
 ## Read first
 
 Before changing architecture, read:

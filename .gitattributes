@@ -14,3 +14,9 @@
 
 # Packaged runtime files are verified byte-for-byte against their manifest.
 src/kyven/resources/dlss/windows_x64/** -text whitespace=cr-at-eol
+
+# Preserve upstream source formatting, diagnostic output and patch context.
+development/waft/WAFT-source/** -whitespace
+development/waft/RAFT/** -whitespace
+development/waft/reports/** -whitespace
+development/waft/upstream-local.patch -whitespace

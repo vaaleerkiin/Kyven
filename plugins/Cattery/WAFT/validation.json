@@ -1,0 +1,221 @@
+{
+  "export_validation": {
+    "torch": "2.1.2+cu118",
+    "iterations": 5,
+    "strict_weights": true,
+    "resolution_checks": [
+      {
+        "size": [
+          128,
+          192
+        ],
+        "max_error": 4.3392181396484375e-05
+      },
+      {
+        "size": [
+          241,
+          353
+        ],
+        "max_error": 1.3828277587890625e-05
+      }
+    ],
+    "cuda": true
+  },
+  "upstream_validation": [
+    {
+      "shape": [
+        160,
+        240
+      ],
+      "max_error": 0.004698127508163452
+    },
+    {
+      "shape": [
+        241,
+        353
+      ],
+      "max_error": 0.01399993896484375
+    }
+  ],
+  "fp16_validation": {
+    "precision": "FP16 weights/activations, FP32 flow",
+    "iterations": 5,
+    "attention": "scaled_dot_product_attention",
+    "checks": [
+      {
+        "shape": [
+          160,
+          240
+        ],
+        "mean_error": 0.0014583481242880225,
+        "max_error": 0.006893157958984375
+      },
+      {
+        "shape": [
+          288,
+          512
+        ],
+        "mean_error": 0.001696056337095797,
+        "max_error": 0.00920867919921875
+      }
+    ],
+    "gpu": "NVIDIA GeForce RTX 4070 Laptop GPU",
+    "weights_bytes": 130442141,
+    "seconds_per_pair_512x288": 0.14618719990054765,
+    "peak_allocated_mib": 433.7021484375
+  },
+  "nuke_validation": {
+    "motion": {
+      "channels": [
+        "forward.u",
+        "forward.v",
+        "backward.u",
+        "backward.v"
+      ],
+      "samples": {
+        "forward.u": 4.018223285675049,
+        "forward.v": -3.005479097366333,
+        "backward.u": -3.9814157485961914,
+        "backward.v": 2.9801080226898193
+      }
+    },
+    "smart": {
+      "channels": [
+        "smartvector_f01_v01.n_u",
+        "smartvector_f01_v01.n_v",
+        "smartvector_f01_v01.p_u",
+        "smartvector_f01_v01.p_v"
+      ],
+      "samples": {
+        "smartvector_f01_v01.n_u": 4.059509754180908,
+        "smartvector_f01_v01.n_v": -2.9936888217926025,
+        "smartvector_f01_v01.p_u": -3.9739766120910645,
+        "smartvector_f01_v01.p_v": 3.025620222091675
+      }
+    }
+  },
+  "resolution_v3_validation": {
+    "project": [
+      3840,
+      2160
+    ],
+    "source": [
+      1920,
+      1080
+    ],
+    "seconds": 15.34352570027113,
+    "smart_samples": {
+      "smartvector_f01_v01.n_u": 32.066429138183594,
+      "smartvector_f01_v01.n_v": -20.06673240661621,
+      "smartvector_f01_v01.p_u": -32.134368896484375,
+      "smartvector_f01_v01.p_v": 20.200782775878906
+    },
+    "motion_bbox": [
+      0.0,
+      0.0,
+      1920.0,
+      1080.0
+    ]
+  },
+  "benchmark_FP32": {
+    "precision": "FP32",
+    "working_size": [
+      512,
+      288
+    ],
+    "seconds_per_pair": 0.1468683799728751,
+    "peak_allocated_mib": 491.1796875,
+    "model_bytes": 256147430
+  },
+  "benchmark_FP16": {
+    "precision": "FP16",
+    "working_size": [
+      512,
+      288
+    ],
+    "seconds_per_pair": 0.09112285999581218,
+    "peak_allocated_mib": 295.6259765625,
+    "model_bytes": 130442141
+  },
+  "filter_validation": {
+    "raw_std": 0.04999995231628418,
+    "filtered_std": 0.0034134387969970703,
+    "edge_samples": {
+      "61": 2.9965875148773193,
+      "62": 3.0033504962921143,
+      "63": 2.9942281246185303,
+      "64": 8.005773544311523,
+      "65": 7.996651649475098,
+      "66": 8.00341510772705
+    }
+  },
+  "grid_diagnosis": {
+    "FP16": {
+      "phase_2x2": [
+        [
+          -0.0019264670554548502,
+          0.07655062526464462
+        ],
+        [
+          -0.0022907541133463383,
+          0.07660318911075592
+        ],
+        [
+          -0.0018655543681234121,
+          0.07650371640920639
+        ],
+        [
+          -0.0022404086776077747,
+          0.0765727236866951
+        ]
+      ],
+      "phase_range": [
+        0.00042519974522292614,
+        9.947270154953003e-05
+      ]
+    },
+    "FP32": {
+      "phase_2x2": [
+        [
+          -0.0019530663266777992,
+          0.07674970477819443
+        ],
+        [
+          -0.002317033475264907,
+          0.07680097222328186
+        ],
+        [
+          -0.0018934640102088451,
+          0.07670184969902039
+        ],
+        [
+          -0.002267699921503663,
+          0.07676967233419418
+        ]
+      ],
+      "phase_range": [
+        0.00042356946505606174,
+        9.912252426147461e-05
+      ]
+    },
+    "difference": {
+      "mean": 0.0012558121234178543,
+      "max": 0.10292255878448486
+    }
+  },
+  "user_grid_validation": {
+    "raw": {
+      "background_high_frequency_rms": 0.006727877538651228
+    },
+    "clean": {
+      "background_high_frequency_rms": 0.0032199632842093706
+    },
+    "silhouette_iou": 0.9999872434335574,
+    "high_frequency_reduction": 0.5213998373616513
+  },
+  "source_commit": "b152ff1cad1af8c185ee7b141997c48ff3334c87",
+  "cat_sha256": "105bfd914a5990a696b71817d42950a7cde219645fa04c77d553460e1367c042",
+  "precision": "FP16 on GPU; FP32 flow accumulation; optional FP32 model for CPU",
+  "package_version": 4,
+  "default_processing_long_edge": 512
+}

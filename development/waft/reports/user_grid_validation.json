@@ -1,0 +1,10 @@
+{
+  "raw": {
+    "background_high_frequency_rms": 0.006727877538651228
+  },
+  "clean": {
+    "background_high_frequency_rms": 0.0032199632842093706
+  },
+  "silhouette_iou": 0.9999872434335574,
+  "high_frequency_reduction": 0.5213998373616513
+}

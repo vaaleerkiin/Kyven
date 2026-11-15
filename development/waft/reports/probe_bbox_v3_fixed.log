@@ -1,0 +1,31 @@
+NukeX 16.0v4, 64 bit, built Jun 13 2025.
+Copyright (c) 2025 The Foundry Visionmongers Ltd.  All Rights Reserved.
+
+PROXY False
+BOUNDS Input1 1024 540 [0.0, 0.0, 1024.0, 540.0]
+BOUNDS SourceBounds 1024 540 [-1.0, -1.0, 1025.0, 541.0]
+BOUNDS WorkingResolution 512 270 [0.0, 0.0, 512.0, 270.0]
+BOUNDS Shuffle3 512 270 [0.0, 0.0, 512.0, 270.0]
+BOUNDS SourceResolution 1024 540 [0.0, 0.0, 1024.0, 540.0]
+BOUNDS ScaleVectorY 1024 540 [0.0, 0.0, 1024.0, 540.0]
+BOUNDS Remove1 1024 540 [0.0, 0.0, 1024.0, 540.0]
+BOUNDS NativeMotion 1024 540 [0.0, 0.0, 2048.0, 1556.0]
+BOUNDS Output1 1024 540 [0.0, 0.0, 1024.0, 540.0]
+[W TensorShape.cpp:3527] Warning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (function operator ())
+SAMPLE (5, 5) -0.060258738696575165
+SAMPLE (512, 270) 0.0005310531705617905
+SAMPLE (1018, 534) -0.0069342744536697865
+PROXY True
+BOUNDS Input1 1024 540 [0.0, 0.0, 1024.0, 540.0]
+BOUNDS SourceBounds 1024 540 [-1.0, -1.0, 1025.0, 541.0]
+BOUNDS WorkingResolution 512 270 [0.0, 0.0, 512.0, 270.0]
+BOUNDS Shuffle3 512 270 [0.0, 0.0, 512.0, 270.0]
+BOUNDS SourceResolution 1024 540 [0.0, 0.0, 1024.0, 540.0]
+BOUNDS ScaleVectorY 1024 540 [0.0, 0.0, 1024.0, 540.0]
+BOUNDS Remove1 1024 540 [0.0, 0.0, 1024.0, 540.0]
+BOUNDS NativeMotion 1024 540 [0.0, 0.0, 2048.0, 1556.0]
+BOUNDS Output1 1024 540 [0.0, 0.0, 1024.0, 540.0]
+SAMPLE (5, 5) -0.060258738696575165
+SAMPLE (512, 270) 0.0005310531705617905
+SAMPLE (1018, 534) -0.0069342744536697865
+REFORMAT_KNOBS type format box_width box_height box_fixed box_pixel_aspect scale resize center flip flop turn filter clamp black_outside pbb

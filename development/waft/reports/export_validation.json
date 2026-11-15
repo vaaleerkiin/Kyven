@@ -1,0 +1,22 @@
+{
+  "torch": "2.1.2+cu118",
+  "iterations": 5,
+  "strict_weights": true,
+  "resolution_checks": [
+    {
+      "size": [
+        128,
+        192
+      ],
+      "max_error": 4.3392181396484375e-05
+    },
+    {
+      "size": [
+        241,
+        353
+      ],
+      "max_error": 1.3828277587890625e-05
+    }
+  ],
+  "cuda": true
+}

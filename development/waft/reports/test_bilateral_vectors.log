@@ -1,0 +1,4 @@
+NukeX 16.0v4, 64 bit, built Jun 13 2025.
+Copyright (c) 2025 The Foundry Visionmongers Ltd.  All Rights Reserved.
+
+VECTOR_FILTER_PASSED {'raw_std': 0.04999995231628418, 'filtered_std': 0.0034134387969970703, 'edge_samples': {'61': 2.9965875148773193, '62': 3.0033504962921143, '63': 2.9942281246185303, '64': 8.005773544311523, '65': 7.996651649475098, '66': 8.00341510772705}}

@@ -1,0 +1,27 @@
+{
+  "precision": "FP16 weights/activations, FP32 flow",
+  "iterations": 5,
+  "attention": "scaled_dot_product_attention",
+  "checks": [
+    {
+      "shape": [
+        160,
+        240
+      ],
+      "mean_error": 0.0014583481242880225,
+      "max_error": 0.006893157958984375
+    },
+    {
+      "shape": [
+        288,
+        512
+      ],
+      "mean_error": 0.001696056337095797,
+      "max_error": 0.00920867919921875
+    }
+  ],
+  "gpu": "NVIDIA GeForce RTX 4070 Laptop GPU",
+  "weights_bytes": 130442141,
+  "seconds_per_pair_512x288": 0.14618719990054765,
+  "peak_allocated_mib": 433.7021484375
+}

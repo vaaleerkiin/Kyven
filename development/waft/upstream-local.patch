@@ -1,0 +1,33 @@
+diff --git a/model/__init__.py b/model/__init__.py
+index 3b542db..1b7b2e2 100644
+--- a/model/__init__.py
++++ b/model/__init__.py
+@@ -1,13 +1,12 @@
+ import os
+ import sys
+ from model.waft_a1 import ViTWarpV8
+-from model.waft_a2 import WAFTv2
+ 
+ def fetch_model(args):
+     if args.algorithm == 'waft-a1':
+         model = ViTWarpV8(args)
+     elif args.algorithm == 'waft-a2':
+-        model = WAFTv2(args)
++                model = WAFTv2(args)
+     else:
+         raise ValueError("Unknown algorithm: {}".format(args.algorithm))
+     return model
+\ No newline at end of file
+diff --git a/thirdparty/DepthAnythingV2/depth_anything_v2/dpt.py b/thirdparty/DepthAnythingV2/depth_anything_v2/dpt.py
+index f12705e..3795035 100644
+--- a/thirdparty/DepthAnythingV2/depth_anything_v2/dpt.py
++++ b/thirdparty/DepthAnythingV2/depth_anything_v2/dpt.py
+@@ -143,7 +143,7 @@ class DPTHead(nn.Module):
+         path_2 = self.scratch.refinenet2(path_3, layer_2_rn, size=layer_1_rn.shape[2:])
+         path_1 = self.scratch.refinenet1(path_2, layer_1_rn)
+         out = self.scratch.output_conv1(path_1)
+-        out = F.interpolate(out, (int(patch_h * 14), int(patch_w * 14)), mode="bilinear", align_corners=True)
++        out = F.interpolate(out, (patch_h * 14, patch_w * 14), mode="bilinear", align_corners=True)
+         if return_intermediate:
+             return out, path_1, path_2, path_3, path_4
+         else:

@@ -1,0 +1,17 @@
+{
+  "project": [
+    3840,
+    2160
+  ],
+  "source": [
+    1920,
+    1080
+  ],
+  "seconds": 6.673082199878991,
+  "smart_samples": {
+    "smartvector_f01_v01.n_u": 32.06867599487305,
+    "smartvector_f01_v01.n_v": -20.064414978027344,
+    "smartvector_f01_v01.p_u": -32.134098052978516,
+    "smartvector_f01_v01.p_v": 20.201839447021484
+  }
+}

@@ -45,6 +45,7 @@ _confidence_revisions: dict[str, int] = {}
 _correction_sync_nodes: set[str] = set()
 _roi_sync_nodes: set[str] = set()
 _PROCESS_CONTROL_NAMES = (
+    "live_mode",
     "process_frame",
     "process_range",
     "propagate_backward",
@@ -595,6 +596,16 @@ def _set_operation_controls(node: Any, busy: bool) -> None:
     cancel = knobs.get("cancel")
     if cancel is not None and hasattr(cancel, "setEnabled"):
         cancel.setEnabled(busy)
+
+
+
+def _disable_live_for_manual_process(node: Any) -> None:
+    """Manual processing takes ownership; Live requires an explicit later opt-in."""
+    if "live_mode" in node.knobs():
+        knob = node["live_mode"]
+        knob.setValue(False)
+        if hasattr(knob, "setEnabled"):
+            knob.setEnabled(False)
 
 
 def _begin_node_operation(node: Any) -> bool:
@@ -1618,6 +1629,8 @@ def process_current_frame(node: Any | None = None, live: bool = False) -> None:
     writer["file"].setValue(_nuke_file_path(source_path))
     if not _begin_node_operation(node):
         return
+    if not live:
+        _disable_live_for_manual_process(node)
     node_name = str(node.fullName())
     with _range_cancel_lock:
         _range_cancellations.discard(node_name)
@@ -1668,6 +1681,7 @@ def process_frame_range() -> None:
     writer["file"].setValue(_nuke_file_path(source_pattern))
     if not _begin_node_operation(node):
         return
+    _disable_live_for_manual_process(node)
     total = last - first + 1
     node_name = node.fullName()
     with _range_cancel_lock:
@@ -2065,6 +2079,7 @@ def propagate_video(direction: str) -> None:
     writer["file"].setValue(_nuke_file_path(source_pattern))
     if not _begin_node_operation(node):
         return
+    _disable_live_for_manual_process(node)
     total = last - first + 1
     node_name = node.fullName()
     with _range_cancel_lock:

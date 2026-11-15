@@ -3,8 +3,22 @@
 [Documentation home](README.md) · [Install](INSTALLATION.md) · [Segment](SEGMENT.md) ·
 [Refine](REFINE.md) · [Inpaint](INPAINT.md) · [DLSS](DLSS.md)
 
-Kyven treats model implementations and model sizes as selectable providers. A node stores a
+Kyven's server-backed tools treat model implementations and model sizes as selectable providers. A server-backed node stores a
 stable `model_id`, not a hard-coded Python class or checkpoint path.
+
+## Embedded WAFT models
+
+Standalone [WAFT SmartVector](WAFT.md) uses files in `plugins/Cattery/WAFT/`,
+outside the server model catalog: `WAFT.cat` (GPU FP16, about 124 MiB) and
+`WAFT_FP32.cat` (FP32/CPU, about 244 MiB). Both are embedded in the complete local
+plugin package and must travel with its gizmo. Model Manager does not install or
+remove them. A source-only Git checkout omits these binaries; see
+[recovery](../development/waft/README_RU.md).
+
+Use Processing Resolution 512 as the starting setting. Lower working resolution
+reduces memory needs; CPU selects FP32 and is slower. Standalone WAFT has its own
+Nuke memory usage and does not inherit the server's GPU queue or 4 GB guarantee.
+The preserved source/model license is BSD-3-Clause; see the plugin's `LICENSE-WAFT.txt`.
 
 ## Segment catalog
 

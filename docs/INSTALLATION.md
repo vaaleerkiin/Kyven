@@ -36,6 +36,23 @@ nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 Replace `D:/Kyven` with the actual repository location. Kyven discovers its root from that plugin
 path; setting `KYVEN_ROOT` is normally unnecessary. Restart Nuke after editing `init.py`.
 
+## Standalone WAFT SmartVector
+
+The complete local/release package includes `plugins/Cattery/WAFT/` with both
+`WAFT.cat` and `WAFT_FP32.cat`. The same `hosts/nuke` plugin path above registers
+WAFT; restart Nuke 16 and choose **Kyven > WAFT SmartVector**. It uses native Nuke
+Inference without Kyven Server, a separate Python environment or a Model Manager download.
+
+A source-only Git checkout excludes model binaries. Obtain the complete WAFT
+package from the person distributing your Kyven bundle, or follow the
+[from-source recovery guide](../development/waft/README_RU.md) to build both models.
+The standard Kyven installer does not download WAFT models.
+
+For standalone Cattery installation, copy the complete `plugins/Cattery/WAFT/`
+folder into `.nuke/Cattery/`, preserving `cat.json` directly inside `WAFT/`.
+For deployment, ship the complete plugin folder with its models and license;
+`development/` is unnecessary. See [WAFT setup and workflow](WAFT.md).
+
 ## What is created
 
 | Path | Contents |

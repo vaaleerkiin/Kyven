@@ -21,7 +21,7 @@ class AdapterNode(Node):
         super().__init__()
         self.values = {name: Knob(value) for name, value in {
             "kyven_kind": kind, "range_first": 1001, "range_last": 1003,
-            "first_frame": 1001, "last_frame": 1003,
+            "first_frame": 1001, "last_frame": 1003, "live_mode": True,
             "input_cache_scope": "Frame Range", "kyven_status": "", "kyven_live_frame": 0,
         }.items()}
         self.source = SimpleNamespace(width=lambda: 2, height=lambda: 2)
@@ -334,3 +334,17 @@ def test_first_process_range_orders_missing_exports_before_worker_and_repeat_is_
     nuke.execute.assert_not_called()
     assert all((path.stat().st_mtime_ns, path.read_bytes()) == before
                for path, before in complete.items())
+
+
+@pytest.mark.parametrize("current", [False, True])
+def test_manual_processing_disables_live_and_completion_does_not_reenable_live_mode(adapter_context, current):
+    node, _nuke, starts, process, _root = adapter_context
+    node["live_mode"].setValue(True)
+    process(current=current)
+    assert starts.call_count == 1
+    assert node["live_mode"].value() is False
+    assert node["live_mode"].enabled is False
+    # Completion/error/cancel restores control availability without checking Live again.
+    segment._set_operation_controls(node, False)
+    assert node["live_mode"].enabled is True
+    assert node["live_mode"].value() is False

@@ -1,0 +1,170 @@
+NukeX 16.0v4, 64 bit, built Jun 13 2025.
+Copyright (c) 2025 The Foundry Visionmongers Ltd.  All Rights Reserved.
+
+ROOT 3840 2160
+FORMAT Read1 Read 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT WAFT1 WAFT 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Input1 Input 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Dot10 Dot 240 160 <Info object at 0x0000021EFDB52E50>
+[21:56.56] ERROR: WAFT1.Assert1: The input stream is missing rgb
+FORMAT Assert1 Assert 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Colorspace1 Colorspace 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT SourceBounds Crop 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT WorkingResolution Reformat 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Dot9 Dot 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Dot4 Dot 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Dot6 Dot 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Dot7 Dot 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT TimeOffset2 TimeOffset 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Dot8 Dot 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Shuffle12 Shuffle2 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Inference2 Inference 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Dot5 Dot 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Dot1 Dot 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Dot2 Dot 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT TimeOffset1 TimeOffset 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Dot3 Dot 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Shuffle1 Shuffle2 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Inference1 Inference 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Shuffle3 Shuffle2 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Grade8 Grade 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Grade9 Grade 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT SourceResolution Reformat 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT ScaleVectorX Multiply 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT ScaleVectorY Multiply 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Shuffle2 Shuffle2 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Remove1 Remove 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT NativeMotion VectorToMotion 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT MotionOnly Remove 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT OutputMode Switch 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Switch1 Switch 240 160 <Info object at 0x0000021EFDB52E50>
+FORMAT Output1 Output 240 160 <Info object at 0x0000021EFDB52E50>
+KNOBS Reformat
+type Enumeration_Knob 'to format'
+format Format_Knob <Format object at 0x0000021EFDB50690>
+to Obsolete_Knob None
+full_format Obsolete_Knob None
+proxy_format Obsolete_Knob None
+box_width Array_Knob 200.0
+box_height Array_Knob 200.0
+box_fixed Boolean_Knob False
+box_pixel_aspect Array_Knob 1.0
+scale Array_Knob 1.0
+width Obsolete_Knob None
+height Obsolete_Knob None
+fixed Obsolete_Knob None
+to_format Obsolete_Knob None
+to_box Obsolete_Knob None
+to_scale Obsolete_Knob None
+resize Enumeration_Knob 'width'
+center Boolean_Knob True
+flip Boolean_Knob False
+flop Boolean_Knob False
+turn Boolean_Knob False
+filter Enumeration_Knob 'cubic'
+clamp Boolean_Knob False
+black_outside Boolean_Knob False
+clip Obsolete_Knob None
+crop Obsolete_Knob None
+pbb Boolean_Knob False
+name String_Knob 'Reformat1'
+onDestroy PythonKnob ''
+updateUI PythonKnob ''
+autolabel PythonKnob ''
+panel Obsolete_Knob None
+tile_color ColorChip_Knob 0
+gl_color ColorChip_Knob 0
+label Multiline_Eval_String_Knob ''
+note_font Font_Knob ''
+note_font_size Array_Knob 11.0
+note_font_color ColorChip_Knob 0
+selected Boolean_Knob False
+xpos Array_Knob -2147483648.0
+ypos Array_Knob 0.0
+icon File_Knob ''
+indicators Array_Knob 0.0
+hide_input Boolean_Knob False
+rootNodeUpdated EvalString_Knob ''
+cached Boolean_Knob False
+disable Disable_Knob False
+dope_sheet Boolean_Knob False
+bookmark Boolean_Knob False
+postage_stamp Boolean_Knob False
+postage_stamp_frame Array_Knob 1.0
+lifetimeStart Array_Knob 0.0
+lifetimeEnd Array_Knob 0.0
+useLifetime Boolean_Knob False
+KNOBS Crop
+preset Enumeration_Knob 'format'
+reset Script_Knob ''
+box BBox_Knob (0.0, 0.0, 0.0, 0.0)
+softness WH_Knob 0.0
+reformat Boolean_Knob False
+reposition Obsolete_Knob None
+intersect Boolean_Knob False
+crop Boolean_Knob True
+name String_Knob 'Crop1'
+onDestroy PythonKnob ''
+updateUI PythonKnob ''
+autolabel PythonKnob ''
+panel Obsolete_Knob None
+tile_color ColorChip_Knob 0
+gl_color ColorChip_Knob 0
+label Multiline_Eval_String_Knob ''
+note_font Font_Knob ''
+note_font_size Array_Knob 11.0
+note_font_color ColorChip_Knob 0
+selected Boolean_Knob False
+xpos Array_Knob -2147483648.0
+ypos Array_Knob 0.0
+icon File_Knob ''
+indicators Array_Knob 0.0
+hide_input Boolean_Knob False
+rootNodeUpdated EvalString_Knob ''
+cached Boolean_Knob False
+disable Disable_Knob False
+dope_sheet Boolean_Knob False
+bookmark Boolean_Knob False
+postage_stamp Boolean_Knob False
+postage_stamp_frame Array_Knob 1.0
+lifetimeStart Array_Knob 0.0
+lifetimeEnd Array_Knob 0.0
+useLifetime Boolean_Knob False
+KNOBS Inference
+gpuName Text_Knob 'Not available'
+useGPUIfAvailable Boolean_Knob True
+modelFile File_Knob ''
+channelsIn Text_Knob 'None'
+channelsOut Text_Knob 'None'
+tileSize Enumeration_Knob 'None'
+tileOverlap Array_Knob 64.0
+halfPrecision Boolean_Knob False
+isFirstTime Boolean_Knob True
+serialiseKnob InferenceCustomKnob 0.0
+name String_Knob 'Inference1'
+onDestroy PythonKnob ''
+updateUI PythonKnob ''
+autolabel PythonKnob ''
+panel Obsolete_Knob None
+tile_color ColorChip_Knob 0
+gl_color ColorChip_Knob 0
+label Multiline_Eval_String_Knob ''
+note_font Font_Knob ''
+note_font_size Array_Knob 11.0
+note_font_color ColorChip_Knob 0
+selected Boolean_Knob False
+xpos Array_Knob -2147483648.0
+ypos Array_Knob 0.0
+icon File_Knob ''
+indicators Array_Knob 0.0
+hide_input Boolean_Knob False
+rootNodeUpdated EvalString_Knob ''
+cached Boolean_Knob False
+disable Disable_Knob False
+dope_sheet Boolean_Knob False
+bookmark Boolean_Knob False
+postage_stamp Boolean_Knob False
+postage_stamp_frame Array_Knob 1.0
+lifetimeStart Array_Knob 0.0
+lifetimeEnd Array_Knob 0.0
+useLifetime Boolean_Knob False

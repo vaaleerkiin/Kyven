@@ -5,6 +5,11 @@
 
 This guide covers behavior shared by the four Kyven Nuke nodes. Each node also has a dedicated guide with its inputs, controls, processing, output and cache behavior.
 
+**WAFT SmartVector** is an additional standalone Cattery plugin. Its native Nuke
+Inference graph, embedded models and output controls are covered in [WAFT](WAFT.md).
+The server, Process/Cache buttons and shared cache contract below apply to the
+four server-backed nodes; render WAFT with ordinary Nuke Write nodes.
+
 The owner-requested [optional DLSS node](DLSS.md) adds local RTX reconstruction with external
 motion and alpha guides. Its live/temporal and EXR-cache behavior is documented separately.
 
@@ -16,6 +21,7 @@ motion and alpha guides. Its live/temporal and EXR-cache behavior is documented 
 | Turn a coarse mask/trimap into soft alpha | **Kyven Refine** | [Refine](REFINE.md) |
 | Remove an object and rebuild background | **Kyven Inpaint** | [Inpaint](INPAINT.md) |
 | Apply optional RTX neural reconstruction | **Kyven DLSS** | [DLSS](DLSS.md) |
+| Generate motion or smart vectors from a sequence | **WAFT SmartVector** | [WAFT](WAFT.md) |
 
 Typical roto graph:
 
@@ -58,6 +64,7 @@ Nodes > Kyven > Segment
 Nodes > Kyven > Refine
 Nodes > Kyven > Inpaint
 Nodes > Kyven > DLSS (Optional RTX)
+Nodes > Kyven > WAFT SmartVector
 ```
 
 After updating the repository, restart Nuke and upgrade old Groups when required:
@@ -229,3 +236,9 @@ survive cancellation. Existing nodes get controls through the normal node upgrad
 ### Hover help
 
 Hover over Kyven controls for plain-English explanations of their purpose, adjustment direction, and relevant dependencies. Segment, Refine, Inpaint and DLSS include help for processing, output, input caching, and model-specific settings. New nodes receive help automatically; use the corresponding Upgrade Selected Node menu action for existing nodes, or reopen the script to run node repair. Help is local and does not load inference models or use GPU memory.
+
+Manual Process Current Frame, Process Frame Range and Segment tracking switch Live Current Frame
+off before preparing inputs or submitting work. The Live checkbox is disabled while an operation
+is active. Completion, cancellation and errors unlock the checkbox without enabling Live again;
+artists explicitly opt in when they want live updates. A Live-triggered operation keeps its Live
+setting, while the checkbox is disabled until that operation finishes.

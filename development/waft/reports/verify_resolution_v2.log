@@ -1,0 +1,16 @@
+NukeX 16.0v4, 64 bit, built Jun 13 2025.
+Copyright (c) 2025 The Foundry Visionmongers Ltd.  All Rights Reserved.
+
+FORMAT_PASS 0 (512, 288) output 1920 1080
+FORMAT_PASS 1 (768, 432) output 1920 1080
+FORMAT_PASS 2 (1024, 576) output 1920 1080
+FORMAT_PASS 3 (1920, 1080) output 1920 1080
+[W TensorShape.cpp:3527] Warning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (function operator ())
+
+Writing D:/waft/build/test_v2_1080_smart.exr took 6.67 seconds
+Total render time: 6.67 seconds
+.9SCALED_VECTORS_PASS {'smartvector_f01_v01.n_u': 32.06867599487305, 'smartvector_f01_v01.n_v': -20.064414978027344, 'smartvector_f01_v01.p_u': -32.134098052978516, 'smartvector_f01_v01.p_v': 20.201839447021484}
+
+Writing D:/waft/build/test_v2_1080_motion.exr took 0.57 seconds
+Total render time: 0.57 seconds
+RESOLUTION_V2_PASSED {'project': [3840, 2160], 'source': [1920, 1080], 'seconds': 6.673082199878991, 'smart_samples': {'smartvector_f01_v01.n_u': 32.06867599487305, 'smartvector_f01_v01.n_v': -20.064414978027344, 'smartvector_f01_v01.p_u': -32.134098052978516, 'smartvector_f01_v01.p_v': 20.201839447021484}}

@@ -9,6 +9,7 @@ restarting when you need to report a reproducible failure.
 ## Symptom index
 
 - [Installer fails](#portable-installer-fails)
+- [WAFT is missing or fails](#waft-is-missing-or-fails)
 - [Server does not become ready](#server-does-not-become-ready)
 - [Refine fails or returns the coarse mask](#refine-fails-or-returns-the-coarse-mask-unchanged)
 - [Trimap is missing or incorrect](#trimap-output-is-missing-or-shows-only-the-input-mask)
@@ -17,6 +18,25 @@ restarting when you need to report a reproducible failure.
 - [Mask contains black holes](#the-mask-contains-small-black-holes)
 - [Read or cache is wrong](#read-or-cache-problems)
 - [Inpaint has a rectangular color shift](#inpaint-result-has-a-rectangular-color-shift)
+
+## WAFT is missing or fails
+
+- Use Nuke 16 and restart after connecting `Kyven/hosts/nuke`. Look for
+  **Kyven > WAFT SmartVector** or Tab > WAFT.
+- Check that `plugins/Cattery/WAFT/` contains `cat.json`, `WAFT.gizmo`,
+  `cattery_waft.py`, `WAFT.cat` and `WAFT_FP32.cat`. A source-only Git clone
+  excludes models; install a complete plugin bundle or follow the
+  [rebuild guide](../development/waft/README_RU.md). Kyven's installer and Model
+  Manager do not restore WAFT models.
+- For Cattery discovery, the standalone path must be `.nuke/Cattery/WAFT/cat.json`,
+  with no extra nested `WAFT/Cattery` level. Avoid keeping multiple WAFT installs
+  on Nuke's plugin path.
+- For memory errors, reduce Processing Resolution to 512, close other GPU tasks,
+  or turn off GPU to use the embedded FP32 model. CPU rendering can be slow.
+- Recreate WAFT after updating its gizmo; existing nodes retain their internal
+  graph. Write **all** channels to EXR if vectors disappear after caching.
+- Restarting Kyven Server does not repair WAFT: it runs inside Nuke's Inference
+  graph. See [WAFT controls and limitations](WAFT.md).
 
 ## Portable installer fails
 

@@ -1,0 +1,30 @@
+{
+  "motion": {
+    "channels": [
+      "forward.u",
+      "forward.v",
+      "backward.u",
+      "backward.v"
+    ],
+    "samples": {
+      "forward.u": 4.0130767822265625,
+      "forward.v": -3.003371477127075,
+      "backward.u": -3.98494815826416,
+      "backward.v": 2.9778099060058594
+    }
+  },
+  "smart": {
+    "channels": [
+      "smartvector_f01_v01.n_u",
+      "smartvector_f01_v01.n_v",
+      "smartvector_f01_v01.p_u",
+      "smartvector_f01_v01.p_v"
+    ],
+    "samples": {
+      "smartvector_f01_v01.n_u": 4.0526652336120605,
+      "smartvector_f01_v01.n_v": -2.9934802055358887,
+      "smartvector_f01_v01.p_u": -3.97153639793396,
+      "smartvector_f01_v01.p_v": 3.025315999984741
+    }
+  }
+}

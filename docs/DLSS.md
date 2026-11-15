@@ -52,6 +52,10 @@ Version to choose the output location. A blank folder reports an error and write
 | 2 | Depth | Optional guide; default `depth.Z`, runtime assumes inverted depth |
 | 3 | Mask | Artist alpha guide; used when Mask Alpha Input is Mask Input |
 
+Kyven also bundles [WAFT SmartVector](WAFT.md) as an independent motion-vector
+generator. Its output is separate from DLSS processing; check the current-to-previous
+direction, channel mapping and units required by DLSS before using an external field.
+
 ## Quick start
 
 1. Install the runtime in Model Manager and create **DLSS (Optional RTX)**. Connect Source.

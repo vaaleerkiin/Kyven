@@ -23,6 +23,7 @@ from kyven_nuke.node import (
     _clamp_bbox_knob,
     _create_group_at_cursor,
     _defer_ui_action,
+    _disable_live_for_manual_process,
     _disconnect_cached_matte,
     _ensure_artist_cache_fields,
     _ensure_cache_version_control,
@@ -620,6 +621,8 @@ def process_current_frame_for_node(
         if not live:
             _set_status(node_name, f"{display_name} is already processing this node.")
         return
+    if not live:
+        _disable_live_for_manual_process(node)
     with _export_cancel_lock:
         _export_cancellations.discard(node_name)
     _set_status(node.fullName(), "Exporting inpaint inputs...")
@@ -743,6 +746,7 @@ def process_frame_range_for_node(
     if not _begin_node_operation(node):
         _set_status(node_name, f"{display_name} is already processing this node.")
         return
+    _disable_live_for_manual_process(node)
     with _export_cancel_lock:
         _export_cancellations.discard(node_name)
     _start_progress(node_name, f"Kyven {display_name}", f"Exporting frames {first}-{last}")

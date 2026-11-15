@@ -15,4 +15,10 @@ build/
 *.pth
 *.onnx
 *.safetensors
+# Embedded local WAFT models ship with the plugin bundle, outside Git history.
+*.cat
+# WAFT development sources are kept; generated environments and artifacts are not.
+/development/waft/checkpoints/
+/development/waft/backups/
+/development/waft/*.zip
 src/kyven/resources/dlss/windows_x64/nvngx_dlssnr.dll

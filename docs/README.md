@@ -15,7 +15,8 @@ do; you do not need to read every guide in order.
    - [Segment](SEGMENT.md) for point prompts, roto, correction frames, and SAM 2 tracking;
    - [Refine](REFINE.md) for trimaps, soft alpha, hair, and edge refinement;
    - [Inpaint](INPAINT.md) for object removal and clean-up;
-   - [DLSS](DLSS.md) for optional RTX neural reconstruction and temporal setup.
+   - [DLSS](DLSS.md) for optional RTX neural reconstruction and temporal setup;
+   - [WAFT SmartVector](WAFT.md) for standalone optical flow with embedded models.
 4. Use [Troubleshooting](TROUBLESHOOTING.md) when the server, CUDA, a model, ROI, cache, or Read
    behaves unexpectedly.
 
@@ -37,6 +38,9 @@ Move to heavier models only when the shot demonstrates a quality limitation.
 4. [Instructions for coding agents](../CODEX.md) contains repository constraints and the definition
    of done.
 5. [ADR 0001](adr/0001-selectable-model-catalog.md) records the selectable model-catalog decision.
+6. [WAFT development recovery](../development/waft/README_RU.md) covers source provenance,
+   environment recreation, model export, testing and standalone packaging;
+   [ADR 0008](adr/0008-standalone-waft.md) records its independent native Nuke runtime.
 
 `OWNER_NOTES_RU.md` is an owner-maintained product note, not an end-user manual.
 
@@ -50,6 +54,8 @@ Move to heavier models only when the shot demonstrates a quality limitation.
 | [Refine](REFINE.md) | Roto artist | Trimaps, ViTMatte/MEMatte, tiling, outputs |
 | [Inpaint](INPAINT.md) | Paint artist | Models, ROI, masks, blending, quality modes |
 | [DLSS (optional RTX)](DLSS.md) | Artist / TD | Local runtime, external vectors, alpha guides, live and temporal behavior |
+| [WAFT SmartVector](WAFT.md) | Artist / TD | Embedded optical-flow models, motion/smart outputs, portable Cattery folder |
+| [WAFT development recovery](../development/waft/README_RU.md) | Developer | Recreate dependencies, checkpoints and model builds from lightweight sources |
 | [DLSS temporal research](DLSS_TEMPORAL.md) | Artist / TD | Native vector tools, finite history buffer, rejection and measured limits |
 | [Models](MODELS.md) | Artist / TD | VRAM, model trade-offs, downloads, licenses |
 | [Troubleshooting](TROUBLESHOOTING.md) | Everyone | Symptoms, checks, logs, recovery |
@@ -66,6 +72,7 @@ Move to heavier models only when the shot demonstrates a quality limitation.
 | Use SAM uncertainty in Refine | Segment `Trimap` output | Disable Refine `Generate Trimap from Mask` |
 | Remove an object quickly | Inpaint + Auto ROI + LaMa ONNX | Switch to Big-LaMa Native when texture detail is insufficient |
 | Reconstruct a shot on a supported RTX system | DLSS with Source | Add external Motion vectors for temporal stability |
+| Generate motion or smart vectors | WAFT SmartVector with Source sequence | Choose output mode; write all channels to EXR |
 | Hand cache to another artist | Open `<Cache Folder>/<Name>/<Version>/` | Read `<Name>_<Version>.%04d.png` for Segment, Refine or Inpaint; DLSS uses `.exr` |
 
 ## Documentation conventions

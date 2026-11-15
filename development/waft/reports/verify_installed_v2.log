@@ -1,0 +1,16 @@
+NukeX 16.0v4, 64 bit, built Jun 13 2025.
+Copyright (c) 2025 The Foundry Visionmongers Ltd.  All Rights Reserved.
+
+GRAPH {'OutputMode': ['MotionOnly', 'Remove1'], 'NativeMotion': ['Remove1'], 'Switch1': ['OutputMode', 'Assert1', 'Input1']}
+OUTPUT motion ['forward.u', 'forward.v', 'backward.u', 'backward.v']
+[W TensorShape.cpp:3527] Warning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (function operator ())
+
+Writing D:/waft/build/test_motion.exr took 6.27 seconds
+Total render time: 6.27 seconds
+.9SAMPLES motion {'forward.u': 4.014645576477051, 'forward.v': -3.0050621032714844, 'backward.u': -3.9841489791870117, 'backward.v': 2.9805233478546143}
+OUTPUT smart ['smartvector_f01_v01.n_u', 'smartvector_f01_v01.n_v', 'smartvector_f01_v01.p_u', 'smartvector_f01_v01.p_v']
+
+Writing D:/waft/build/test_smart.exr took 0.30 seconds
+Total render time: 0.30 seconds
+SAMPLES smart {'smartvector_f01_v01.n_u': 4.058844566345215, 'smartvector_f01_v01.n_v': -2.9934298992156982, 'smartvector_f01_v01.p_u': -3.9751687049865723, 'smartvector_f01_v01.p_v': 3.0246593952178955}
+NATIVE_NUKE_RENDER_PASSED

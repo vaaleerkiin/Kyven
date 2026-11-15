@@ -21,6 +21,9 @@ class Knob:
     def setValue(self, value):
         self.current = value
 
+    def setEnabled(self, value):
+        self.enabled = value
+
 
 class Node:
     def __init__(self):

@@ -1,0 +1,10 @@
+{
+  "precision": "FP16",
+  "working_size": [
+    512,
+    288
+  ],
+  "seconds_per_pair": 0.09112285999581218,
+  "peak_allocated_mib": 295.6259765625,
+  "model_bytes": 130442141
+}
