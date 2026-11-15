@@ -49,6 +49,7 @@ Move to heavier models only when the shot demonstrates a quality limitation.
 | [Refine](REFINE.md) | Roto artist | Trimaps, ViTMatte/MEMatte, tiling, outputs |
 | [Inpaint](INPAINT.md) | Paint artist | Models, ROI, masks, blending, quality modes |
 | [DLSS (optional RTX)](DLSS.md) | Artist / TD | Local runtime, external vectors, alpha guides, live and temporal behavior |
+| [DLSS temporal research](DLSS_TEMPORAL.md) | Artist / TD | Native vector tools, finite history buffer, rejection and measured limits |
 | [Models](MODELS.md) | Artist / TD | VRAM, model trade-offs, downloads, licenses |
 | [Troubleshooting](TROUBLESHOOTING.md) | Everyone | Symptoms, checks, logs, recovery |
 | [Server API](SERVER.md) | TD / developer | Endpoints, payload fields, queue and cache behavior |

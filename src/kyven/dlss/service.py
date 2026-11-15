@@ -13,9 +13,10 @@ import numpy as np
 from kyven.cache_manifest import read_valid_manifest, write_manifest_atomic
 from kyven.cancellation import CancellationToken
 from kyven.dlss.color import prepare, restore_residual
+from kyven.dlss.history import TemporalBuffer, TemporalFrame
 from kyven.dlss.images import channel, read_channels, resize, write_exr
 from kyven.dlss.models import DlssRequest
-from kyven.dlss.temporal import difference, reproject, stabilize
+from kyven.dlss.temporal import difference, reproject
 from kyven.errors import ErrorCode, KyvenError
 from kyven.hashing import cached_file_sha256
 from kyven.segment.providers.registry import ProviderRegistry
@@ -31,19 +32,22 @@ class _History:
     configuration: str
     frame: int
     key: str
-    source: np.ndarray
-    residual: np.ndarray
-    mask: np.ndarray
     provider: Any
     generation: int
 
 
 class DlssService:
-    """Called only by the single GPU queue; retains at most one reduced-frame history."""
+    """Single GPU queue; one bounded shot/session buffer, with no future-frame requests."""
 
     def __init__(self, registry: ProviderRegistry) -> None:
         self.registry = registry
         self._history: _History | None = None
+        self._buffer = TemporalBuffer()
+
+    def clear_history(self) -> None:
+        """Release retained CPU frames on the serialized queue when unloading DLSS."""
+        self._history = None
+        self._buffer.clear()
 
     def run(self, request: DlssRequest,
             cancellation: CancellationToken | None = None) -> dict[str, Any]:
@@ -51,7 +55,7 @@ class DlssService:
         try:
             return self._run(request, token)
         except Exception:
-            self._history = None
+            self.clear_history()
             # A failed/cancelled output must never leave a partially advanced GPU history.
             if "dlss-external" in self.registry.loaded_ids:
                 self.registry.unload("dlss-external")
@@ -107,25 +111,40 @@ class DlssService:
         full_mask = np.clip(full_mask, 0, 1)
         mask = resize(full_mask, size)
         depth = resize(guide(request.depth, request.depth_channel), size) if request.depth else None
-        motion = None
+        motion = forward = None
         if request.motion is not None:
             vectors = read_channels(request.motion)
-            mx, my = channel(vectors, request.motion_x), channel(vectors, request.motion_y)
-            if mx.shape != (height, width) or my.shape != (height, width):
-                raise KyvenError(ErrorCode.INVALID_REQUEST, "External vectors must match Source dimensions.")
-            motion = resize(np.stack((mx, my), axis=-1), size)
             sx = size[0] if request.motion_units == "uv" else size[0] / width
             sy = size[1] if request.motion_units == "uv" else size[1] / height
-            motion[..., 0] *= sx * request.motion_scale_x
-            motion[..., 1] *= sy * request.motion_scale_y * (-1 if request.motion_y_up else 1)
-            if np.abs(motion).max() > 65504:
-                raise KyvenError(ErrorCode.INVALID_REQUEST, "Motion vectors exceed float16 range.")
+
+            def motion_field(x: str, y: str) -> np.ndarray:
+                mx, my = channel(vectors, x), channel(vectors, y)
+                if mx.shape != (height, width) or my.shape != (height, width):
+                    raise KyvenError(ErrorCode.INVALID_REQUEST, "External vectors must match Source dimensions.")
+                field = resize(np.stack((mx, my), axis=-1), size)
+                field[..., 0] *= sx * request.motion_scale_x
+                field[..., 1] *= sy * request.motion_scale_y * (-1 if request.motion_y_up else 1)
+                if np.abs(field).max() > 65504:
+                    raise KyvenError(ErrorCode.INVALID_REQUEST, "Motion vectors exceed float16 range.")
+                return field
+
+            motion = motion_field(request.motion_x, request.motion_y)
+            if request.temporal and request.motion_consistency:
+                forward = motion_field(request.forward_x, request.forward_y)
+        budget = request.history_budget_mb * 1024**2
+        frame_bytes = (source.nbytes * 2 + mask.nbytes + (motion.nbytes if motion is not None else 0)
+                       + (forward.nbytes if forward is not None else 0)
+                       + (depth.nbytes if depth is not None else 0))
+        if request.temporal and frame_bytes > budget:
+            raise KyvenError(
+                ErrorCode.INVALID_REQUEST, "One DLSS history frame exceeds the CPU history budget.",
+                suggested_action="Lower Processing Size or increase History Budget in Advanced.")
         if not request.hdr_rolloff and np.abs(small).max() > 65504:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Source exceeds DLSS float16 range.")
         small[..., :3], inverse_gain = prepare(source, enabled=request.hdr_rolloff,
                                               knee=request.rolloff_knee)
         provider = self.registry.activate("dlss-external")
-        config = digest({"version": 4, "settings": request.settings(), "runtime": runtime,
+        config = digest({"version": 5, "settings": request.settings(), "runtime": runtime,
                          "size": size, "source_size": (width, height),
                          "has_motion": motion is not None, "has_depth": depth is not None})
         history = self._history
@@ -143,13 +162,15 @@ class DlssService:
                 elif request.frame != history.frame + 1:
                     reason = "nonconsecutive_frame"
                 else:
-                    warped, valid = reproject(history.source, motion)
+                    warped, valid = reproject(self._buffer.frames[-1].source, motion, token)
                     error = difference(source, warped)
                     # A large invalid area or a photometric discontinuity denotes a cut.
                     if valid.mean() < 0.1 or np.median(error[valid]) > request.scene_cut:
                         reason = "scene_cut"
                     else:
                         continuous, reason = True, "continuous"
+        if not continuous:
+            self._buffer.clear()
         key = digest({"configuration": config, "inputs": hashes, "frame": request.frame,
                       "predecessor": history.key if continuous else None})
         # Temporal cache hits must replay inference to reconstruct private DLSS state.
@@ -159,6 +180,7 @@ class DlssService:
             if (cached is not None and cached.get("metadata", {}).get("output_sha256")
                     == cached_file_sha256(request.output)):
                 self._history = None
+                self._buffer.clear()
                 return {"output": str(request.output), "cache_key": key,
                         "metadata": {**cached["metadata"], "cache_hit": True}}
         token.raise_if_cancelled()
@@ -172,11 +194,20 @@ class DlssService:
             raise KyvenError(ErrorCode.INFERENCE_FAILED, "DLSS returned invalid pixels.")
         token.raise_if_cancelled()
         token.report_progress(0.8, "Rejecting unstable history and publishing EXR")
-        residual = restore_residual(predicted[..., :3], small[..., :3], inverse_gain)
+        raw_residual = restore_residual(predicted[..., :3], small[..., :3], inverse_gain)
+        if not np.isfinite(raw_residual).all():
+            raise KyvenError(ErrorCode.INFERENCE_FAILED, "DLSS produced a nonfinite scene-linear correction.")
+        residual = raw_residual
+        accumulation = {"temporal_samples_used": 0, "temporal_reused_fraction": 0.0,
+                        "temporal_mean_weight": 0.0}
         if continuous and request.temporal_strength > 0:
-            residual = stabilize(residual, history.residual, history.source, source,
-                                 mask, history.mask, motion, request.temporal_strength,
-                                 request.rejection)
+            residual, accumulation = self._buffer.accumulate(
+                raw_residual, source, mask, motion, strength=request.temporal_strength,
+                rejection=request.rejection, clamp=request.history_clamp,
+                depth=depth, depth_rejection=request.depth_rejection,
+                consistency=request.motion_consistency,
+                consistency_threshold=request.consistency_threshold * max(size[0] / width, size[1] / height),
+                cancellation=token)
         correction = resize(residual, (width, height))
         if request.protect_outside and request.mask_source != "none":
             # Soft weights already condition NR itself. Do not apply them twice;
@@ -196,6 +227,14 @@ class DlssService:
         metadata["guide_convention"] = "artist_white_allows; native_rgba_white_allows"
         metadata["hdr_rolloff"] = "anchored_peak_shoulder_v1" if request.hdr_rolloff else "off"
         metadata["rolloff_knee"] = request.rolloff_knee
+        metadata.update(accumulation)
+        if request.temporal:
+            self._buffer.append(TemporalFrame(source, raw_residual, mask, motion, forward, depth),
+                                request.history_frames, budget)
+        metadata["history_capacity"] = min(request.history_frames, budget // frame_bytes) if request.temporal else 0
+        metadata["history_cpu_bytes"] = self._buffer.nbytes
+        metadata["history_frames_buffered"] = len(self._buffer.frames)
+        metadata["motion_consistency"] = request.temporal and request.motion_consistency
         token.raise_if_cancelled()
         try:
             write_exr(request.output, result)
@@ -205,7 +244,7 @@ class DlssService:
         except OSError as exc:
             raise KyvenError(ErrorCode.OUTPUT_FAILED, "Could not publish the DLSS cache.",
                              technical_detail=str(exc)) from exc
-        self._history = _History(config, request.frame, key, source, residual.copy(), mask,
+        self._history = _History(config, request.frame, key,
                                  provider, getattr(provider, "generation", 0)) if request.temporal else None
         token.report_progress(1.0, "DLSS complete")
         return {"output": str(request.output), "cache_key": key, "metadata": metadata}

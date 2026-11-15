@@ -38,6 +38,14 @@ class DlssRequest:
     style: int = 0
     preset: int = 0
     temporal_strength: float = 0.35
+    history_frames: int = 3
+    history_budget_mb: int = 512
+    history_clamp: float = 2.0
+    motion_consistency: bool = False
+    forward_x: str = "forward.u"
+    forward_y: str = "forward.v"
+    consistency_threshold: float = 1.5
+    depth_rejection: float = 0.1
     rejection: float = 0.1
     scene_cut: float = 0.45
     protect_outside: bool = True
@@ -57,14 +65,14 @@ class DlssRequest:
             if path is None and name in {"source", "output", "worker"}:
                 invalid(f"DLSS {name} is required.")
         for name in ("mask_source", "motion_units", "session", "motion_x", "motion_y",
-                     "mask_channel", "depth_channel"):
+                     "mask_channel", "depth_channel", "forward_x", "forward_y"):
             if not isinstance(getattr(self, name), str):
                 invalid(f"DLSS {name} must be text.")
-        for name in ("frame", "style", "preset", "max_dimension"):
+        for name in ("frame", "style", "preset", "max_dimension", "history_frames", "history_budget_mb"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int):
                 invalid(f"DLSS {name} must be an integer.")
-        for name in ("temporal", "reset", "motion_y_up", "protect_outside", "hdr_rolloff"):
+        for name in ("temporal", "reset", "motion_y_up", "protect_outside", "hdr_rolloff", "motion_consistency"):
             if not isinstance(getattr(self, name), bool):
                 invalid(f"DLSS {name} must be a boolean.")
         inputs = (self.source, self.worker, self.motion, self.mask, self.depth)
@@ -86,12 +94,16 @@ class DlssRequest:
             invalid("DLSS frame is outside the supported range.")
         if not 64 <= self.max_dimension <= 8192:
             invalid("DLSS processing limit must be between 64 and 8192 pixels.")
+        if not 1 <= self.history_frames <= 4 or not 64 <= self.history_budget_mb <= 1024:
+            invalid("DLSS history requires 1–4 previous frames and a 64–1024 MiB CPU budget.")
         ranges = {
             "intensity": (0, 2), "local_tone": (0, 2), "local_structure": (0, 2),
             "skin_structure": (-1, 2), "temporal_strength": (0, 0.95),
             "rejection": (0.001, 10), "scene_cut": (0.01, 10), "timeout": (1, 600),
             "motion_scale_x": (-100000, 100000), "motion_scale_y": (-100000, 100000),
             "rolloff_knee": (0.01, 0.95),
+            "history_clamp": (0, 10), "consistency_threshold": (0.01, 100),
+            "depth_rejection": (0.001, 10),
         }
         for name, (low, high) in ranges.items():
             value = getattr(self, name)
@@ -100,7 +112,7 @@ class DlssRequest:
                 invalid(f"DLSS {name} must be finite and between {low} and {high}.")
         if self.style not in range(3) or self.preset not in range(4):
             invalid("Invalid DLSS style or preset.")
-        for name in ("motion_x", "motion_y", "mask_channel", "depth_channel"):
+        for name in ("motion_x", "motion_y", "mask_channel", "depth_channel", "forward_x", "forward_y"):
             if not getattr(self, name):
                 invalid(f"DLSS {name} cannot be empty.")
 
@@ -114,12 +126,12 @@ class DlssRequest:
             for name in ("source", "output", "worker", "motion", "mask", "depth"):
                 if name in values and values[name] is not None:
                     values[name] = Path(values[name])
-            for name in ("frame", "style", "preset", "max_dimension"):
+            for name in ("frame", "style", "preset", "max_dimension", "history_frames", "history_budget_mb"):
                 if name in values:
                     if isinstance(values[name], bool) or int(values[name]) != values[name]:
                         raise ValueError(f"{name} must be an integer")
                     values[name] = int(values[name])
-            for name in ("temporal", "reset", "motion_y_up", "protect_outside", "hdr_rolloff"):
+            for name in ("temporal", "reset", "motion_y_up", "protect_outside", "hdr_rolloff", "motion_consistency"):
                 if name in values and not isinstance(values[name], bool):
                     raise ValueError(f"{name} must be a boolean")
             request = cls(**values)

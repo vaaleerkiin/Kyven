@@ -756,7 +756,7 @@ class JobManager:
                         self._release_fingerprint(record)
         if self._dlss_service is not None:
             # Unload behind active work after cooperative cancellation has finished.
-            self._executor.submit(self._dlss_service.registry.unload_all)
+            self._executor.submit(self._unload_dlss)
             self._executor.shutdown(wait=False, cancel_futures=False)
         else:
             self._executor.shutdown(wait=False, cancel_futures=True)
@@ -764,9 +764,24 @@ class JobManager:
     def unload_all(self, registry: ProviderRegistry) -> None:
         """Queue unloading behind active inference to avoid model races."""
 
-        self._executor.submit(registry.unload_all).result(timeout=120)
+        def unload() -> None:
+            if self._dlss_service is not None:
+                self._dlss_service.clear_history()
+            registry.unload_all()
+
+        self._executor.submit(unload).result(timeout=120)
 
     def unload_provider(self, registry: ProviderRegistry, provider_id: str) -> None:
         """Queue one provider unload behind active inference to avoid model races."""
 
-        self._executor.submit(registry.unload, provider_id).result(timeout=120)
+        def unload() -> None:
+            if provider_id == "dlss-external" and self._dlss_service is not None:
+                self._dlss_service.clear_history()
+            registry.unload(provider_id)
+
+        self._executor.submit(unload).result(timeout=120)
+
+    def _unload_dlss(self) -> None:
+        if self._dlss_service is not None:
+            self._dlss_service.clear_history()
+            self._dlss_service.registry.unload_all()

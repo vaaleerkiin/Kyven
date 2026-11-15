@@ -296,6 +296,9 @@ def test_live_renders_once_after_a_single_edit_without_further_ui_events(graph, 
     ("motion_scale_x", 2), ("motion_scale_y", 2), ("depth_channel", "R"),
     ("cache_version", "v002"), ("reset_epoch", 1),
     ("hdr_rolloff", False), ("rolloff_knee", 0.7), ("mask_source", "Source Alpha"),
+    ("history_frames", "4"), ("history_budget_mb", 256), ("history_clamp", 1),
+    ("motion_consistency", True), ("forward_x", "B"), ("forward_y", "A"),
+    ("consistency_threshold", 2), ("depth_rejection", 0.2),
 ])
 def test_live_replaces_active_work_after_processing_edit(graph, live_clock, name, value):
     nuke, group = graph
@@ -394,6 +397,21 @@ def test_mask_channel_is_always_alpha_even_for_older_saved_nodes(graph, monkeypa
     restyle_dlss_node(group, upgrade=True)
     assert group["mask_channel"].value() == "A"
     assert not group["mask_channel"].visible
+
+
+def test_nuke_vector_button_maps_channels_without_creating_a_generator(graph):
+    nuke, group = graph
+    nuke.auto_notify = True
+    nuke.callback_node = group
+    before = dict(group.children)
+    dlss_node.use_nuke_vectors()
+    assert group["motion_x"].value() == "backward.u"
+    assert group["motion_y"].value() == "backward.v"
+    assert group["forward_x"].value() == "forward.u"
+    assert group["forward_y"].value() == "forward.v"
+    assert group["motion_units"].value() == "Pixels"
+    assert group["motion_y_up"].value()
+    assert group.children == before
 
 
 def test_export_last_plus_one_context_does_not_cancel_or_restart_live(graph, monkeypatch):
@@ -591,9 +609,10 @@ def test_live_scan_uses_root_even_when_node_graph_is_inside_group(graph):
     assert state.active
 
 
+@pytest.mark.parametrize("bridge_discards_result", [False, True])
 @pytest.mark.parametrize("render_context_advance", [False, True])
 def test_source_to_live_result_survives_nuke_export_and_read_notifications(
-        graph, tmp_path, monkeypatch, render_context_advance):
+        graph, tmp_path, monkeypatch, render_context_advance, bridge_discards_result):
     pytest.importorskip("OpenEXR")
     import numpy as np
 
@@ -607,6 +626,10 @@ def test_source_to_live_result_survives_nuke_export_and_read_notifications(
     from kyven.server.jobs import JobManager
 
     nuke, group = graph
+    if bridge_discards_result:
+        def bridge(function):
+            nuke.executeInMainThread(function)
+        monkeypatch.setattr(nuke, "executeInMainThreadWithResult", bridge)
     worker = tmp_path / "synthetic-worker.exe"
     worker.write_bytes(b"fixture; not executed")
     monkeypatch.setattr(dlss_node, "resolve_worker", lambda *args: worker)
@@ -785,13 +808,58 @@ def test_accepted_result_and_manifest_are_published_to_artist_cache(graph, tmp_p
     identity = dlss_node._identity(group)
     dlss_node._operations[identity] = cancellation
     pattern = str(tmp_path / "dlss_v001.%04d.exr")
-    job = {"result": {"output": str(staging), "metadata": {"history_reason": "continuous"}}}
+    signature = dlss_node._signature(group)
+    job = {"result": {"output": str(staging), "metadata": {
+        "history_reason": "continuous", "temporal_samples_used": 3, "history_capacity": 3,
+        "temporal_reused_fraction": 0.66, "temporal_mean_weight": 0.17}}}
     assert dlss_node._publish(group.fullName(), job, pattern, 1, identity, "manual", False,
                               cancellation)
     assert (tmp_path / "dlss_v001.0001.exr").read_bytes() == b"finished pixels"
     assert (tmp_path / "_kyven_work/manifests/dlss_v001.0001.exr.kyven.json").is_file()
     assert not staging.exists()
     assert group.children["KyvenDlssResultSwitch"]["which"].value() == 1
+    assert "3/3 previous frames used" in group["history_status"].value()
+    assert "reuse 66%" in group["history_status"].value()
+    assert dlss_node._signature(group) == signature
+
+
+def test_main_thread_callback_error_survives_nuke_discarding_return(graph, monkeypatch):
+    nuke, _ = graph
+    def bridge(function):
+        function()
+    monkeypatch.setattr(nuke, "executeInMainThreadWithResult", bridge)
+    def export_failure():
+        raise RuntimeError("Could not export source at frame 42: missing input file")
+    with pytest.raises(RuntimeError, match="source at frame 42: missing input file"):
+        dlss_node._main_thread_result(export_failure)
+
+
+def test_missing_vectors_rejected_before_background_job(graph, monkeypatch):
+    _, group = graph
+    monkeypatch.setattr(dlss_node, "resolve_worker", lambda *args: Path(sys.executable))
+    group["temporal"].setValue(True)
+    dlss_node.process_current_frame(group)
+    assert not group["kyven_busy"].value()
+    assert "Motion" in group["kyven_status"].value()
+
+
+def test_failed_export_keeps_real_error_and_removes_partial_staging(graph, monkeypatch):
+    nuke, group = graph
+    monkeypatch.setattr(dlss_node, "_operation_node", lambda name: group)
+    public = dlss_node._public_pattern(group)
+    public_file = Path(str(public) % 1)
+    public_file.parent.mkdir(parents=True, exist_ok=True)
+    public_file.write_bytes(b"previous completed result")
+    def failing_render(writer, first, last):
+        Path(writer["file"].value()).write_bytes(b"partial export")
+        raise RuntimeError("upstream Read cannot open frame")
+    nuke.execute = failing_render
+    settings = {"temporal": False, "mask_source": "none"}
+    with pytest.raises(RuntimeError, match="Could not export source at frame 1: upstream Read"):
+        dlss_node._main_thread_result(dlss_node._export,
+                                     group.fullName(), 1, "failed-export", settings, False)
+    assert not (public.parent / "_kyven_work/requests/failed-export").exists()
+    assert public_file.read_bytes() == b"previous completed result"
 
 
 def test_old_operation_cannot_publish_or_finish_after_script_reload(graph, tmp_path, monkeypatch):

@@ -7,7 +7,7 @@ from typing import Any
 from kyven_nuke.branding import add_node_branding
 from kyven_nuke.node import _add_knob, _add_section, _nuke
 
-INTERFACE_VERSION = 6
+INTERFACE_VERSION = 8
 PROCESSING_SCALES = ["1", "0.5", "0.25", "0.125"]
 
 
@@ -30,10 +30,10 @@ def restyle_dlss_node(node: Any, *, upgrade: bool = False) -> None:
         ensure("Int_Knob", "dlss_ui_version", "Interface Version", INTERFACE_VERSION).setVisible(False)
         ensure("Text_Knob", "kyven_title", "",
                '<font size="5" color="#dce9f2"><b>KYVEN / DLSS</b></font><br>'
-               '<font color="#91a3b0">Neural Reconstruction | External Motion | API 35</font>')
+               '<font color="#91a3b0">Neural Reconstruction | External Motion | API 36</font>')
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / DLSS</b></font><br>'
-            '<font color="#91a3b0">Neural Reconstruction | External Motion | API 35</font>')
+            '<font color="#91a3b0">Neural Reconstruction | External Motion | API 36</font>')
         ensure("Enumeration_Knob", "model", "Model", "Kyven DLSS Neural Reconstruction",
                choices=["Kyven DLSS Neural Reconstruction"])
         ensure("PyScript_Knob", "refresh_models", "Refresh Models").setCommand(
@@ -51,6 +51,22 @@ def restyle_dlss_node(node: Any, *, upgrade: bool = False) -> None:
         node["max_dimension"].setVisible(False)
         ensure("Boolean_Knob", "hdr_rolloff", "HDR Rolloff", True)
         ensure("Double_Knob", "rolloff_knee", "Rolloff Knee", 0.5).setRange(0.01, 0.95)
+        ensure("Enumeration_Knob", "history_frames", "History Buffer", "3",
+               choices=["1", "2", "3", "4"]).setTooltip(
+                   "Previous raw correction frames, excluding the current frame. "
+                   "External vectors align them; the CPU memory budget can reduce the effective count.")
+        ensure("Int_Knob", "history_budget_mb", "History Budget (MiB)", 512).setRange(64, 1024)
+        ensure("Text_Knob", "history_status", "History", "No temporal result yet.")
+        ensure("Double_Knob", "history_clamp", "History Clamp", 2.0).setRange(0, 10)
+        node["history_clamp"].setTooltip("Limit old corrections relative to the current correction. 0 disables clamping.")
+        ensure("Boolean_Knob", "motion_consistency", "Check Forward / Backward", False).setTooltip(
+            "Requires forward channels from the external vector generator, on the same Motion input.")
+        ensure("String_Knob", "forward_x", "Forward X Channel", "forward.u")
+        ensure("String_Knob", "forward_y", "Forward Y Channel", "forward.v")
+        ensure("Double_Knob", "consistency_threshold", "Vector Error (Source px)", 1.5).setRange(0.01, 100)
+        ensure("Double_Knob", "depth_rejection", "Depth Rejection", 0.1).setRange(0.001, 10)
+        ensure("PyScript_Knob", "use_nuke_vectors", "Use Nuke Backward Channels").setCommand(
+            "kyven_nuke.dlss_node.use_nuke_vectors()")
         node["hdr_rolloff"].setTooltip(
             "Compress highlights and lift negative RGB for inference, then restore "
             "the neural change to the original scene-linear range. Alpha is untouched.")
@@ -61,7 +77,11 @@ def restyle_dlss_node(node: Any, *, upgrade: bool = False) -> None:
         node["mask_help"].setValue(
             "White: allow DLSS changes. Black: preserve Source. Grey: soft neural guide.<br>"
             "Source Alpha or Mask Input guides DLSS inference; output alpha is preserved.")
-        ensure("Text_Knob", "advanced_help", "", "Current-to-previous vectors from your external generator.")
+        ensure("Text_Knob", "advanced_help", "")
+        node["advanced_help"].setValue(
+            "Generate vectors upstream: VectorGenerator or SmartVector > VectorToMotion.<br>"
+            "Backward channels: current to previous. Forward channels: current to next, for validation.<br>"
+            "Vectors must match Source dimensions; use data/raw channels.")
         ensure("PyScript_Knob", "create_result_read", "Create Result Read").setCommand(
             "kyven_nuke.dlss_node.create_result_read()")
         ensure("PyScript_Knob", "new_cache_version", "New Cache Version").setCommand(
@@ -119,16 +139,18 @@ def restyle_dlss_node(node: Any, *, upgrade: bool = False) -> None:
             "refresh_models", "open_model_manager", "model_help",
             "reconstruction_section", "hdr_rolloff", "intensity", "local_tone", "local_structure", "style", "preset",
             "mask_section", "mask_source", "mask_channel", "protect_outside", "mask_help",
-            "temporal_section", "temporal", "temporal_strength",
+            "temporal_section", "temporal", "history_frames", "temporal_strength", "history_status",
             "processing_section", "live_mode", "process_frame", "cancel", "first_frame", "last_frame",
             "process_range", "reset_history", "output_section", "output_mode", "output_help",
             "cache_section", "cache_root", "dlss_name", "cache_version", "load_cache",
             "create_result_read", "new_cache_version", "cache_help",
             "status_section", "kyven_status", "start_server_control", "stop_server_control",
         ]
-        advanced = ["dlss_advanced", "motion_section", "advanced_help", "motion_x", "motion_y",
+        advanced = ["dlss_advanced", "motion_section", "advanced_help", "use_nuke_vectors", "motion_x", "motion_y",
                     "motion_units", "motion_y_up", "motion_scale_x", "motion_scale_y",
-                    "advanced_section", "rolloff_knee", "depth_channel", "skin_structure", "rejection", "scene_cut", "live_delay"]
+                    "motion_consistency", "forward_x", "forward_y", "consistency_threshold",
+                    "advanced_section", "history_budget_mb", "history_clamp", "depth_rejection",
+                    "rolloff_knee", "depth_channel", "skin_structure", "rejection", "scene_cut", "live_delay"]
         add_node_branding(node, nuke)
         names = list(node.knobs())
         tail = [node[name] for name in names[names.index("kyven") + 1:]]

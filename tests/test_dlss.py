@@ -182,6 +182,77 @@ def test_temporal_stability_reduces_flicker_and_replays_cached_frames(shot):
     assert third["metadata"]["history_reason"] == "nonconsecutive_frame"
 
 
+def test_service_keeps_finite_raw_history_and_drops_it_on_gaps_and_errors(shot):
+    request, _, provider, service = shot
+    request = replace(request, temporal=True, history_frames=3)
+    for frame in range(1, 6):
+        provider.delta = 0.2 if frame % 2 else -0.2
+        result = service.run(replace(request, frame=frame))
+        assert result["metadata"]["history_frames_buffered"] == min(frame, 3)
+        assert result["metadata"]["history_cpu_bytes"] <= request.history_budget_mb * 1024**2
+    assert result["metadata"]["temporal_samples_used"] == 3
+    # Retained samples are raw +/-0.2, never the accumulated output.
+    for sample in service._buffer.frames:
+        np.testing.assert_allclose(np.abs(sample.residual), 0.2, atol=1e-7)
+    result = service.run(replace(request, frame=8))
+    assert result["metadata"]["history_reason"] == "nonconsecutive_frame"
+    assert result["metadata"]["history_frames_buffered"] == 1
+    request.motion.write_bytes(b"invalid external motion")
+    with pytest.raises(KyvenError):
+        service.run(replace(request, frame=9))
+    assert not service._buffer.frames
+
+
+def test_forward_vectors_share_explicit_units_and_y_orientation(shot):
+    request, source, _, service = shot
+    vectors = np.ones_like(source)
+    vectors[..., 0], vectors[..., 1] = -2, 3
+    vectors[..., 2], vectors[..., 3] = 2, -3
+    write_exr(request.motion, vectors)
+    service.run(replace(request, temporal=True, motion_consistency=True,
+                        forward_x="B", forward_y="A"))
+    sample = service._buffer.frames[-1]
+    np.testing.assert_allclose(sample.motion[..., 0], -2)
+    np.testing.assert_allclose(sample.motion[..., 1], -3)
+    np.testing.assert_allclose(sample.forward[..., 0], 2)
+    np.testing.assert_allclose(sample.forward[..., 1], 3)
+
+
+def test_missing_forward_channels_fail_explicitly_when_consistency_is_enabled(shot):
+    request, _, provider, service = shot
+    with pytest.raises(KyvenError, match="forward.u"):
+        service.run(replace(request, temporal=True, motion_consistency=True))
+    assert not provider.calls
+
+
+@pytest.mark.parametrize("all_providers", [False, True])
+def test_provider_unload_releases_retained_cpu_history(shot, all_providers):
+    request, _, provider, service = shot
+    service.run(replace(request, temporal=True))
+    assert service._buffer.nbytes > 0
+    manager = JobManager(SegmentService(service.registry), dlss_service=service)
+    try:
+        if all_providers:
+            manager.unload_all(service.registry)
+        else:
+            manager.unload_provider(service.registry, "dlss-external")
+        assert service._buffer.nbytes == 0
+        assert service._history is None
+        assert provider.unloaded
+    finally:
+        manager.shutdown()
+
+
+def test_temporal_memory_budget_rejects_one_oversized_frame_before_inference(shot):
+    request, _, provider, service = shot
+    source = np.full((1400, 1400, 4), 0.2, np.float32)
+    write_exr(request.source, source)
+    write_exr(request.motion, np.zeros_like(source))
+    with pytest.raises(KyvenError, match="CPU history budget"):
+        service.run(replace(request, temporal=True, max_dimension=1400, history_budget_mb=64))
+    assert not provider.calls
+
+
 @pytest.mark.parametrize("change,reason", [
     ({"frame": 3}, "nonconsecutive_frame"),
     ({"frame": 0}, "nonconsecutive_frame"),
@@ -311,6 +382,9 @@ def test_reprojection_rejects_disocclusion_and_changed_masks():
     {"intensity": float("nan")}, {"rejection": 0}, {"timeout": 0},
     {"max_dimension": 0}, {"motion_units": "forward"}, {"style": 8},
     {"rolloff_knee": 0}, {"rolloff_knee": float("nan")}, {"hdr_rolloff": "yes"},
+    {"history_frames": 0}, {"history_frames": 5}, {"history_budget_mb": 32},
+    {"history_clamp": -1}, {"motion_consistency": "true"}, {"consistency_threshold": 0},
+    {"depth_rejection": 0},
     {"output": Path("relative.exr")},
 ])
 def test_invalid_requests_are_structured_errors(shot, change):
@@ -359,7 +433,7 @@ def test_authenticated_dlss_endpoint_uses_existing_job_queue_and_durable_cache(s
     payload = {"source": str(request.source), "output": str(request.output),
                "worker": str(request.worker), "mask_source": "source_alpha"}
     try:
-        assert client.health()["api_version"] == 35
+        assert client.health()["api_version"] == 36
         with pytest.raises(KyvenClientError):
             KyvenClient(client.base_url, "y" * 32).submit_dlss(payload)
         with pytest.raises(KyvenClientError):
@@ -433,7 +507,9 @@ def transport(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(module, "subprocess", SimpleNamespace(Popen=launch, PIPE=subprocess.PIPE,
         DEVNULL=subprocess.DEVNULL, CREATE_NO_WINDOW=0))
-    request = DlssRequest(tmp_path / "s.exr", tmp_path / "o.exr", Path(sys.executable), timeout=1)
+    # Leave room for Windows process startup/antivirus scanning. The timeout case
+    # below uses an explicit short deadline; normal framing/reset tests should not race it.
+    request = DlssRequest(tmp_path / "s.exr", tmp_path / "o.exr", Path(sys.executable), timeout=5)
     provider = ExternalDlssProvider()
     provider.capabilities = replace(provider.capabilities, supports_control_mask=True)
     monkeypatch.setattr(provider, "_check_runtime", lambda request: None)
@@ -464,6 +540,8 @@ def test_real_pipe_transport_sends_float_mask_vectors_and_temporal_reset(transpo
 def test_transport_failure_or_timeout_kills_child_and_returns_structured_error(transport, failure):
     provider, request, mode, _, processes = transport
     mode[0] = failure
+    if failure == "hang_setup":
+        request = replace(request, timeout=1)
     with pytest.raises(KyvenError) as error:
         provider.predict(request, np.ones((2, 3, 4)), None, None, None,
                          True, CancellationToken())

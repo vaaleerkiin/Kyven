@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 
+from kyven.cancellation import CancellationToken
 
-def reproject(previous: np.ndarray, motion: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+
+def reproject(previous: np.ndarray, motion: np.ndarray,
+              cancellation: CancellationToken | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Backward gather: motion is current -> previous, in top-down pixel coordinates.
 
     Work in 64-row strips so temporary gather buffers do not scale with frame height.
@@ -16,6 +19,8 @@ def reproject(previous: np.ndarray, motion: np.ndarray) -> tuple[np.ndarray, np.
     valid = np.empty((height, width), dtype=bool)
     columns = np.arange(width, dtype=np.float32)[None, :]
     for start in range(0, height, 64):
+        if cancellation is not None:
+            cancellation.raise_if_cancelled()
         end = min(height, start + 64)
         x = columns + motion[start:end, :, 0]
         y = np.arange(start, end, dtype=np.float32)[:, None] + motion[start:end, :, 1]

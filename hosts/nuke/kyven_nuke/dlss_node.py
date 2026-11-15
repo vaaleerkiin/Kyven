@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import threading
 import time
 import uuid
@@ -50,6 +51,7 @@ _operations: dict[str, threading.Event] = {}
 _mutations: dict[str, int] = {}
 _live_timers: dict[str, threading.Timer] = {}
 _polling: set[str] = set()
+_logger = logging.getLogger(__name__)
 _SETTINGS = (
     "worker", "temporal", "mask_source", "mask_channel", "motion_x", "motion_y",
     "motion_units", "motion_y_up", "motion_scale_x", "motion_scale_y", "depth_channel",
@@ -57,9 +59,39 @@ _SETTINGS = (
     "temporal_strength", "rejection", "scene_cut", "protect_outside", "max_dimension",
     "reset_epoch", "cache_root", "dlss_name", "cache_version", "processing_scale",
     "hdr_rolloff", "rolloff_knee",
+    "history_frames", "history_budget_mb", "history_clamp", "depth_rejection",
+    "motion_consistency", "forward_x", "forward_y", "consistency_threshold",
 )
 _LIVE_SETTINGS = tuple(name for name in _SETTINGS
                        if name not in {"worker", "max_dimension", "mask_channel"})
+
+
+def _main_thread_result(function: Any, *args: Any) -> Any:
+    """Carry results/errors ourselves: Nuke can return None after a callback exception."""
+    outcome: dict[str, Any] = {}
+
+    def invoke() -> None:
+        try:
+            outcome["value"] = function(*args)
+        except Exception as exc:
+            outcome["error"] = f"{function.__name__}: {exc}"
+            _logger.exception("DLSS main-thread callback failed: %s", function.__name__)
+
+    _nuke().executeInMainThreadWithResult(invoke)
+    if "error" in outcome:
+        raise RuntimeError(outcome["error"])
+    if "value" not in outcome:
+        raise RuntimeError(f"Nuke did not execute the DLSS {function.__name__} callback.")
+    return outcome["value"]
+
+
+def _validate_inputs(node: Any, settings: dict[str, Any]) -> None:
+    if node.input(0) is None:
+        raise RuntimeError("Connect Source to Kyven DLSS.")
+    if settings["temporal"] and node.input(1) is None:
+        raise RuntimeError("Temporal requires external backward vectors on Motion. Connect them or disable Temporal.")
+    if settings["mask_source"] == "input" and node.input(3) is None:
+        raise RuntimeError("Connect the alpha/control guide to Mask (input 3).")
 
 
 def _schedule_live(node: Any, delay: float = 0.1) -> None:
@@ -241,6 +273,22 @@ def reset_history() -> None:
     _set_status(str(node.fullName()), "History reset. Process this frame or enable Live.")
 
 
+@_suppress_node_callbacks
+def _set_nuke_vector_channels(node: Any) -> None:
+    for name, value in {"motion_x": "backward.u", "motion_y": "backward.v",
+                        "forward_x": "forward.u", "forward_y": "forward.v",
+                        "motion_units": "Pixels", "motion_y_up": True,
+                        "motion_scale_x": 1.0, "motion_scale_y": 1.0}.items():
+        node[name].setValue(value)
+
+
+def use_nuke_vectors() -> None:
+    """Explicit channel mapping only; never create an optical-flow node."""
+    node = _nuke().thisNode()
+    _set_nuke_vector_channels(node)
+    poll_live(node)
+
+
 def _public_pattern(node: Any) -> Path:
     return _dlss_cache_root(node) / (
         f"{_artist_cache_name(node)}_{str(node['cache_version'].value()).strip()}.%04d.exr"
@@ -276,6 +324,8 @@ def _request_settings(node: Any) -> dict[str, Any]:
     source.forceValidate()
     payload["max_dimension"] = max(64, min(8192, round(
         max(source.width(), source.height()) * float(node["processing_scale"].value()))))
+    payload["history_frames"] = int(node["history_frames"].value())
+    payload["history_budget_mb"] = int(node["history_budget_mb"].value())
     payload["session"] = str(node["kyven_uuid"].value()) + ":" + str(node["reset_epoch"].value())
     return payload
 
@@ -288,27 +338,29 @@ def _export(node_name: str, frame: int, request_id: str,
     node = _operation_node(node_name)
     if node is None:
         raise RuntimeError("DLSS node was deleted.")
-    if node.input(0) is None:
-        raise RuntimeError("Connect Source to Kyven DLSS.")
-    if settings["temporal"] and node.input(1) is None:
-        raise RuntimeError("Temporal mode requires external current-to-previous vectors on Motion.")
-    if settings["mask_source"] == "input" and node.input(3) is None:
-        raise RuntimeError("Connect the alpha/control guide to Mask (input 3).")
+    _validate_inputs(node, settings)
     root = _dlss_cache_root(node) / "_kyven_work" / "requests" / request_id
     root.mkdir(parents=True, exist_ok=True)
     payload = dict(settings, frame=frame, reset=reset,
                    output=str(root / f"result.{frame:04d}.exr"))
     _set_status(node_name, f"Exporting DLSS frame {frame}...")
-    for index, field in enumerate(("source", "motion", "depth", "mask")):
-        if node.input(index) is None:
-            continue
-        if field == "mask" and settings["mask_source"] != "input":
-            continue
-        writer = _inside(node, "KyvenDlss" + field.title() + "Write")
-        path = root / f"{field}.{frame:04d}.exr"
-        writer["file"].setValue(_nuke_file_path(path))
-        nuke.execute(writer, frame, frame)
-        payload[field] = str(path)
+    try:
+        for index, field in enumerate(("source", "motion", "depth", "mask")):
+            if node.input(index) is None:
+                continue
+            if field == "mask" and settings["mask_source"] != "input":
+                continue
+            writer = _inside(node, "KyvenDlss" + field.title() + "Write")
+            path = root / f"{field}.{frame:04d}.exr"
+            payload[field] = str(path)
+            writer["file"].setValue(_nuke_file_path(path))
+            try:
+                nuke.execute(writer, frame, frame)
+            except Exception as exc:
+                raise RuntimeError(f"Could not export {field} at frame {frame}: {exc}") from exc
+    except Exception:
+        _discard_request(payload)
+        raise
     # Do not inspect Nuke's private export context (often last_frame + 1).
     # The original frame/settings intent remains immutable throughout this job.
     return payload, str(_public_pattern(node)), signature
@@ -349,7 +401,16 @@ def _publish(node_name: str, job: dict[str, Any], pattern: str, frame: int,
     read["reload"].execute()
     _inside(node, "KyvenDlssResultSwitch")["which"].setValue(1)
     node["kyven_live_frame"].setValue(frame)
-    reason = job["result"]["metadata"].get("history_reason", "")
+    metadata = job["result"]["metadata"]
+    reason = metadata.get("history_reason", "")
+    if "history_status" in node.knobs():
+        samples = int(metadata.get("temporal_samples_used", 0))
+        capacity = int(metadata.get("history_capacity", 0))
+        reused = float(metadata.get("temporal_reused_fraction", 0))
+        weight = float(metadata.get("temporal_mean_weight", 0))
+        node["history_status"].setValue(
+            f"{samples}/{capacity} previous frames used | "
+            f"reuse {reused:.0%} | mean blend {weight:.0%} | {reason}")
     _set_status(str(node.fullName()), f"DLSS frame {frame} complete | {reason}")
     # Read.reload() above invalidates our result and its downstream consumers.
     # Clearing Nuke's global RAM cache also invalidates unrelated upstream graphs,
@@ -429,12 +490,14 @@ def _start(node: Any, frames: range, live: bool) -> None:
     try:
         _public_pattern(node)
         settings = _request_settings(node)
+        _validate_inputs(node, settings)
         if not Path(settings["worker"]).is_file():
             raise RuntimeError("Choose the local DLSS worker executable first.")
         if len(frames) > 100000:
             raise RuntimeError("DLSS range is limited to 100000 frames per job.")
     except (RuntimeError, ValueError) as exc:
-        _set_status(node_name, str(exc))
+        # No operation identity has been registered yet; use the supplied node.
+        node["kyven_status"].setValue(str(exc))
         return
     if not _begin_node_operation(node):
         return
@@ -461,9 +524,11 @@ def _start(node: Any, frames: range, live: bool) -> None:
             for index, frame in enumerate(frames):
                 if cancellation.is_set():
                     break
-                payload, pattern, signature = nuke.executeInMainThreadWithResult(
-                    _export, args=(node_name, frame, request_id, settings, not live and index == 0, signature)
-                )
+                exported = _main_thread_result(
+                    _export, node_name, frame, request_id, settings, not live and index == 0, signature)
+                if not isinstance(exported, tuple) or len(exported) != 3:
+                    raise RuntimeError("DLSS export returned no usable inputs. Check the Nuke Script Editor for an export error.")
+                payload, pattern, signature = exported
                 if cancellation.is_set():
                     _discard_request(payload)
                     break
@@ -473,8 +538,7 @@ def _start(node: Any, frames: range, live: bool) -> None:
                 last_stage = ""
                 while True:
                     if not live:
-                        cancelled = nuke.executeInMainThreadWithResult(
-                            _progress_cancelled, args=(node_name,))
+                        cancelled = _main_thread_result(_progress_cancelled, node_name)
                         if cancelled:
                             cancellation.cancel("user_cancelled")
                     if cancellation.is_set() and not cancel_sent:
@@ -504,9 +568,8 @@ def _start(node: Any, frames: range, live: bool) -> None:
                 if job["status"] != "succeeded":
                     _discard_request(payload)
                     raise RuntimeError(_job_error_text(job))
-                accepted = nuke.executeInMainThreadWithResult(
-                    _publish, args=(node_name, job, pattern, frame, identity, signature, live,
-                                     cancellation))
+                accepted = _main_thread_result(
+                    _publish, node_name, job, pattern, frame, identity, signature, live, cancellation)
                 _discard_request(payload)
                 if not accepted:
                     message = "Frame changed; waiting for the latest Live result." if live else "DLSS result was superseded."

@@ -111,9 +111,13 @@ shot, runtime, driver or GPU, or a 4 GB VRAM guarantee. RGBA guide storage adds 
 
 ## Temporal setup
 
+See [vectors, native tools and the finite frame buffer](DLSS_TEMPORAL.md) for the new controls,
+memory limits, qualification results and remaining real-motion work.
+
 1. Generate vectors externally and connect Motion.
 2. Select exact EXR channels in **Motion X/Y Channel**, for example `R/G` or
    `backward.u/backward.v`. No channel or direction is guessed.
+   **Use Nuke Backward Channels** applies the conventional Nuke mapping explicitly.
 3. At frame `t`, vectors must point from each current pixel to its position at `t-1`.
    A feature moving 5 px right needs X = -5. Negating forward flow does not generally produce
    correct backward flow; obtain the direction from your vector generator.
@@ -122,12 +126,16 @@ shot, runtime, driver or GPU, or a 4 GB VRAM guarantee. RGBA guide storage adds 
    up by 3 px needs current-to-previous Y = -3 in Nuke's convention.
 5. Enable **Temporal** and process **Frame Range** forward from a shot boundary.
 
-**Residual Stability** blends motion-aligned changes introduced by DLSS, without blending original
+**Temporal Stability** blends motion-aligned changes introduced by DLSS, without blending original
 RGB frames. Start at 0.35. Lower **History Rejection Threshold** rejects history more aggressively
 where Source disagrees with reprojected previous Source. Changed mask edges, off-screen vectors
 and photometric disocclusions reject history. **Scene Cut Threshold** resets on large photometric
 discontinuities. These checks cannot detect every occlusion; repeated textures or bad vectors can
 still cause artifacts.
+
+**History Buffer** defaults to three previous raw corrections, bounded by the CPU history budget.
+Optional forward/backward checks, depth rejection and a history clamp provide additional safeguards.
+The accumulated output is not recycled into the buffer, so history has a finite horizon.
 
 Scrubbing, reverse playback, gaps, repeated frames, settings/session changes, provider unload,
 cancellation and errors reset history. **Reset History** starts another history generation. A range
