@@ -10,6 +10,7 @@ import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -414,32 +415,24 @@ def test_nuke_vector_button_maps_channels_without_creating_a_generator(graph):
     assert group.children == before
 
 
-def test_export_last_plus_one_context_does_not_cancel_or_restart_live(graph, monkeypatch):
+def test_prepared_input_check_does_not_render_or_change_live_intent(graph, monkeypatch, tmp_path):
+    from kyven_nuke.input_cache import export_input
     nuke, group = graph
     nuke._frame = 400
     state, cancellation = _running_state(nuke, group)
     signature = state.active
-
+    monkeypatch.setattr(dlss_node, "_dlss_cache_root", lambda node: tmp_path)
+    writer = dlss_node._inside(group, "KyvenDlssSourceWrite")
+    path = tmp_path / "_kyven_work/inputs/source.0400.exr"
     def export(writer, first, last):
-        nuke._frame = last + 1
-        # Reentrant notifications inside the private render context are internal.
-        nuke.notify(group, "inputChange")
-        dlss_node.poll_live(group)
-
+        Path(writer["file"].value()).write_bytes(b"prepared pixels")
     monkeypatch.setattr(nuke, "execute", export, raising=False)
-    _, _, validated = nuke.executeInMainThreadWithResult(
-        dlss_node._export, (group.fullName(), 400, "context-check",
-                           {"temporal": False, "mask_source": "none"}, False, signature))
-    assert nuke.frame() == 400
+    export_input(nuke, group, writer, 400, path)
+    monkeypatch.setattr(nuke, "execute", lambda *args: pytest.fail("Process must not render inputs"))
+    _, _, validated = dlss_node._export(group.fullName(), 400, "check",
+                                      {"temporal": False, "mask_source": "none"}, False, signature)
     assert validated == signature
-    assert state.desired == signature
     assert not cancellation.is_set()
-    assert state.accepts(dlss_node._signature(group))
-    # A persistent UI change after export is still a new artist request.
-    nuke._frame = 402
-    dlss_node.poll_live(group)
-    assert cancellation.is_set()
-    assert state.desired == dlss_node._signature(group)
 
 
 def test_completed_live_result_stays_idle_through_redraw_and_timer_updates(
@@ -666,6 +659,10 @@ def test_source_to_live_result_survives_nuke_export_and_read_notifications(
         dlss_node.poll_live(group)
     nuke.execute = export
     try:
+        from kyven_nuke.input_cache import export_input
+        input_path = dlss_node._dlss_cache_root(group) / "_kyven_work/inputs/source.0001.exr"
+        export_input(nuke, group, dlss_node._inside(group, "KyvenDlssSourceWrite"), 1, input_path)
+        nuke._frame = 1
         dlss_node.process_current_frame(group, live=True)
         deadline = time.monotonic() + 5
         while group["kyven_busy"].value() and time.monotonic() < deadline:
@@ -710,13 +707,39 @@ def test_upstream_same_frame_edit_does_not_change_live_signature(graph):
     assert dlss_node._signature(group) == before
 
 
-def test_blank_cache_folder_has_an_automatic_isolated_cache(graph):
+def test_blank_cache_folder_is_required_and_never_uses_automatic_cache(graph, monkeypatch):
     _, group = graph
+    group["cache_root"].setValue(" ")
+    monkeypatch.setattr(dlss_node.config, "cache_dir", lambda: pytest.fail("No automatic cache allowed"))
+    with pytest.raises(RuntimeError, match="Choose Cache Folder"):
+        dlss_node._public_pattern(group)
+
+
+@pytest.mark.parametrize("action", ["current", "range", "live", "cache", "refresh"])
+def test_empty_cache_folder_blocks_every_dlss_entry_before_export_or_server(graph, monkeypatch, action):
+    from kyven_nuke import input_cache
+    nuke, group = graph
     group["cache_root"].setValue("")
-    path = dlss_node._public_pattern(group)
-    assert path.is_absolute()
-    assert group["kyven_uuid"].value() in path.parts
-    assert path.name == "dlss_v001.%04d.exr"
+    monkeypatch.setattr(nuke, "thisNode", lambda: group, raising=False)
+    popup = Mock()
+    monkeypatch.setattr(nuke, "message", popup, raising=False)
+    monkeypatch.setattr(nuke, "execute", lambda *args: pytest.fail("Must not export"), raising=False)
+    monkeypatch.setattr(dlss_node, "ensure_server", lambda **kwargs: pytest.fail("Must not start server"))
+    monkeypatch.setattr(dlss_node.config, "cache_dir", lambda: pytest.fail("Must not use fallback"))
+    if action == "current":
+        dlss_node.process_current_frame(group)
+    elif action == "live":
+        dlss_node.process_current_frame(group, live=True)
+    elif action == "range":
+        dlss_node.process_frame_range()
+    else:
+        input_cache.cache_frames(refresh=action == "refresh")
+    assert "Choose Cache Folder" in group["kyven_status"].value()
+    if action == "live":
+        popup.assert_not_called()
+    else:
+        popup.assert_called_once()
+    assert not group["kyven_busy"].value()
 
 
 def test_layout_matches_kyven_sections_and_moves_expert_controls_to_advanced(graph):
@@ -816,7 +839,12 @@ def test_accepted_result_and_manifest_are_published_to_artist_cache(graph, tmp_p
                               cancellation)
     assert (tmp_path / "dlss_v001.0001.exr").read_bytes() == b"finished pixels"
     assert (tmp_path / "_kyven_work/manifests/dlss_v001.0001.exr.kyven.json").is_file()
-    assert not staging.exists()
+    assert staging.exists()
+    target = tmp_path / "dlss_v001.0001.exr"
+    previous_mtime = target.stat().st_mtime_ns
+    assert dlss_node._publish(group.fullName(), job, pattern, 1, identity, "manual", False,
+                              cancellation)
+    assert target.stat().st_mtime_ns == previous_mtime
     assert group.children["KyvenDlssResultSwitch"]["which"].value() == 1
     assert "3/3 previous frames used" in group["history_status"].value()
     assert "reuse 66%" in group["history_status"].value()
@@ -843,23 +871,17 @@ def test_missing_vectors_rejected_before_background_job(graph, monkeypatch):
     assert "Motion" in group["kyven_status"].value()
 
 
-def test_failed_export_keeps_real_error_and_removes_partial_staging(graph, monkeypatch):
+def test_process_without_prepared_inputs_preserves_public_result(graph, monkeypatch, tmp_path):
     nuke, group = graph
     monkeypatch.setattr(dlss_node, "_operation_node", lambda name: group)
-    public = dlss_node._public_pattern(group)
-    public_file = Path(str(public) % 1)
-    public_file.parent.mkdir(parents=True, exist_ok=True)
-    public_file.write_bytes(b"previous completed result")
-    def failing_render(writer, first, last):
-        Path(writer["file"].value()).write_bytes(b"partial export")
-        raise RuntimeError("upstream Read cannot open frame")
-    nuke.execute = failing_render
-    settings = {"temporal": False, "mask_source": "none"}
-    with pytest.raises(RuntimeError, match="Could not export source at frame 1: upstream Read"):
-        dlss_node._main_thread_result(dlss_node._export,
-                                     group.fullName(), 1, "failed-export", settings, False)
-    assert not (public.parent / "_kyven_work/requests/failed-export").exists()
-    assert public_file.read_bytes() == b"previous completed result"
+    monkeypatch.setattr(dlss_node, "_dlss_cache_root", lambda node: tmp_path)
+    public = Path(str(dlss_node._public_pattern(group)) % 1)
+    public.parent.mkdir(parents=True, exist_ok=True)
+    public.write_bytes(b"previous completed result")
+    monkeypatch.setattr(nuke, "execute", lambda *args: pytest.fail("Process must not export"), raising=False)
+    with pytest.raises(RuntimeError, match="Cache Frames"):
+        dlss_node._export(group.fullName(), 1, "missing", {"temporal": False, "mask_source": "none"}, False)
+    assert public.read_bytes() == b"previous completed result"
 
 
 def test_old_operation_cannot_publish_or_finish_after_script_reload(graph, tmp_path, monkeypatch):

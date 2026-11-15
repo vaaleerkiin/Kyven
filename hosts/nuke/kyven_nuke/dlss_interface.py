@@ -72,7 +72,7 @@ def restyle_dlss_node(node: Any, *, upgrade: bool = False) -> None:
             "the neural change to the original scene-linear range. Alpha is untouched.")
         ensure("Enumeration_Knob", "output_mode", "Output", "Result", choices=["Result", "Source"])
         ensure("Text_Knob", "output_help", "", "Generated RGB with original alpha and auxiliary channels.")
-        ensure("Text_Knob", "cache_help", "", "Blank Cache Folder uses an automatic local cache.")
+        ensure("Text_Knob", "cache_help", "", "Choose Cache Folder before caching or processing DLSS.")
         ensure("Text_Knob", "mask_help", "")
         node["mask_help"].setValue(
             "White: allow DLSS changes. Black: preserve Source. Grey: soft neural guide.<br>"
@@ -124,7 +124,8 @@ def restyle_dlss_node(node: Any, *, upgrade: bool = False) -> None:
         if upgrade and old_version < 2:
             node["live_mode"].setValue(True)
         node["dlss_ui_version"].setValue(INTERFACE_VERSION)
-        node["cache_root"].setTooltip("Optional. Leave blank for an automatic cache; choose a folder for artist exports.")
+        node["cache_help"].setValue("Choose Cache Folder before caching or processing DLSS.")
+        node["cache_root"].setTooltip("Required. Input frames and results are stored under Cache Folder / Name / Version.")
         for name, label in (("process_frame", "Process Current Frame"),
                             ("process_range", "Process Frame Range"),
                             ("first_frame", "Range First"), ("last_frame", "Range Last"),
@@ -146,6 +147,10 @@ def restyle_dlss_node(node: Any, *, upgrade: bool = False) -> None:
             "create_result_read", "new_cache_version", "cache_help",
             "status_section", "kyven_status", "start_server_control", "stop_server_control",
         ]
+        from kyven_nuke.input_cache import ensure_controls
+        ensure_controls(node)
+        primary[primary.index("process_range"):primary.index("process_range")] = [
+            "input_cache_scope", "cache_frames", "refresh_frames"]
         advanced = ["dlss_advanced", "motion_section", "advanced_help", "use_nuke_vectors", "motion_x", "motion_y",
                     "motion_units", "motion_y_up", "motion_scale_x", "motion_scale_y",
                     "motion_consistency", "forward_x", "forward_y", "consistency_threshold",
@@ -165,3 +170,5 @@ def restyle_dlss_node(node: Any, *, upgrade: bool = False) -> None:
             node["label"].setValue("[value kyven_status]")
     finally:
         node["knobChanged"].setValue(callback)
+    from kyven_nuke.tooltips import apply_tooltips
+    apply_tooltips(node, "dlss")

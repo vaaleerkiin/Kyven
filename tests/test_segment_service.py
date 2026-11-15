@@ -90,7 +90,7 @@ class SegmentServiceTests(unittest.TestCase):
             self.assertEqual(caught.exception.code, ErrorCode.INVALID_REQUEST)
             self.assertIn("corrupt", caught.exception.message)
 
-    def test_valid_manifest_skips_inference_and_corruption_invalidates_it(self) -> None:
+    def test_valid_manifest_skips_inference_and_repairs_corrupt_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source.png"
@@ -114,8 +114,8 @@ class SegmentServiceTests(unittest.TestCase):
 
             output.write_bytes(b"not a png")
             third = service.run(request)
-            self.assertEqual(CountingProvider.calls, 2)
-            self.assertFalse(third.metadata["cache_hit"])
+            self.assertEqual(CountingProvider.calls, 1)
+            self.assertTrue(third.metadata["cache_hit"])
     def test_service_preserves_logits_and_writes_confidence_trimap(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

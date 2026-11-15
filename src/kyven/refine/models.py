@@ -12,7 +12,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from kyven.errors import ErrorCode, KyvenError
-from kyven.hashing import file_sha256
+from kyven.hashing import cached_file_sha256 as file_sha256
 from kyven.media import validate_image_file
 from kyven.segment.models import BoxPrompt, ExecutionProfile
 

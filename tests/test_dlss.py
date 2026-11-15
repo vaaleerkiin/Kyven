@@ -176,10 +176,33 @@ def test_temporal_stability_reduces_flicker_and_replays_cached_frames(shot):
     np.testing.assert_allclose(read_channels(request.output)["R"], 0.3, atol=1e-7)
     assert not second["metadata"]["history_reset"]
     assert first["cache_key"] != second["cache_key"]
-    # Repeating a timeline frame resets, rather than reusing an advanced private state.
+    # Repeating the current frame preserves the already correct private state.
     third = service.run(replace(request, frame=1002))
-    assert len(provider.calls) == 3
-    assert third["metadata"]["history_reason"] == "nonconsecutive_frame"
+    assert len(provider.calls) == 2
+    assert third["metadata"]["cache_hit"]
+    assert third["cache_key"] == second["cache_key"]
+    service.run(replace(request, frame=1003))
+    assert not provider.calls[-1]["reset"]
+
+
+
+def test_temporal_replay_preserves_cached_files_and_restores_history(shot):
+    request, _, provider, service = shot
+    first = replace(request, temporal=True, frame=1,
+                    output=request.output.with_name("first.exr"))
+    second = replace(first, frame=2, output=request.output.with_name("second.exr"))
+    service.run(first)
+    service.run(second)
+    timestamps = [r.output.stat().st_mtime_ns for r in (first, second)]
+    service.clear_history()
+    for index, current in enumerate((first, second)):
+        result = service.run(current)
+        assert result["metadata"]["cache_hit"]
+        assert result["metadata"]["history_replayed"]
+        assert current.output.stat().st_mtime_ns == timestamps[index]
+    assert len(provider.calls) == 4
+    service.run(replace(second, frame=3, output=request.output))
+    assert not provider.calls[-1]["reset"]
 
 
 def test_service_keeps_finite_raw_history_and_drops_it_on_gaps_and_errors(shot):
@@ -308,15 +331,15 @@ def test_still_cache_is_deterministic_validated_and_sensitive_to_inputs(shot):
     assert len(provider.calls) == 1
     request.output.write_bytes(b"corrupt")
     service.run(request)
-    assert len(provider.calls) == 2
+    assert len(provider.calls) == 1
     write_exr(request.output, original)
     service.run(request)
-    assert len(provider.calls) == 3  # Valid but replaced pixels cannot reuse an old manifest.
+    assert len(provider.calls) == 1  # Restore verified original pixels from the artifact store.
     original[..., 0] += 0.01
     write_exr(request.source, original)
     third = service.run(request)
     assert first["cache_key"] != third["cache_key"]
-    assert len(provider.calls) == 4
+    assert len(provider.calls) == 2
     request.motion.write_bytes(b"invalid motion")
     with pytest.raises(KyvenError):
         service.run(request)

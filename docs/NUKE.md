@@ -188,3 +188,39 @@ an update if a stale process remains. The newest output is written to `.runtime/
 
 Continue with the [Segment](SEGMENT.md), [Refine](REFINE.md), or [Inpaint](INPAINT.md) guide. For
 failures, go directly to [Troubleshooting](TROUBLESHOOTING.md).
+
+## Input preparation and processing
+
+Each node keeps one working format for inputs:
+
+- Segment: one high-quality JPEG per frame, shared by single-frame segmentation and SAM2 tracking.
+- Refine: uncompressed TIFF for source and mask.
+- Inpaint: uncompressed TIFF for source and masks.
+- DLSS: float EXR for HDR source and external guides.
+
+Segment JPEG replaces the former lossless PNG source. JPEG is lossy even at maximum quality;
+this avoids duplicate exports and uses the format required by SAM2's video loader. Public matte
+and inpaint results still use PNG: these are results, not duplicate input exports.
+
+Choose Current Frame or Frame Range beside **Cache Frames**. Cache Frames fills missing/invalid
+inputs; **Refresh Frames** updates snapshots after upstream edits. **Process Current Frame**
+(and Live Current Frame) fills only its missing input snapshots automatically, then submits
+inference. Ready snapshots are reused. **Process Frame Range** and tracking call the same preparation
+function as Cache Frames when inputs are missing or invalid, then submit inference only after
+the complete selected range is ready. Existing valid frames are never exported again. Preparation
+shows progress and supports cancellation; a failed or cancelled preparation does not start inference.
+
+Input inventory uses `_kyven_work/inputs.sqlite3`, with legacy JSON receipt compatibility.
+Segment uses one `source/tracking_pool` independent of the selected range. Extending a range
+adds only new frames. SAM2 gets a temporary view using hard links on the cache volume, with
+copy fallback on unsupported filesystems. Verified older range JPEGs can be adopted without
+rendering again. New paths replace older PNG/mask exports without deleting previous files.
+
+Inpaint model-mask setting changes invalidate prepared snapshots. Upstream pixel edits require
+Refresh Frames. Preparation uses Nuke's main thread and cancellable progress; completed frames
+survive cancellation. Existing nodes get controls through the normal node upgrade action.
+
+
+### Hover help
+
+Hover over Kyven controls for plain-English explanations of their purpose, adjustment direction, and relevant dependencies. Segment, Refine, Inpaint and DLSS include help for processing, output, input caching, and model-specific settings. New nodes receive help automatically; use the corresponding Upgrade Selected Node menu action for existing nodes, or reopen the script to run node repair. Help is local and does not load inference models or use GPU memory.

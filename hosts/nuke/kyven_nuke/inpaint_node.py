@@ -11,6 +11,7 @@ from typing import Any
 from kyven_nuke.branding import add_node_branding
 from kyven_nuke.client import NukeKyvenClientError
 from kyven_nuke.color_management import set_data_io
+from kyven_nuke.input_cache import current_input, prepare_range, use_input
 from kyven_nuke.node import (
     _add_knob,
     _add_section,
@@ -20,7 +21,6 @@ from kyven_nuke.node import (
     _cache_root_path,
     _cache_work_root,
     _clamp_bbox_knob,
-    _clear_sequence_frames,
     _create_group_at_cursor,
     _defer_ui_action,
     _disconnect_cached_matte,
@@ -184,8 +184,8 @@ def _paths(node: Any, frame: int) -> tuple[Path, Path, Path, Path, Path, Path]:
     )
     return (
         source_root / f"inpaint_source.{frame:04d}.tif",
-        root / f"inpaint_mask.{frame:04d}.png",
-        root / f"inpaint_model_mask.{frame:04d}.png",
+        root / f"inpaint_mask.{frame:04d}.tif",
+        root / f"inpaint_model_mask.{frame:04d}.tif",
         output,
         root / f"inpaint_processed_mask.{frame:04d}.png",
         root / f"inpaint_patch.{frame:04d}.png",
@@ -517,7 +517,7 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
         writer = nuke.toNode("KyvenInpaintModelMaskWrite")
         if writer is None:
             writer = nuke.nodes.Write(name="KyvenInpaintModelMaskWrite")
-            writer["file_type"].setValue("png")
+            writer["file_type"].setValue("tiff")
             writer["channels"].setValue("rgb")
         set_data_io(writer)
         writer.setInput(0, model_mask)
@@ -627,14 +627,14 @@ def process_current_frame_for_node(
     if show_progress:
         _start_progress(node_name, f"Kyven {display_name}", f"Exporting frame {frame}")
     try:
-        nuke.execute(source_writer, frame, frame)
+        current_input(nuke, node, source_writer, frame)
         if _export_cancelled(node_name):
             _set_status(node_name, f"{display_name} export cancelled after Source.")
             if show_progress:
                 _finish_progress(node_name)
             _set_busy(node_name, False)
             return
-        nuke.execute(model_mask_writer, frame, frame)
+        current_input(nuke, node, model_mask_writer, frame)
         if _export_cancelled(node_name):
             _set_status(node_name, f"{display_name} export cancelled after Model Mask.")
             if show_progress:
@@ -642,7 +642,7 @@ def process_current_frame_for_node(
             _set_busy(node_name, False)
             return
         if mask_writer is not None:
-            nuke.execute(mask_writer, frame, frame)
+            current_input(nuke, node, mask_writer, frame)
     except Exception as exc:  # noqa: BLE001
         if show_progress:
             _finish_progress(node_name)
@@ -721,8 +721,8 @@ def process_frame_range_for_node(
     source_root = root / "source" if _uses_artist_cache(node) else root
     source_root.mkdir(parents=True, exist_ok=True)
     source_pattern = source_root / "inpaint_source.%04d.tif"
-    mask_pattern = root / "inpaint_mask.%04d.png"
-    model_mask_pattern = root / "inpaint_model_mask.%04d.png"
+    mask_pattern = root / "inpaint_mask.%04d.tif"
+    model_mask_pattern = root / "inpaint_model_mask.%04d.tif"
     output_pattern = (
         _inpaint_public_pattern(node)
         if _uses_artist_cache(node)
@@ -747,19 +747,22 @@ def process_frame_range_for_node(
         _export_cancellations.discard(node_name)
     _start_progress(node_name, f"Kyven {display_name}", f"Exporting frames {first}-{last}")
     try:
-        for pattern in {source_pattern, model_mask_pattern, mask_pattern}:
-            _clear_sequence_frames(pattern, first, last)
+        if not prepare_range(nuke, node, first, last, cancelled=lambda: _export_cancelled(node_name)):
+            _finish_progress(node_name)
+            _set_busy(node_name, False)
+            return
+
         total = last - first + 1
         for index, frame in enumerate(range(first, last + 1), start=1):
             if _export_cancelled(node_name):
                 _finish_progress(node_name); _set_busy(node_name, False); _set_status(node_name, f"Inpaint range cancelled before frame {frame}."); return
             _update_progress(node_name, round((index - 1) / total * 20), f"Exporting Source {frame} ({index}/{total})")
-            nuke.execute(source_writer, frame, frame)
+            use_input(nuke, node, source_writer, frame)
             if _export_cancelled(node_name):
                 _finish_progress(node_name); _set_busy(node_name, False); _set_status(node_name, f"Inpaint range cancelled after Source {frame}."); return
-            nuke.execute(model_mask_writer, frame, frame)
+            use_input(nuke, node, model_mask_writer, frame)
             if mask_writer is not None:
-                nuke.execute(mask_writer, frame, frame)
+                use_input(nuke, node, mask_writer, frame)
     except Exception as exc:  # noqa: BLE001
         _finish_progress(node_name); _set_busy(node_name, False); nuke.message(f"Inpaint export failed: {exc}"); return
     required_patterns = [("Source", source_pattern), ("Model Mask", model_mask_pattern)]
@@ -1098,6 +1101,8 @@ def _ensure_refinement_controls(node: Any) -> None:
 def _restyle_inpaint_cache(node: Any) -> None:
     """Apply the shared Cache labels and compact three-row layout."""
 
+    from kyven_nuke.input_cache import ensure_controls
+    ensure_controls(node)
     nuke = _nuke()
     labels = {
         "cache_folder": "Cache Folder",
@@ -1126,6 +1131,8 @@ def _restyle_inpaint_cache(node: Any) -> None:
     elif "delete_all_cache" in node.knobs():
         node["delete_all_cache"].setFlag(nuke.STARTLINE)
         node["delete_all_cache"].setCommand("kyven_nuke.node.delete_all_cache()")
+    from kyven_nuke.tooltips import apply_tooltips
+    apply_tooltips(node, "inpaint")
 
 
 def _repair_inpaint_interface(node: Any) -> None:
@@ -1342,6 +1349,8 @@ def create_inpaint_node() -> Any:
     _restyle_inpaint_cache(node)
     add_node_branding(node, nuke)
     _set_operation_controls(node, False)
+    from kyven_nuke.tooltips import apply_tooltips
+    apply_tooltips(node, "inpaint")
     return node
 
 

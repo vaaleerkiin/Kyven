@@ -115,6 +115,12 @@ class RefineServiceTests(unittest.TestCase):
             self.assertEqual(SyntheticRefinementProvider.calls, 1)
             self.assertFalse(first.metadata["cache_hit"])
             self.assertTrue(second.metadata["cache_hit"])
+            original = request.output.read_bytes()
+            request.output.unlink()
+            third = service.run(request)
+            self.assertTrue(third.metadata["cache_hit"])
+            self.assertEqual(SyntheticRefinementProvider.calls, 1)
+            self.assertEqual(request.output.read_bytes(), original)
 
     def test_low_memory_payload_defaults_to_512_pixel_tiles(self) -> None:
         request = JobManager.refine_request_from_payload(

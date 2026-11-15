@@ -13,6 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from kyven.errors import ErrorCode, KyvenError
+from kyven.hashing import cached_file_sha256
 from kyven.media import validate_image_file
 
 
@@ -116,12 +117,8 @@ class SegmentRequest:
     def cache_key(self, provider_version: str, model_checksum: str) -> str:
         """Build a deterministic key from source bytes and inference inputs."""
 
-        source_hasher = hashlib.sha256()
-        with self.source.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                source_hasher.update(chunk)
         payload = {
-            "source_sha256": source_hasher.hexdigest(),
+            "source_sha256": cached_file_sha256(self.source),
             "request": self.canonical(),
             "provider_version": provider_version,
             "model_checksum": model_checksum,

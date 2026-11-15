@@ -34,6 +34,7 @@ class _History:
     key: str
     provider: Any
     generation: int
+    input_signature: str = ""
 
 
 class DlssService:
@@ -148,6 +149,16 @@ class DlssService:
                          "size": size, "source_size": (width, height),
                          "has_motion": motion is not None, "has_depth": depth is not None})
         history = self._history
+        input_signature = digest({"config": config, "inputs": hashes,
+                                  "frame": request.frame, "reset": request.reset})
+        if (request.temporal and history is not None and history.provider is provider
+                and history.generation == getattr(provider, "generation", 0)
+                and history.input_signature == input_signature):
+            cached = read_valid_manifest(request.output, history.key, (request.output,))
+            if cached is not None:
+                token.report_progress(1.0, "Reused current DLSS history frame")
+                return {"output": str(request.output), "cache_key": history.key,
+                        "metadata": {**cached["metadata"], "cache_hit": True}}
         reason = "single_frame"
         continuous = False
         if request.temporal:
@@ -175,14 +186,14 @@ class DlssService:
                       "predecessor": history.key if continuous else None})
         # Temporal cache hits must replay inference to reconstruct private DLSS state.
         # Skipping cached frames would silently reuse the wrong GPU history.
-        if not request.temporal:
-            cached = read_valid_manifest(request.output, key, (request.output,))
-            if (cached is not None and cached.get("metadata", {}).get("output_sha256")
-                    == cached_file_sha256(request.output)):
-                self._history = None
-                self._buffer.clear()
-                return {"output": str(request.output), "cache_key": key,
-                        "metadata": {**cached["metadata"], "cache_hit": True}}
+        cached = read_valid_manifest(request.output, key, (request.output,))
+        if (not request.temporal and cached is not None
+                and cached.get("metadata", {}).get("output_sha256")
+                == cached_file_sha256(request.output)):
+            self._history = None
+            self._buffer.clear()
+            return {"output": str(request.output), "cache_key": key,
+                    "metadata": {**cached["metadata"], "cache_hit": True}}
         token.raise_if_cancelled()
         token.report_progress(0.25, "DLSS reconstruction with external guides")
         predicted = provider.predict(
@@ -236,6 +247,13 @@ class DlssService:
         metadata["history_frames_buffered"] = len(self._buffer.frames)
         metadata["motion_consistency"] = request.temporal and request.motion_consistency
         token.raise_if_cancelled()
+        if cached is not None and request.temporal:
+            self._history = _History(config, request.frame, key, provider,
+                                     getattr(provider, "generation", 0), input_signature)
+            token.report_progress(1.0, "Reused DLSS output; restored temporal history")
+            return {"output": str(request.output), "cache_key": key,
+                    "metadata": {**cached["metadata"], "cache_hit": True,
+                                 "history_replayed": True}}
         try:
             write_exr(request.output, result)
             token.raise_if_cancelled()
@@ -245,6 +263,6 @@ class DlssService:
             raise KyvenError(ErrorCode.OUTPUT_FAILED, "Could not publish the DLSS cache.",
                              technical_detail=str(exc)) from exc
         self._history = _History(config, request.frame, key,
-                                 provider, getattr(provider, "generation", 0)) if request.temporal else None
+                                 provider, getattr(provider, "generation", 0), input_signature) if request.temporal else None
         token.report_progress(1.0, "DLSS complete")
         return {"output": str(request.output), "cache_key": key, "metadata": metadata}

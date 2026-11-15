@@ -61,6 +61,12 @@ class InpaintServiceTests(unittest.TestCase):
             self.assertEqual(len(provider.requests), 1)
             self.assertFalse(first.metadata["cache_hit"])
             self.assertTrue(second.metadata["cache_hit"])
+            expected = output.read_bytes()
+            output.unlink()
+            third = service.run(request)
+            self.assertTrue(third.metadata["cache_hit"])
+            self.assertEqual(len(provider.requests), 1)
+            self.assertEqual(output.read_bytes(), expected)
 
     def test_big_lama_padding_matches_cattery_symmetric_wrapper(self) -> None:
         self.assertEqual(symmetric_modulo_padding(303, 225), (1, 0, 4, 3))

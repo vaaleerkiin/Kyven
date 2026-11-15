@@ -16,16 +16,16 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from kyven.atomic_io import replace_with_retry
+from kyven.cache_layout import publish_cached_output
 from kyven.dlss.runtime import WORKER_NAME, resolve_worker
 from kyven_nuke import config
 from kyven_nuke.color_management import set_data_io
 from kyven_nuke.dlss_live import DlssCancellation, DlssLiveState
+from kyven_nuke.input_cache import use_input
 from kyven_nuke.node import (
     _add_knob,
     _artist_cache_name,
     _begin_node_operation,
-    _cache_path_component,
     _cache_root_path,
     _create_group_at_cursor,
     _ensure_artist_cache_fields,
@@ -296,11 +296,9 @@ def _public_pattern(node: Any) -> Path:
 
 
 def _dlss_cache_root(node: Any) -> Path:
-    if str(node["cache_root"].value()).strip():
-        return _cache_root_path(node)
-    identity = _cache_path_component(node["kyven_uuid"].value(), "UUID")
-    version = _cache_path_component(node["cache_version"].value(), "Version")
-    return config.cache_dir().resolve() / identity / _artist_cache_name(node) / version
+    if not str(node["cache_root"].value()).strip():
+        raise RuntimeError("Choose Cache Folder before processing DLSS.")
+    return _cache_root_path(node)
 
 
 def _request_settings(node: Any) -> dict[str, Any]:
@@ -339,11 +337,9 @@ def _export(node_name: str, frame: int, request_id: str,
     if node is None:
         raise RuntimeError("DLSS node was deleted.")
     _validate_inputs(node, settings)
-    root = _dlss_cache_root(node) / "_kyven_work" / "requests" / request_id
-    root.mkdir(parents=True, exist_ok=True)
     payload = dict(settings, frame=frame, reset=reset,
-                   output=str(root / f"result.{frame:04d}.exr"))
-    _set_status(node_name, f"Exporting DLSS frame {frame}...")
+                   output=str(_dlss_cache_root(node) / "_kyven_work" / "results" / f"result.{frame:04d}.exr"))
+    _set_status(node_name, f"Checking cached DLSS frame {frame}...")
     try:
         for index, field in enumerate(("source", "motion", "depth", "mask")):
             if node.input(index) is None:
@@ -351,13 +347,13 @@ def _export(node_name: str, frame: int, request_id: str,
             if field == "mask" and settings["mask_source"] != "input":
                 continue
             writer = _inside(node, "KyvenDlss" + field.title() + "Write")
-            path = root / f"{field}.{frame:04d}.exr"
+            path = _dlss_cache_root(node) / "_kyven_work" / "inputs" / f"{field}.{frame:04d}.exr"
             payload[field] = str(path)
             writer["file"].setValue(_nuke_file_path(path))
             try:
-                nuke.execute(writer, frame, frame)
+                use_input(nuke, node, writer, frame)
             except Exception as exc:
-                raise RuntimeError(f"Could not export {field} at frame {frame}: {exc}") from exc
+                raise RuntimeError(f"Could not use cached {field} at frame {frame}: {exc}") from exc
     except Exception:
         _discard_request(payload)
         raise
@@ -387,12 +383,7 @@ def _publish(node_name: str, job: dict[str, Any], pattern: str, frame: int,
     source = Path(job["result"]["output"])
     target = Path(pattern % frame)
     target.parent.mkdir(parents=True, exist_ok=True)
-    replace_with_retry(source, target)
-    manifest_source = source.with_suffix(source.suffix + ".kyven.json")
-    manifest_target = target.parent / "_kyven_work" / "manifests" / (target.name + ".kyven.json")
-    manifest_target.parent.mkdir(parents=True, exist_ok=True)
-    if manifest_source.is_file():
-        replace_with_retry(manifest_source, manifest_target)
+    publish_cached_output(source, target)
     read = _inside(node, "KyvenDlssRead")
     read["file"].setValue(_nuke_file_path(Path(pattern)))
     frame_range = _sequence_frame_range(Path(pattern)) or (frame, frame)
@@ -437,7 +428,7 @@ def load_cache() -> None:
             read[name].setValue(value)
         read["reload"].execute()
         _inside(node, "KyvenDlssResultSwitch")["which"].setValue(1)
-        _set_status(str(node.fullName()), f"Loaded DLSS cache {frames[0]}–{frames[1]}")
+        _set_status(str(node.fullName()), f"Loaded DLSS cache {frames[0]}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“{frames[1]}")
     except RuntimeError as exc:
         _set_status(str(node.fullName()), str(exc))
 
@@ -462,7 +453,9 @@ def _finish(node_name: str, identity: str, signature: str, message: str,
 
 def _discard_request(payload: dict[str, Any]) -> None:
     """Remove only this request's known staging files after the server is finished."""
-    root = Path(payload["output"]).parent
+    root = Path(payload.get("source", payload["output"])).parent
+    if root.name == "inputs" and root.parent.name == "_kyven_work":
+        return
     for field in ("source", "motion", "depth", "mask", "output"):
         if field not in payload:
             continue
@@ -498,8 +491,19 @@ def _start(node: Any, frames: range, live: bool) -> None:
     except (RuntimeError, ValueError) as exc:
         # No operation identity has been registered yet; use the supplied node.
         node["kyven_status"].setValue(str(exc))
+        if not live and "Choose Cache Folder" in str(exc):
+            nuke.message(str(exc))
         return
     if not _begin_node_operation(node):
+        return
+    try:
+        from kyven_nuke.input_cache import prepare_range
+        if not prepare_range(nuke, node, frames.start, frames.stop - 1):
+            _set_busy(node_name, False)
+            return
+    except Exception as exc:  # noqa: BLE001 - host callback boundary
+        _set_status(node_name, f"Input preparation failed: {exc}")
+        _set_busy(node_name, False)
         return
     identity = _identity(node)
     signature = _signature(node)

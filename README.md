@@ -89,6 +89,10 @@ Atomic artist cache -> ordinary Nuke Read
 - Cache manifests reject incomplete or mismatched results.
 - Identical active requests share one server job instead of duplicating inference.
 
+## Working with cached frames
+
+In the Nuke nodes, choose **Input Frames** and click **Cache Frames** to prepare source inputs. Current-frame processing prepares missing inputs automatically; range processing prepares any missing frames before inference. After changing an upstream image, mask, or motion vector, use **Refresh Frames** for the affected scope and process again. Cached input snapshots and results are stored under the selected cache folder, name, and version. Hover over node controls for English explanations and adjustment guidance. See the [Nuke workflow](docs/NUKE.md) for details and existing-node upgrades.
+
 ## Documentation
 
 Open the **[documentation home](docs/README.md)**. It provides reading paths for artists,

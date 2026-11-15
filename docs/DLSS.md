@@ -42,8 +42,8 @@ DLSS Node**; UUID, inputs and settings are retained. The layout uses the same na
 Segment, Refine and Inpaint. Expert vector controls live under **Advanced**.
 
 Create **Nodes > Kyven > DLSS (Optional RTX)** and connect Source. Live is enabled by default,
-and an empty Cache Folder uses an automatic isolated cache. Set Cache Folder/Name/Version only
-when choosing an artist-facing output location. Inputs:
+but Cache Folder must be selected before caching or processing. Set Cache Folder, Name and
+Version to choose the output location. A blank folder reports an error and writes nothing. Inputs:
 
 | Input | Label | Meaning |
 | --- | --- | --- |
@@ -200,7 +200,7 @@ Public outputs are ordinary float EXRs:
 <Cache Folder>/<Name>/<Version>/<Name>_<Version>.1001.exr
 ```
 
-With Cache Folder blank, the same layout is placed under Kyven's local cache and the node UUID.
+Cache Folder is required. DLSS does not fall back to a hidden local cache.
 
 Exports, staging outputs and manifests stay in `_kyven_work/`. Completed staging files are removed
 after publication/cancellation. **Load Cache** reconnects an existing sequence. Missing frames read

@@ -10,6 +10,7 @@ import numpy as np
 from PIL import Image
 
 from kyven.atomic_io import replace_with_retry
+from kyven.cache_layout import publish_cached_output
 from kyven.cache_manifest import manifest_path, read_valid_manifest, write_manifest_atomic
 
 
@@ -75,6 +76,96 @@ class CacheManifestTests(unittest.TestCase):
             payload = read_valid_manifest(output, "second", (output,))
             self.assertEqual(payload["metadata"]["revision"], 2)
             self.assertTrue(manifest_path(output).is_file())
+
+    def test_restores_only_missing_or_changed_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "matte.png"
+            auxiliary = Path(directory) / "trimap.png"
+            Image.new("L", (3, 3), 255).save(output)
+            Image.new("L", (3, 3), 128).save(auxiliary)
+            original = auxiliary.read_bytes()
+            write_manifest_atomic(output, "key", {}, required_outputs=(output, auxiliary))
+            unchanged = output.stat().st_mtime_ns
+            auxiliary.unlink()
+            self.assertIsNotNone(read_valid_manifest(output, "key", (output, auxiliary)))
+            self.assertEqual(auxiliary.read_bytes(), original)
+            self.assertEqual(output.stat().st_mtime_ns, unchanged)
+            Image.new("L", (3, 3), 0).save(auxiliary)
+            self.assertIsNotNone(read_valid_manifest(output, "key", (output, auxiliary)))
+            self.assertEqual(auxiliary.read_bytes(), original)
+
+    def test_rejects_corrupt_private_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "matte.png"
+            Image.new("L", (3, 3), 255).save(output)
+            write_manifest_atomic(output, "key", {})
+            for artifact in (output.parent / "_kyven_work" / "artifacts").rglob("*.png"):
+                artifact.write_bytes(b"broken")
+            output.unlink()
+            self.assertIsNone(read_valid_manifest(output, "key", (output,)))
+
+    def test_published_manifest_repairs_public_result_and_retains_staging(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "_kyven_work" / "results" / "result.png"
+            source.parent.mkdir(parents=True)
+            target = root / "artist.1001.png"
+            Image.new("L", (3, 3), 255).save(source)
+            expected = source.read_bytes()
+            write_manifest_atomic(source, "key", {})
+            publish_cached_output(source, target)
+            self.assertTrue(source.is_file())
+            self.assertIsNotNone(read_valid_manifest(target, "key", (target,)))
+            previous = target.stat().st_mtime_ns
+            publish_cached_output(source, target)
+            self.assertEqual(target.stat().st_mtime_ns, previous)
+            target.unlink()
+            self.assertIsNotNone(read_valid_manifest(target, "key", (target,)))
+            self.assertEqual(target.read_bytes(), expected)
+
+    def test_unrecorded_optional_output_cannot_be_adopted_from_other_request(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "matte.png"
+            auxiliary = Path(directory) / "trimap.png"
+            Image.new("L", (3, 3), 255).save(output)
+            write_manifest_atomic(output, "key", {}, required_outputs=(output,))
+            Image.new("L", (3, 3), 128).save(auxiliary)
+            self.assertIsNone(read_valid_manifest(output, "key", (output, auxiliary)))
+
+    def test_legacy_sidecar_remains_readable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "matte.png"
+            Image.new("L", (3, 3), 255).save(output)
+            output.with_suffix(".png.kyven.json").write_text(
+                '{"version":1,"cache_key":"key","metadata":{}}', encoding="utf-8")
+            self.assertIsNotNone(read_valid_manifest(output, "key", (output,)))
+
+    def test_switching_settings_back_restores_previous_result(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "matte.png"
+            Image.new("L", (3, 3), 255).save(output)
+            original = output.read_bytes()
+            write_manifest_atomic(output, "A", {})
+            Image.new("L", (3, 3), 0).save(output)
+            write_manifest_atomic(output, "B", {})
+            self.assertIsNotNone(read_valid_manifest(output, "A", (output,)))
+            self.assertEqual(output.read_bytes(), original)
+            self.assertIsNotNone(read_valid_manifest(output, "B", (output,)))
+            manifest_path(output).unlink()
+            self.assertIsNotNone(read_valid_manifest(output, "A", (output,)))
+            self.assertEqual(output.read_bytes(), original)
+
+    def test_publication_rejects_mismatched_pixels_before_replacing_public_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, target = root / "staging.png", root / "public.png"
+            Image.new("L", (3, 3), 255).save(source)
+            write_manifest_atomic(source, "key", {})
+            target.write_bytes(b"previous published pixels")
+            Image.new("L", (3, 3), 0).save(source)
+            with self.assertRaises(ValueError):
+                publish_cached_output(source, target)
+            self.assertEqual(target.read_bytes(), b"previous published pixels")
 
     def test_public_roto_manifest_is_kept_inside_work_folder(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

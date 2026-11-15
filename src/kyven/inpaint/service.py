@@ -125,6 +125,7 @@ class InpaintService:
     def run(self, request: InpaintRequest, cancellation: CancellationToken | None = None) -> InpaintResult:
         request.validate()
         token = cancellation or CancellationToken()
+        token.raise_if_cancelled()
         token.report_progress(0.03, "Reading Source and mask")
         with Image.open(request.source) as source_file, Image.open(request.mask) as mask_file:
             source = source_file.convert("RGB")
@@ -294,7 +295,8 @@ class InpaintService:
             "patch_source_preserved_outside_model_mask": True,
             "cache_hit": False,
         })
-        write_manifest_atomic(request.output, cache_key, metadata)
+        write_manifest_atomic(request.output, cache_key, metadata,
+                              required_outputs=(request.output, request.mask_output, request.patch_output))
         return InpaintResult(
             request.output,
             request.mask_output,

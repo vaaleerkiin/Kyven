@@ -10,6 +10,7 @@ from typing import Any
 
 from kyven_nuke.branding import add_node_branding
 from kyven_nuke.color_management import set_data_io
+from kyven_nuke.input_cache import current_input, prepare_range, use_input
 from kyven_nuke.node import (
     _add_knob,
     _add_section,
@@ -19,7 +20,6 @@ from kyven_nuke.node import (
     _cache_root_path,
     _cache_work_root,
     _clamp_bbox_knob,
-    _clear_sequence_frames,
     _create_group_at_cursor,
     _defer_ui_action,
     _disconnect_cached_matte,
@@ -168,7 +168,7 @@ def _cache_paths(node: Any, frame: int) -> tuple[Path, Path, Path, Path]:
     )
     return (
         source_root / f"refine_source.{frame:04d}.tif",
-        root / f"refine_mask.{frame:04d}.png",
+        root / f"refine_mask.{frame:04d}.tif",
         output,
         root / f"trimap.{frame:04d}.png",
     )
@@ -180,7 +180,7 @@ def _cache_patterns(node: Any) -> tuple[Path, Path, Path, Path]:
     source_root.mkdir(parents=True, exist_ok=True)
     return (
         source_root / "refine_source.%04d.tif",
-        root / "refine_mask.%04d.png",
+        root / "refine_mask.%04d.tif",
         (
             _refine_public_pattern(node)
             if _uses_artist_cache(node)
@@ -251,7 +251,7 @@ def _apply_refine_cache_fields(node_name: str) -> None:
 
 def _trimap_preview_paths(root: Path, frame: int, revision: int) -> tuple[Path, Path]:
     return (
-        root / f"trimap_preview_input.{frame:04d}.{revision}.png",
+        root / f"trimap_preview_input.{frame:04d}.{revision}.tif",
         root / f"trimap_preview_r{revision}.{frame:04d}.png",
     )
 
@@ -270,7 +270,7 @@ def _configure_export_writers(source_writer: Any | None, mask_writer: Any) -> No
         source_writer["file_type"].setValue("tiff")
         if "compression" in source_writer.knobs():
             source_writer["compression"].setValue(0)
-    mask_writer["file_type"].setValue("png")
+    mask_writer["file_type"].setValue("tiff")
     set_data_io(mask_writer)
     if "compression" in mask_writer.knobs():
         mask_writer["compression"].setValue(0)
@@ -608,11 +608,11 @@ def _export(node: Any, frame: int, source_path: Path, mask_path: Path) -> bool:
     source_writer["file"].setValue(_nuke_file_path(source_path))
     mask_writer["file"].setValue(_nuke_file_path(mask_path))
     try:
-        nuke.execute(source_writer, frame, frame)
+        current_input(nuke, node, source_writer, frame)
         if _export_cancelled(node_name):
             node["kyven_status"].setValue("Refine export cancelled after Source.")
             return False
-        nuke.execute(mask_writer, frame, frame)
+        current_input(nuke, node, mask_writer, frame)
         if _export_cancelled(node_name):
             node["kyven_status"].setValue("Refine export cancelled after Mask.")
             return False
@@ -795,8 +795,12 @@ def process_frame_range() -> None:
     _start_progress(node_name, "Kyven ViTMatte Frame Range", "Preparing input export")
     node["kyven_status"].setValue(f"Exporting refine inputs {first}-{last}...")
     try:
-        _clear_sequence_frames(source_pattern, first, last)
-        _clear_sequence_frames(mask_pattern, first, last)
+        if not prepare_range(nuke, node, first, last, cancelled=lambda: _export_cancelled(node_name)):
+            _finish_progress(node_name)
+            _set_busy(node_name, False)
+            return
+
+
         total = last - first + 1
         for index, frame in enumerate(range(first, last + 1), start=1):
             if _export_cancelled(node_name):
@@ -806,14 +810,14 @@ def process_frame_range() -> None:
                 return
             percent = 2 + round((index - 1) / total * 18)
             _update_progress(node_name, percent, f"Exporting Source {frame} ({index}/{total})")
-            nuke.execute(source_writer, frame, frame)
+            use_input(nuke, node, source_writer, frame)
             if _export_cancelled(node_name):
                 node["kyven_status"].setValue(f"Refine range cancelled after Source {frame}.")
                 _finish_progress(node_name)
                 _set_busy(node_name, False)
                 return
             _update_progress(node_name, percent + 1, f"Exporting Mask {frame} ({index}/{total})")
-            nuke.execute(mask_writer, frame, frame)
+            use_input(nuke, node, mask_writer, frame)
         _update_progress(node_name, 20, "Refine inputs exported")
     except Exception as exc:  # noqa: BLE001
         _finish_progress(node_name)
@@ -1196,6 +1200,8 @@ def _ensure_refine_output_controls(node: Any) -> None:
 def _restyle_refine_ui(node: Any) -> None:
     """Apply the shared compact Kyven layout to new and upgraded Refine nodes."""
 
+    from kyven_nuke.input_cache import ensure_controls
+    ensure_controls(node)
     nuke = _nuke()
     add_node_branding(node, nuke)
     _place_knob_after(node, "open_model_manager", "refresh_models")
@@ -1278,6 +1284,8 @@ def _restyle_refine_ui(node: Any) -> None:
         node["output_help"].setValue(REFINE_OUTPUT_HELP)
     if "roi_help" in node.knobs():
         node["roi_help"].setValue(REFINE_ROI_HELP)
+    from kyven_nuke.tooltips import apply_tooltips
+    apply_tooltips(node, "refine")
 
 
 def upgrade_selected_refine_node() -> None:
@@ -1515,7 +1523,7 @@ def create_refine_node() -> Any:
         source_writer["channels"].setValue("rgb")
         mask_writer = nuke.nodes.Write(name="KyvenRefineMaskWrite")
         mask_writer.setInput(0, mask_channel)
-        mask_writer["file_type"].setValue("png")
+        mask_writer["file_type"].setValue("tiff")
         mask_writer["channels"].setValue("rgb")
     finally:
         node.end()
@@ -1524,6 +1532,8 @@ def create_refine_node() -> Any:
     reset_roi_to_input_for_node(node)
     knob_changed_for_node(node)
     _set_operation_controls(node, False)
+    from kyven_nuke.tooltips import apply_tooltips
+    apply_tooltips(node, "refine")
     return node
 
 

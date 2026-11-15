@@ -699,12 +699,14 @@ TCP 127.0.0.1:8766 0.0.0.0:0 ESTABLISHED 13"""
             self.assertEqual(matte.name, "phone_v001.1053.png")
             self.assertEqual(matte_pattern.name, "phone_v001.%04d.png")
             self.assertEqual(video_matte, matte_pattern)
-            self.assertEqual(source.parent.name, "source")
+            self.assertEqual(source.suffix, ".jpg")
+            self.assertEqual(source_pattern, _video_source)
+            self.assertEqual(source.parent.name, "tracking_pool")
             self.assertEqual(raw.parent.name, "_kyven_work")
-            self.assertEqual(source_pattern.parent.name, "source")
+            self.assertEqual(source_pattern.parent.name, "tracking_pool")
             self.assertEqual(video_raw.parent.name, "_kyven_work")
             self.assertEqual(frames.parent.name, "source")
-            self.assertEqual(frames.name, "1001_1074")
+            self.assertEqual(frames.name, "tracking_pool")
 
     def test_refine_artist_cache_uses_named_public_sequence_and_work_inputs(self) -> None:
         node = self._artist_cache_node("refine_name", "hair")
@@ -718,6 +720,8 @@ TCP 127.0.0.1:8766 0.0.0.0:0 ESTABLISHED 13"""
             self.assertEqual(output.name, "hair_v001.1005.png")
             self.assertEqual(output_pattern.name, "hair_v001.%04d.png")
             self.assertEqual(_refine_public_pattern(node), output_pattern)
+            self.assertEqual(source.suffix, ".tif")
+            self.assertEqual(mask.suffix, ".tif")
             self.assertEqual(source.parent.name, "source")
             self.assertEqual(mask.parent.name, "_kyven_work")
             self.assertEqual(trimap.parent.name, "_kyven_work")
@@ -732,6 +736,7 @@ TCP 127.0.0.1:8766 0.0.0.0:0 ESTABLISHED 13"""
 
             self.assertEqual(output.name, "cleanup_v001.1012.png")
             self.assertEqual(_inpaint_public_pattern(node).name, "cleanup_v001.%04d.png")
+            self.assertEqual({source.suffix, mask.suffix, model_mask.suffix}, {".tif"})
             self.assertEqual(source.parent.name, "source")
             for internal in (mask, model_mask, processed, patch):
                 self.assertEqual(internal.parent.name, "_kyven_work")

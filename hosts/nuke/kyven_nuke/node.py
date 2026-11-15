@@ -16,6 +16,7 @@ from kyven_nuke import config
 from kyven_nuke.branding import add_node_branding
 from kyven_nuke.client import NukeKyvenClientError
 from kyven_nuke.color_management import set_data_io
+from kyven_nuke.input_cache import current_input, prepare_range, use_input
 from kyven_nuke.payload import MODEL_IDS, MODEL_LABELS, segment_payload, segment_video_payload
 from kyven_nuke.preferences import default_model_index
 from kyven_nuke.runtime import ensure_server, stop_server
@@ -1462,7 +1463,7 @@ def delete_all_cache() -> None:
 def _cache_paths(node: Any, frame: int) -> tuple[Path, Path, Path]:
     root = _cache_work_root(node)
     return (
-        root / "source" / f"source.{frame:04d}.png",
+        root / "source" / "tracking_pool" / f"{frame:05d}.jpg",
         root / f"raw_matte.{frame:04d}.png",
         _path_for_frame(_public_matte_pattern(node), frame),
     )
@@ -1471,7 +1472,7 @@ def _cache_paths(node: Any, frame: int) -> tuple[Path, Path, Path]:
 def _cache_patterns(node: Any) -> tuple[Path, Path, Path]:
     root = _cache_work_root(node)
     return (
-        root / "source" / "source.%04d.png",
+        root / "source" / "tracking_pool" / "%05d.jpg",
         root / "raw_matte.%04d.png",
         _public_matte_pattern(node),
     )
@@ -1483,14 +1484,8 @@ def _video_cache_paths(
     last: int,
 ) -> tuple[Path, Path, Path, Path]:
     root = _cache_work_root(node)
-    frames_dir = (
-        root / "source" / f"{first}_{last}"
-        if _uses_artist_cache(node)
-        else root / f"sam2_video_{first}_{last}"
-    )
+    frames_dir = root / "source" / "tracking_pool"
     frames_dir.mkdir(parents=True, exist_ok=True)
-    for stale in frames_dir.glob("*.jpg"):
-        stale.unlink(missing_ok=True)
     source_pattern = frames_dir / "%05d.jpg"
     raw_output_pattern = (
         root / "raw_matte.%04d.png"
@@ -1628,7 +1623,7 @@ def process_current_frame(node: Any | None = None, live: bool = False) -> None:
         _range_cancellations.discard(node_name)
     node["kyven_status"].setValue("Exporting source frame...")
     try:
-        nuke.execute(writer, frame, frame)
+        current_input(nuke, node, writer, frame)
     except Exception as exc:  # noqa: BLE001 - host boundary must report useful context
         _set_busy(node.fullName(), False)
         node["kyven_status"].setValue(f"Source export failed: {exc}")
@@ -1680,7 +1675,11 @@ def process_frame_range() -> None:
     _start_progress(node_name, "Kyven Segment Frame Range", "Preparing source export")
     node["kyven_status"].setValue(f"Exporting {total} source frames...")
     try:
-        _clear_sequence_frames(source_pattern, first, last)
+        if not prepare_range(nuke, node, first, last, cancelled=lambda: _range_cancelled(node_name) or _progress_cancelled(node_name)):
+            _finish_progress(node_name)
+            _set_busy(node_name, False)
+            return
+
         for index, frame in enumerate(range(first, last + 1), start=1):
             if _range_cancelled(node_name) or _progress_cancelled(node_name):
                 node["kyven_status"].setValue(f"Range cancelled before frame {frame}.")
@@ -1692,7 +1691,7 @@ def process_frame_range() -> None:
                 2 + round(index / total * 18),
                 f"Exporting Source {frame} ({index}/{total})",
             )
-            nuke.execute(writer, frame, frame)
+            use_input(nuke, node, writer, frame)
         _update_progress(node_name, 20, "Source frames exported")
     except Exception as exc:  # noqa: BLE001 - host boundary must report useful context
         _finish_progress(node_name)
@@ -2073,7 +2072,11 @@ def propagate_video(direction: str) -> None:
     _start_progress(node_name, "Kyven SAM 2 Video Tracking", "Preparing frame export")
     node["kyven_status"].setValue(f"Exporting {total} tracking frames...")
     try:
-        _clear_sequence_frames(source_pattern, first, last)
+        if not prepare_range(nuke, node, first, last, cancelled=lambda: _range_cancelled(node_name) or _progress_cancelled(node_name)):
+            _finish_progress(node_name)
+            _set_busy(node_name, False)
+            return
+
         for index, frame in enumerate(range(first, last + 1), start=1):
             if _range_cancelled(node_name) or _progress_cancelled(node_name):
                 node["kyven_status"].setValue(f"Tracking cancelled before frame {frame}.")
@@ -2085,7 +2088,7 @@ def propagate_video(direction: str) -> None:
                 2 + round(index / total * 23),
                 f"Exporting tracking frame {frame} ({index}/{total})",
             )
-            nuke.execute(writer, frame, frame)
+            use_input(nuke, node, writer, frame)
         _update_progress(node_name, 25, "Tracking frames exported")
     except Exception as exc:  # noqa: BLE001 - host boundary must report useful context
         _finish_progress(node_name)
@@ -2263,6 +2266,10 @@ def _add_knob(nuke: Any, node: Any, knob: Any, *, start_line: bool = True) -> An
     else:
         knob.clearFlag(nuke.STARTLINE)
     node.addKnob(knob)
+    from kyven_nuke.tooltips import node_kind, tooltip_for
+    help_text = tooltip_for(knob.name(), node_kind(node))
+    if help_text:
+        knob.setTooltip(help_text)
     return knob
 
 
@@ -2449,11 +2456,15 @@ def _restyle_node_ui(node: Any) -> None:
             "Live follows timeline and prompt / ROI edits asynchronously.<br>"
             "Disable Live before range or tracking renders."
         )
+    from kyven_nuke.tooltips import apply_tooltips
+    apply_tooltips(node, "segment")
 
 
 def _ensure_processing_layout(node: Any) -> None:
     """Group independent current-frame and range actions in reading order."""
 
+    from kyven_nuke.input_cache import ensure_controls
+    ensure_controls(node)
     nuke = _nuke()
     if "current_processing_label" not in node.knobs():
         _add_knob(
@@ -2474,6 +2485,9 @@ def _ensure_processing_layout(node: Any) -> None:
         "range_processing_label",
         "range_first",
         "range_last",
+        "input_cache_scope",
+        "cache_frames",
+        "refresh_frames",
         "process_range",
         "cancel",
     ):
@@ -2982,6 +2996,8 @@ def repair_segment_nodes() -> None:
             knobs = node.knobs()
             if "kyven_uuid" not in knobs:
                 continue
+            from kyven_nuke.tooltips import apply_tooltips
+            apply_tooltips(node)
             _ensure_server_controls(node)
             _ensure_cache_version_control(node)
             node_id = str(node["kyven_uuid"].value()).strip()
@@ -3333,4 +3349,6 @@ def create_segment_node() -> Any:
     _snapshot_correction_prompts(node, int(node["key_frame"].value()))
     sync_prompt_visibility(node)
     _set_operation_controls(node, False)
+    from kyven_nuke.tooltips import apply_tooltips
+    apply_tooltips(node, "segment")
     return node

@@ -140,3 +140,38 @@ API version 32 is the current Nuke/server contract. `GET /v1/jobs/{id}` returns 
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
 returned masks to the original dimensions. Restart Nuke after updating Kyven so the adapter does not
 reuse Python modules from an older API revision.
+
+## Durable result cache
+
+Segment, Refine, Inpaint and DLSS share cache manifests and a content-addressed artifact store.
+`_kyven_work/manifests` holds current result manifests, `manifests/revisions` retains request-key
+revisions, and `artifacts` stores verified result bytes. Identical bytes within a work root share
+an artifact. Existing sidecars remain readable. Publication uses temporary files and replacement;
+artifacts and revision manifests are written before the current manifest.
+
+Cache hits check request identity and SHA-256 of recorded required outputs. Missing, corrupt or
+replaced output files are restored individually from verified artifacts without rewriting intact
+files or predicting again. Switching settings A -> B -> A restores the earlier revision. Missing
+current manifests can also use the matching revision. If artifacts are unavailable, inference
+rebuilds the result. Keep `_kyven_work` for recovery. Private copies and revision history require
+additional disk space; automatic garbage collection is not implemented.
+
+File hashes are memoized using path, size, modification time and change time in a bounded
+4096-entry index. Files changed during hashing are rejected. Refine checks results before image
+decoding and trimap preparation. Unchanged Segment confidence trimaps are not rewritten on hits.
+These changes add no GPU memory requirement and preserve CPU providers.
+
+DLSS retains results under `_kyven_work/results`, independently of disposable request exports.
+Publication validates recorded pixel identity before replacing the public EXR, copies only changed
+bytes, preserves private results, and remaps the public manifest. Repeating the current temporal
+frame with identical inputs and an unchanged worker preserves history without another prediction.
+Replaying an earlier temporal chain still runs inference to reconstruct private GPU state, but
+verified cached outputs are not rewritten. SAM video similarly depends on the complete tracking
+request; changing its range does not reuse a serialized tracker.
+
+Cache hits avoid model prediction, but input validation still does I/O. Nuke graph exports are
+shared Cache Frames / Refresh Frames actions. Current Frame and range processing invoke
+the shared preparation function automatically for missing inputs, then consume prepared snapshots.
+Inpaint currently prepares masks and crops before its inference-cache check. The artifact store
+recovers completed results; it cannot reconstruct missing model state. Tests use synthetic
+providers: live Nuke and RTX behavior still requires runtime validation.

@@ -59,6 +59,27 @@ class RefineService:
         request.validate()
         token = cancellation or CancellationToken()
         token.raise_if_cancelled()
+        provider = self._registry.activate(request.provider_id)
+        capabilities = provider.capabilities
+        cache_key = request.cache_key(
+            capabilities.provider_version,
+            capabilities.model_checksum,
+        )
+        cached = read_valid_manifest(
+            request.output,
+            cache_key,
+            (request.output, request.trimap_output),
+        )
+        if cached is not None:
+            metadata = dict(cached.get("metadata") or {})
+            metadata["cache_hit"] = True
+            token.report_progress(1.0, "Reused cached refinement")
+            return RefineResult(
+                output=request.output,
+                trimap_output=request.trimap_output,
+                cache_key=cache_key,
+                metadata=metadata,
+            )
         token.report_progress(0.03, "Reading Source and mask")
         with Image.open(request.source) as source_file, Image.open(request.mask) as mask_file:
             source = source_file.convert("RGB")
@@ -96,27 +117,6 @@ class RefineService:
         trimap_output = request.trimap_output
         if trimap_output is not None:
             write_mask_png_atomic(trimap_output, full_trimap)
-        provider = self._registry.activate(request.provider_id)
-        capabilities = provider.capabilities
-        cache_key = request.cache_key(
-            capabilities.provider_version,
-            capabilities.model_checksum,
-        )
-        cached = read_valid_manifest(
-            request.output,
-            cache_key,
-            (request.output, request.trimap_output),
-        )
-        if cached is not None:
-            metadata = dict(cached.get("metadata") or {})
-            metadata["cache_hit"] = True
-            token.report_progress(1.0, "Reused cached refinement")
-            return RefineResult(
-                output=request.output,
-                trimap_output=request.trimap_output,
-                cache_key=cache_key,
-                metadata=metadata,
-            )
         token.report_progress(0.15, "Preparing refinement inputs")
         with tempfile.TemporaryDirectory(prefix="kyven-refine-") as directory:
             root = Path(directory)
@@ -159,7 +159,8 @@ class RefineService:
         metadata["context_padding"] = request.context_padding
         metadata["processing_roi"] = region.metadata()
         metadata["cache_hit"] = False
-        write_manifest_atomic(request.output, cache_key, metadata)
+        write_manifest_atomic(request.output, cache_key, metadata,
+                              required_outputs=(request.output, request.trimap_output))
         return RefineResult(
             output=request.output,
             trimap_output=trimap_output,

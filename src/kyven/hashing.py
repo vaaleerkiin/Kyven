@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 
 _cache_lock = threading.RLock()
-_file_cache: dict[tuple[str, int, int], str] = {}
+_file_cache: dict[tuple[str, int, int, int], str] = {}
 
 
 def file_sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -23,15 +23,20 @@ def cached_file_sha256(path: Path) -> str:
 
     resolved = path.resolve()
     stat = resolved.stat()
-    key = (str(resolved), stat.st_size, stat.st_mtime_ns)
+    key = (str(resolved), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
     with _cache_lock:
         cached = _file_cache.get(key)
     if cached is not None:
         return cached
     digest = file_sha256(resolved)
+    after = resolved.stat()
+    if (after.st_size, after.st_mtime_ns, after.st_ctime_ns) != key[1:]:
+        raise OSError(f"File changed while hashing: {resolved}")
     with _cache_lock:
         stale = [item for item in _file_cache if item[0] == str(resolved) and item != key]
         for item in stale:
             _file_cache.pop(item, None)
+        if len(_file_cache) >= 4096:
+            _file_cache.pop(next(iter(_file_cache)))
         _file_cache[key] = digest
     return digest

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
 import tempfile
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -16,7 +18,7 @@ from PIL import Image
 from kyven.cache_manifest import read_valid_manifest, write_manifest_atomic
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
-from kyven.hashing import file_sha256
+from kyven.hashing import cached_file_sha256 as file_sha256
 from kyven.segment.models import BoxPrompt, ExecutionProfile, PointPrompt
 from kyven.segment.output import (
     confidence_trimap,
@@ -181,10 +183,20 @@ class VideoSegmentRequest:
     def roi_for_frame(self, frame: int) -> BoxPrompt | None:
         return dict(self.rois).get(frame, self.roi)
 
+    def input_frames(self) -> list[Path]:
+        if self.frames_dir.name == "tracking_pool":
+            frames = [self.frames_dir / f"{frame:05d}.jpg"
+                      for frame in range(self.first_frame, self.last_frame + 1)]
+            missing = next((path for path in frames if not path.is_file()), None)
+            if missing is not None:
+                raise KyvenError(ErrorCode.INVALID_REQUEST,
+                                 f"Tracking input cache is missing frame {missing.stem}.")
+            return frames
+        return sorted(path for path in self.frames_dir.iterdir()
+                      if path.suffix.lower() in {".jpg", ".jpeg"})
+
     def cache_key(self, provider_version: str, model_checksum: str) -> str:
-        frames = sorted(
-            path for path in self.frames_dir.iterdir() if path.suffix.lower() in {".jpg", ".jpeg"}
-        )
+        frames = self.input_frames()
         payload = {
             "frames": [(path.name, file_sha256(path)) for path in frames],
             "first_frame": self.first_frame,
@@ -263,11 +275,18 @@ class VideoSegmentService:
             for frame in range(request.first_frame, request.last_frame + 1):
                 logits = request.logits_output_for_frame(frame)
                 trimap = request.trimap_output_for_frame(frame)
-                if logits is not None and trimap is not None:
+                if (logits is not None and trimap is not None
+                        and cached.get("confidence_width") != request.confidence_width):
                     write_mask_png_atomic(
                         trimap,
                         confidence_trimap(read_logits_npz(logits), request.confidence_width),
                     )
+            if cached.get("confidence_width") != request.confidence_width:
+                write_manifest_atomic(
+                    first_output, cache_key, cached.get("metadata") or {},
+                    required_outputs=request.required_outputs(),
+                    confidence_width=request.confidence_width,
+                )
             metadata = dict(cached.get("metadata") or {})
             metadata["cache_hit"] = True
             token.report_progress(1.0, "Reused cached video propagation")
@@ -289,16 +308,34 @@ class VideoSegmentService:
                 code=ErrorCode.PROVIDER_UNAVAILABLE,
                 message=f"Provider does not support video propagation: {request.provider_id}",
             )
-        result = (
-            propagate(request, token)
-            if request.roi is None and not request.rois
-            else self._run_with_roi(propagate, request, token)
-        )
+        if request.frames_dir.name == "tracking_pool":
+            # SAM 2 enumerates a complete directory; give it only this range.
+            # Hard links reference pool bytes without exporting or encoding again.
+            with tempfile.TemporaryDirectory(prefix=".tracking-view-",
+                                             dir=request.frames_dir.parent) as directory:
+                view = Path(directory)
+                for index, source in enumerate(request.input_frames()):
+                    token.raise_if_cancelled()
+                    target = view / f"{index:05d}.jpg"
+                    try:
+                        os.link(source, target)
+                    except OSError:
+                        shutil.copyfile(source, target)
+                prepared = replace(request, frames_dir=view)
+                result = (propagate(prepared, token)
+                          if request.roi is None and not request.rois
+                          else self._run_with_roi(propagate, prepared, token))
+        else:
+            result = (propagate(request, token)
+                      if request.roi is None and not request.rois
+                      else self._run_with_roi(propagate, request, token))
         final = self._postprocess_outputs(result, request, token)
         metadata = dict(final.metadata)
         metadata["cache_hit"] = False
         final = replace(final, metadata=metadata)
-        write_manifest_atomic(first_output, cache_key, metadata)
+        write_manifest_atomic(first_output, cache_key, metadata,
+                              required_outputs=request.required_outputs(),
+                              confidence_width=request.confidence_width)
         token.report_progress(1.0, "Propagation complete")
         return final
 

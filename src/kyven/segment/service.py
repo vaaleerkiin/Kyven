@@ -49,12 +49,19 @@ class SegmentService:
         )
         cached = read_valid_manifest(request.output, cache_key, required)
         if cached is not None:
-            if request.trimap_output is not None and request.logits_output is not None:
+            if (request.trimap_output is not None and request.logits_output is not None
+                    and cached.get("confidence_width") != request.confidence_width):
                 from kyven.segment.output import read_logits_npz
 
                 write_mask_png_atomic(
                     request.trimap_output,
                     confidence_trimap(read_logits_npz(request.logits_output), request.confidence_width),
+                )
+            if cached.get("confidence_width") != request.confidence_width:
+                write_manifest_atomic(
+                    request.output, cache_key, cached.get("metadata") or {},
+                    required_outputs=required, score=cached.get("score"),
+                    confidence_width=request.confidence_width,
                 )
             metadata = dict(cached.get("metadata") or {})
             metadata["cache_hit"] = True
@@ -104,6 +111,8 @@ class SegmentService:
             request.output,
             cache_key,
             metadata,
+            required_outputs=required,
+            confidence_width=request.confidence_width,
             score=float(prediction.score),
         )
         return SegmentResult(
