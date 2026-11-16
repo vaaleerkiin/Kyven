@@ -306,7 +306,7 @@ class ServerTests(unittest.TestCase):
                 self.assertEqual(refine_result["progress"], 1.0)
                 self.assertEqual(refine_result["progress_message"], "Refinement complete")
                 self.assertTrue(refine_output.is_file())
-                self.assertEqual(refine_result["result"]["trimap_output"], str(trimap_output))
+                self.assertEqual(refine_result["result"]["trimap_output"], str(trimap_output.resolve()))
                 self.assertTrue(trimap_output.is_file())
                 with self.assertRaises(KyvenClientError):
                     KyvenClient(f"http://127.0.0.1:{server.port}", "y" * 32).health()
