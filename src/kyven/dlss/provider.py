@@ -111,7 +111,9 @@ class ExternalDlssProvider:
         header = VIDEO.pack(
             0x35563544, width, height, width, height, 0, 100000, 0, 0,
             0, request.preset, request.style, 0, 0,
-            request.intensity, request.local_tone, request.local_structure, request.skin_structure,
+            # Native Intensity fades RGB toward black. Artist intensity is applied
+            # to the scene-linear residual by the service instead.
+            1.0, request.local_tone, request.local_structure, request.skin_structure,
             int(motion is not None), 0, 0, 0, 0, 0.0,
         )
         if not request.worker.is_file():

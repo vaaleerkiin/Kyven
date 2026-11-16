@@ -145,7 +145,7 @@ class DlssService:
         small[..., :3], inverse_gain = prepare(source, enabled=request.hdr_rolloff,
                                               knee=request.rolloff_knee)
         provider = self.registry.activate("dlss-external")
-        config = digest({"version": 5, "settings": request.settings(), "runtime": runtime,
+        config = digest({"version": 6, "settings": request.settings(), "runtime": runtime,
                          "size": size, "source_size": (width, height),
                          "has_motion": motion is not None, "has_depth": depth is not None})
         history = self._history
@@ -220,6 +220,7 @@ class DlssService:
                 consistency_threshold=request.consistency_threshold * max(size[0] / width, size[1] / height),
                 cancellation=token)
         correction = resize(residual, (width, height))
+        correction *= request.intensity
         if request.protect_outside and request.mask_source != "none":
             # Soft weights already condition NR itself. Do not apply them twice;
             # only remove corrections that interpolation/history spread into black.

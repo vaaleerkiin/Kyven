@@ -99,6 +99,10 @@ where appropriate. The node adds no implicit Premult/Unpremult operations.
 
 ## Internal HDR rolloff
 
+**Intensity** scales the scene-linear reconstruction change: 0 preserves Source, 1 uses the
+full reconstruction, and 2 doubles its correction. Native inference runs at unit intensity
+because its intensity control fades RGB toward black. Existing outputs are invalidated on reprocessing.
+
 **HDR Rolloff** defaults on. It conditions scene-linear RGB before inference, then restores the
 neural change to the original scene-linear range. The original full-resolution Source remains the
 base: unchanged inference preserves its HDR values, negative RGB and alpha exactly, including the

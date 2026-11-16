@@ -68,6 +68,19 @@ def shot(tmp_path):
     return request, source, provider, DlssService(registry)
 
 
+@pytest.mark.parametrize("intensity", [0, 0.5, 1, 2])
+def test_intensity_scales_correction_from_source_without_darkening(shot, intensity):
+    request, original, provider, service = shot
+    service.run(replace(request, intensity=intensity))
+    result = read_channels(request.output)
+    working = provider.calls[-1]["rgba"][..., :3]
+    delta = (working + provider.delta) - working
+    expected = original[..., :3] + intensity * delta
+    np.testing.assert_allclose(np.stack([result[c] for c in ("R", "G", "B")], -1),
+                               expected, atol=1e-7)
+    np.testing.assert_array_equal(result["A"], original[..., 3])
+
+
 def test_native_backward_vectors_need_no_rgb_channels(shot):
     import OpenEXR
 
@@ -566,6 +579,7 @@ def test_real_pipe_transport_sends_float_mask_vectors_and_temporal_reset(transpo
         np.testing.assert_array_equal(output, rgba)
     lines = [json.loads(line) for line in log.read_text().splitlines()]
     assert [line["frame"][2] for line in lines] == [1, 0]
+    assert lines[0]["header"][14] == 1.0  # Native strength must never fade toward black.
     assert lines[0]["header"][18] == 1  # External only; never auto optical flow.
     assert lines[0]["frame"][3] == 3  # Both depth and control mask.
     np.testing.assert_allclose(lines[0]["mask"], mask.ravel())
