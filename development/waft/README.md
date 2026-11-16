@@ -86,11 +86,15 @@ If you skipped rebuilding, set `$nukeExe` as above first.
 .\.venv\Scripts\python.exe tools\make_test_images.py
 & $nukeExe --nukex -i -t tools\verify_nuke.py
 & $nukeExe --nukex -i -t tools\verify_resolution_v2.py
+& $nukeExe --nukex -i -t tools\verify_devices.py
 ```
 
 The first test renders Motion Vectors and Smart Vectors for known motion and
 checks channels, dimensions and numerical accuracy. The second checks vector
-scaling. Fresh reports are written to `build/`. After a complete export, additional
+scaling. The device check uses the installed `plugins/Cattery/WAFT/` package and
+renders GPU FP16, GPU FP32, CPU FP32 and the return to GPU in one process, clearing
+the RAM cache between cases. It checks graph connections and vector values after
+each switch. Fresh reports are written to `build/`. After a complete export, additional
 checks are available; they require CUDA and the checkpoint:
 
 ```powershell

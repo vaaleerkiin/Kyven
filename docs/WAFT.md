@@ -80,6 +80,12 @@ Process/Cache buttons and Folder/Name/Version cache contract do not apply.
 
 ## Hardware and limits
 
+Changing Precision or Use GPU recreates the two internal Inference operators so
+Nuke cannot retain a previously loaded model on the wrong device. This fixes a
+reproduced `Expected all tensors to be on the same device` failure after switching
+between GPU and CPU. Both embedded models are unchanged. After updating the
+callback module, restart Nuke and create a fresh WAFT node before testing again.
+
 GPU FP16 is the recommended starting mode. FP32 provides a CPU option but can be
 slow. Full Source needs more memory and can lose its practical advantage on large
 frames. Lower Processing Resolution after an out-of-memory error.

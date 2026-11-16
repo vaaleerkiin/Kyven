@@ -5,19 +5,48 @@ import nuke
 _updating = False
 
 
-def _select_model(node):
+def _replace_inference(node, inference, path, gpu):
+    """Create a fresh native operator; changing modelFile retains loaded state."""
+    links = [(consumer, index)
+             for consumer in node.nodes()
+             for index in range(consumer.inputs())
+             if consumer.input(index) == inference]
+    name = inference.name()
+    with node:
+        replacement = nuke.nodes.Inference(
+            name=name + '_Reload',
+            inputs=[inference.input(0)], modelFile=path,
+            useGPUIfAvailable=gpu, halfPrecision=False)
+        replacement.setXYpos(inference.xpos(), inference.ypos())
+        nuke.delete(inference)
+        for consumer, index in links:
+            consumer.setInput(index, replacement)
+        replacement.setName(name)
+
+
+def _select_model(node, rebuild=True):
     global _updating
     if _updating:
         return
     _updating = True
     try:
-        half = node['useGPUIfAvailable'].value() and node['precision'].getValue() == 0
+        gpu = bool(node['useGPUIfAvailable'].value())
+        half = gpu and node['precision'].getValue() == 0
         filename = 'WAFT.cat' if half else 'WAFT_FP32.cat'
         path = (Path(__file__).resolve().parent / filename).as_posix()
         for name in ('Inference1', 'Inference2'):
             inference = node.node(name)
-            if inference is not None and inference['modelFile'].value() != path:
+            if inference is not None and not rebuild:
                 inference['modelFile'].setValue(path)
+                inference['useGPUIfAvailable'].clearAnimated()
+                inference['useGPUIfAvailable'].setValue(gpu)
+                continue
+            if inference is not None and (
+                inference['modelFile'].value() != path
+                or inference['useGPUIfAvailable'].hasExpression()
+                or inference['useGPUIfAvailable'].value() != gpu
+            ):
+                _replace_inference(node, inference, path, gpu)
     finally:
         _updating = False
 
@@ -50,7 +79,7 @@ def on_create():
             '<a href="https://github.com/vaaleerkiin/Kyven" title="Open Kyven on GitHub">'
             f'<img src="{logo}" width="48" height="48"></a>'
         )
-    _select_model(node)
+    _select_model(node, rebuild=False)
     inference = node.node('Inference1')
     node['channelsIn'].setValue('RGB current frame + RGB adjacent frame (sRGB)')
     if inference is not None and 'gpuName' in inference.knobs():
