@@ -330,6 +330,12 @@ def _request_settings(node: Any) -> dict[str, Any]:
 
 
 @_suppress_node_callbacks
+def _packed_input_writer(node: Any, settings: dict[str, Any]) -> Any:
+    from kyven_nuke.dlss_inputs import configure
+    return configure(_nuke(), node, settings)
+
+
+@_suppress_node_callbacks
 def _export(node_name: str, frame: int, request_id: str,
             settings: dict[str, Any], reset: bool, signature: str = "") -> tuple[dict[str, Any], str, str]:
     """Nuke graph evaluation must run on the main thread. No model code is imported."""
@@ -342,19 +348,15 @@ def _export(node_name: str, frame: int, request_id: str,
                    output=str(_dlss_cache_root(node) / "_kyven_work" / "results" / f"result.{frame:04d}.exr"))
     _set_status(node_name, f"Checking cached DLSS frame {frame}...")
     try:
-        for index, field in enumerate(("source", "motion", "depth", "mask")):
-            if node.input(index) is None:
-                continue
-            if field == "mask" and settings["mask_source"] != "input":
-                continue
-            writer = _inside(node, "KyvenDlss" + field.title() + "Write")
-            path = _dlss_cache_root(node) / "_kyven_work" / "inputs" / f"{field}.{frame:04d}.exr"
-            payload[field] = str(path)
-            writer["file"].setValue(_nuke_file_path(path))
-            try:
-                use_input(nuke, node, writer, frame)
-            except Exception as exc:
-                raise RuntimeError(f"Could not use cached {field} at frame {frame}: {exc}") from exc
+        from kyven_nuke import dlss_inputs
+        path = _dlss_cache_root(node) / "_kyven_work" / "inputs" / f"input.{frame:04d}.exr"
+        payload.update(dlss_inputs.payload(node, settings, path))
+        writer = _inside(node, dlss_inputs.WRITER)
+        writer["file"].setValue(_nuke_file_path(path))
+        try:
+            use_input(nuke, node, writer, frame)
+        except Exception as exc:
+            raise RuntimeError(f"Could not use cached DLSS inputs at frame {frame}: {exc}") from exc
     except Exception:
         _discard_request(payload)
         raise
@@ -670,6 +672,8 @@ def refresh_runtime(node: Any | None = None) -> None:
 @_suppress_node_callbacks
 def _ensure_output_graph(node: Any) -> None:
     nuke = _nuke()
+    from kyven_nuke.dlss_inputs import ensure_graph
+    ensure_graph(nuke, node)
     node.begin()
     try:
         output = nuke.toNode("KyvenDlssOutputSwitch")
@@ -807,14 +811,6 @@ def create_dlss_node() -> Any:
             inp = nuke.nodes.Input(name=name)
             inp["number"].setValue(i)
             inputs.append(inp)
-            writer = nuke.nodes.Write(name="KyvenDlss" + name + "Write")
-            writer.setInput(0, inp)
-            writer["file_type"].setValue("exr")
-            writer["channels"].setValue("rgba" if i == 0 else "all")
-            writer["datatype"].setValue("32 bit float")
-            if "autocrop" in writer.knobs():
-                writer["autocrop"].setValue(False)
-            set_data_io(writer)
         read = nuke.nodes.Read(name="KyvenDlssRead")
         read["on_error"].setValue("black")
         set_data_io(read)

@@ -107,6 +107,16 @@ def adapter_context(request, tmp_path, monkeypatch):
         # The default argument in the Process function binds the original builder.
         monkeypatch.setattr(inpaint, "_payload", lambda *args: {})
     else:
+        # This fixture exercises cache/Process ordering, not native graph setup
+        # (covered by the DLSS graph and licensed Nuke tests).
+        node.values.update({name: Knob(value) for name, value in {
+            "motion_x": "backward.u", "motion_y": "backward.v",
+            "forward_x": "forward.u", "forward_y": "forward.v", "depth_channel": "depth.Z",
+            "motion_consistency": False, "temporal": False, "mask_source": "Full Frame",
+        }.items()})
+        node.input = lambda index: node.source if index == 0 else None
+        monkeypatch.setattr(dlss, "_packed_input_writer", lambda current, settings:
+                            inside(current, "KyvenDlssInputWrite"))
         worker = tmp_path / "worker.exe"
         worker.write_bytes(b"test worker identity")
         monkeypatch.setattr(dlss, "_request_settings", lambda node:

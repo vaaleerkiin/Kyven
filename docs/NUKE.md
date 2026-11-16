@@ -208,7 +208,8 @@ Each node keeps one working format for inputs:
 - Segment: one high-quality JPEG per frame, shared by single-frame segmentation and SAM2 tracking.
 - Refine: uncompressed TIFF for source and mask.
 - Inpaint: uncompressed TIFF for source and masks.
-- DLSS: float EXR for HDR source and external guides.
+- DLSS: one multilayer 32-bit float EXR per frame for HDR source, alpha and selected
+  external guides, with lossless ZIP compression.
 
 Segment JPEG replaces the former lossless PNG source. JPEG is lossy even at maximum quality;
 this avoids duplicate exports and uses the format required by SAM2's video loader. Public matte
@@ -231,6 +232,15 @@ rendering again. New paths replace older PNG/mask exports without deleting previ
 Inpaint model-mask setting changes invalidate prepared snapshots. Upstream pixel edits require
 Refresh Frames. Preparation uses Nuke's main thread and cancellable progress; completed frames
 survive cancellation. Existing nodes get controls through the normal node upgrade action.
+
+DLSS packs Source RGB/alpha, selected motion components, depth and the active input mask
+into `_kyven_work/inputs/input.<frame>.exr`. The server decodes that file once per request
+and shares its channels across the guide readers. Motion/depth channel selections and
+guide connections invalidate this snapshot; reconstruction settings such as Intensity reuse it.
+Only needed channels are exported, without half-float conversion or lossy compression.
+Existing DLSS nodes receive the new internal graph on reopen or Upgrade Selected DLSS Node.
+Older separate snapshots are rebuilt in the new format on the next preparation; older files
+are retained. Public result sequences and Source alpha/AOV preservation are unchanged.
 
 
 ### Hover help

@@ -22,6 +22,9 @@ def _state(node: Any, frame: int) -> dict:
     state = {name: _knob_value_at(node[name], frame) for name in names if name in node.knobs()}
     if "kyven_kind" in node.knobs() and node["kyven_kind"].value() in {"refine", "inpaint"}:
         state["mask_input_contract"] = "alpha-only-positive-v1"
+    if "kyven_kind" in node.knobs() and node["kyven_kind"].value() == "dlss":
+        from kyven_nuke.dlss_inputs import snapshot_state
+        state["dlss_input"] = snapshot_state(node, frame)
     return state
 
 
@@ -166,9 +169,7 @@ def _specs(node: Any, frame: int, first: int, last: int) -> list:
         root = adapter._dlss_cache_root(node) / "_kyven_work" / "inputs"
         settings = adapter._request_settings(node)
         adapter._validate_inputs(node, settings)
-        return [(inside(node, "KyvenDlss" + field.title() + "Write"), root / f"{field}.{frame:04d}.exr")
-                for index, field in enumerate(("source", "motion", "depth", "mask"))
-                if node.input(index) is not None and (field != "mask" or settings["mask_source"] == "input")]
+        return [(adapter._packed_input_writer(node, settings), root / f"input.{frame:04d}.exr")]
     source = segment._cache_paths(node, frame)[0]
     return [(inside(node, "KyvenSourceWrite"), source)]
 

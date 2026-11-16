@@ -68,11 +68,15 @@ class DlssService:
         token.report_progress(0.05, "Reading linear DLSS inputs")
         paths = {name: getattr(request, name) for name in ("source", "motion", "mask", "depth")}
         hashes = {}
+        file_hashes: dict[Path, str] = {}
         for name, path in paths.items():
             if path is not None:
                 if not path.is_file():
                     raise KyvenError(ErrorCode.INVALID_REQUEST, f"DLSS {name} is missing: {path}")
-                hashes[name] = cached_file_sha256(path)
+                resolved = path.resolve()
+                if resolved not in file_hashes:
+                    file_hashes[resolved] = cached_file_sha256(path)
+                hashes[name] = file_hashes[resolved]
         if not request.worker.is_file():
             raise KyvenError(
                 ErrorCode.PROVIDER_UNAVAILABLE, "DLSS worker executable was not found.",
@@ -82,7 +86,17 @@ class DlssService:
         runtime = {p.name: cached_file_sha256(p)
                    for p in sorted(request.worker.parent.glob("*.dll")) if p.is_file()}
         runtime[request.worker.name] = cached_file_sha256(request.worker)
-        inputs = read_channels(request.source)
+        # A packed snapshot supplies all roles from one EXR. Decode each unique
+        # file once per request, also retaining compatibility with separate files.
+        decoded: dict[Path, dict[str, np.ndarray]] = {}
+
+        def channels(path: Path) -> dict[str, np.ndarray]:
+            resolved = path.resolve()
+            if resolved not in decoded:
+                decoded[resolved] = read_channels(path)
+            return decoded[resolved]
+
+        inputs = channels(request.source)
         rgba = np.stack([channel(inputs, c) for c in ("R", "G", "B")]
                         + [inputs.get("A", np.ones_like(channel(inputs, "R")))], axis=-1)
         height, width = rgba.shape[:2]
@@ -97,7 +111,7 @@ class DlssService:
         full_mask = np.ones((height, width), dtype=np.float32)
 
         def guide(path: Path, name: str) -> np.ndarray:
-            values = channel(read_channels(path), name)
+            values = channel(channels(path), name)
             if values.shape != (height, width):
                 raise KyvenError(
                     ErrorCode.INVALID_REQUEST, "DLSS guides must match Source dimensions.",
@@ -114,7 +128,7 @@ class DlssService:
         depth = resize(guide(request.depth, request.depth_channel), size) if request.depth else None
         motion = forward = None
         if request.motion is not None:
-            vectors = read_channels(request.motion)
+            vectors = channels(request.motion)
             sx = size[0] if request.motion_units == "uv" else size[0] / width
             sy = size[1] if request.motion_units == "uv" else size[1] / height
 
@@ -132,6 +146,10 @@ class DlssService:
             motion = motion_field(request.motion_x, request.motion_y)
             if request.temporal and request.motion_consistency:
                 forward = motion_field(request.forward_x, request.forward_y)
+            del vectors
+        # Keep only the output base and reduced guides during inference/history.
+        decoded.clear()
+        del inputs
         budget = request.history_budget_mb * 1024**2
         frame_bytes = (source.nbytes * 2 + mask.nbytes + (motion.nbytes if motion is not None else 0)
                        + (forward.nbytes if forward is not None else 0)

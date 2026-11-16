@@ -30,10 +30,10 @@ def restyle_dlss_node(node: Any, *, upgrade: bool = False) -> None:
         ensure("Int_Knob", "dlss_ui_version", "Interface Version", INTERFACE_VERSION).setVisible(False)
         ensure("Text_Knob", "kyven_title", "",
                '<font size="5" color="#dce9f2"><b>KYVEN / DLSS</b></font><br>'
-               '<font color="#91a3b0">Neural Reconstruction | External Motion | API 36</font>')
+               '<font color="#91a3b0">Neural Reconstruction | External Motion | API 37</font>')
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / DLSS</b></font><br>'
-            '<font color="#91a3b0">Neural Reconstruction | External Motion | API 36</font>')
+            '<font color="#91a3b0">Neural Reconstruction | External Motion | API 37</font>')
         ensure("Enumeration_Knob", "model", "Model", "Kyven DLSS Neural Reconstruction",
                choices=["Kyven DLSS Neural Reconstruction"])
         ensure("PyScript_Knob", "refresh_models", "Refresh Models").setCommand(

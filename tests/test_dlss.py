@@ -68,6 +68,82 @@ def shot(tmp_path):
     return request, source, provider, DlssService(registry)
 
 
+@pytest.mark.parametrize("mask_source", ["none", "source_alpha", "input"])
+def test_multilayer_input_decodes_once_and_matches_separate_guides(shot, monkeypatch, mask_source):
+    import OpenEXR
+
+    from kyven.dlss import service as service_module
+
+    request, original, provider, separate_service = shot
+    root = request.source.parent
+    original[..., 0] = -0.125
+    original[..., 1] = 100_000
+    original[..., 3] = np.linspace(-0.2, 1.2, original.shape[1])
+    write_exr(request.source, original)
+    shape = original.shape[:2]
+    mx, my = np.full(shape, -0.25, np.float32), np.full(shape, 0.5, np.float32)
+    depth = np.full(shape, 0.75, np.float32)
+    mask = np.tile(np.linspace(0, 1, shape[1], dtype=np.float32), (shape[0], 1))
+    data = {"R": original[..., 0].copy(), "G": original[..., 1].copy(),
+            "B": original[..., 2].copy(), "A": original[..., 3].copy(),
+            "kyven_dlss_motion.x": mx, "kyven_dlss_motion.y": my,
+            "kyven_dlss_motion.forward_x": -mx, "kyven_dlss_motion.forward_y": -my,
+            "kyven_dlss_depth.Z": depth, "kyven_dlss_mask.value": mask}
+    packed = root / "input.exr"
+    def write(path, channels):
+        with OpenEXR.File({"compression": OpenEXR.ZIP_COMPRESSION}, channels) as exr:
+            exr.write(str(path))
+    write(packed, data)
+    write(request.motion, {"R": mx, "G": my, "forward.u": -mx, "forward.v": -my})
+    write(root / "depth.exr", {"depth.Z": depth})
+    write(root / "mask.exr", {"A": mask})
+    base = replace(request, temporal=True, motion_consistency=True,
+                   depth=root / "depth.exr", mask=root / "mask.exr", mask_source=mask_source)
+    expected = []
+    expected_calls = []
+    for frame in (1, 2):
+        current = replace(base, frame=frame, output=root / f"separate.{frame}.exr")
+        separate_service.run(current)
+        expected.append(read_channels(current.output))
+        expected_calls.append(provider.calls[-1])
+    reads, hashes = [], []
+    real_read, real_hash = service_module.read_channels, service_module.cached_file_sha256
+    def read(path):
+        reads.append(path)
+        return real_read(path)
+    def fingerprint(path):
+        hashes.append(path)
+        return real_hash(path)
+    monkeypatch.setattr(service_module, "read_channels", read)
+    monkeypatch.setattr(service_module, "cached_file_sha256", fingerprint)
+    packed_service = DlssService(separate_service.registry)
+    for frame in (1, 2):
+        current = replace(base, source=packed, motion=packed, depth=packed, mask=packed,
+                          motion_x="kyven_dlss_motion.x", motion_y="kyven_dlss_motion.y",
+                          forward_x="kyven_dlss_motion.forward_x", forward_y="kyven_dlss_motion.forward_y",
+                          depth_channel="kyven_dlss_depth.Z", mask_channel="kyven_dlss_mask.value",
+                          frame=frame, output=root / f"packed.{frame}.exr")
+        packed_service.run(current)
+        actual = read_channels(current.output)
+        for name in ("R", "G", "B", "A"):
+            np.testing.assert_array_equal(actual[name], expected[frame - 1][name])
+        np.testing.assert_array_equal(actual["A"], original[..., 3])
+        for name in ("rgba", "motion", "mask", "depth"):
+            if expected_calls[frame - 1][name] is None:
+                assert provider.calls[-1][name] is None
+            else:
+                np.testing.assert_array_equal(provider.calls[-1][name], expected_calls[frame - 1][name])
+    assert reads == [packed, packed]
+    assert hashes.count(packed) == 2
+
+
+def test_packed_input_does_not_invent_missing_guide_channels(shot):
+    request, _, provider, service = shot
+    with pytest.raises(KyvenError, match="channel is missing"):
+        service.run(replace(request, motion=request.source, motion_x="kyven_dlss_motion.x"))
+    assert not provider.calls
+
+
 @pytest.mark.parametrize("intensity", [0, 0.5, 1, 2])
 def test_intensity_scales_correction_from_source_without_darkening(shot, intensity):
     request, original, provider, service = shot
@@ -482,7 +558,7 @@ def test_authenticated_dlss_endpoint_uses_existing_job_queue_and_durable_cache(s
     payload = {"source": str(request.source), "output": str(request.output),
                "worker": str(request.worker), "mask_source": "source_alpha"}
     try:
-        assert client.health()["api_version"] == 36
+        assert client.health()["api_version"] == 37
         with pytest.raises(KyvenClientError):
             KyvenClient(client.base_url, "y" * 32).submit_dlss(payload)
         with pytest.raises(KyvenClientError):

@@ -62,7 +62,7 @@ class Knob:
     def setValues(self, values):
         self.choices = values
 
-    def setExpression(self, value):
+    def setExpression(self, value, *args):
         self.expression = value
 
     def __getattr__(self, name):
@@ -82,6 +82,8 @@ class Node:
             "datatype", "autocrop", "raw", "colorspace", "on_error", "which", "reload",
             "first", "last", "origfirst", "origlast", "first_frame", "last_frame",
             "from0", "from1", "from2", "from3", "to0", "to1", "to2", "to3",
+            "disable", "operation", "box", "reformat",
+            "compression", "interleave",
         )}
         self._knobs["which"].setValue(0)
         self._knobs["first_frame"].setValue(1)
@@ -127,6 +129,9 @@ class Node:
     def height(self):
         return 1080
 
+    def channels(self):
+        return ["rgba.red", "rgba.green", "rgba.blue", "rgba.alpha"]
+
     def begin(self):
         self.nuke.stack.append(self)
 
@@ -139,6 +144,7 @@ class FakeNuke:
 
     def __init__(self):
         self.stack, self.top = [], {}
+        self._layers = {}
         self.auto_notify = False
         self._frame = 1
         self.callback_node = self.callback_knob = None
@@ -146,7 +152,16 @@ class FakeNuke:
         self.root_node = Node(self, "Root", "Root")
         self.nodes = SimpleNamespace(**{kind: self.factory(kind)
                                        for kind in ("Group", "Input", "Write", "Read",
-                                                    "Copy", "Switch", "Output")})
+                                                    "Copy", "Switch", "Output", "Remove", "Crop")})
+
+    def layers(self):
+        return list(self._layers)
+
+    def Layer(self, name, channels):
+        self._layers[name] = channels
+
+    def delete(self, node):
+        (node.parent_group.children if node.parent_group else self.top).pop(node._name)
 
     def factory(self, kind):
         def create(name):
@@ -454,8 +469,8 @@ def test_prepared_input_check_does_not_render_or_change_live_intent(graph, monke
     state, cancellation = _running_state(nuke, group)
     signature = state.active
     monkeypatch.setattr(dlss_node, "_dlss_cache_root", lambda node: tmp_path)
-    writer = dlss_node._inside(group, "KyvenDlssSourceWrite")
-    path = tmp_path / "_kyven_work/inputs/source.0400.exr"
+    writer = dlss_node._inside(group, "KyvenDlssInputWrite")
+    path = tmp_path / "_kyven_work/inputs/input.0400.exr"
     def export(writer, first, last):
         Path(writer["file"].value()).write_bytes(b"prepared pixels")
     monkeypatch.setattr(nuke, "execute", export, raising=False)
@@ -544,12 +559,17 @@ def test_node_keeps_source_alpha_and_aovs_and_exports_float_linear_guides(graph)
     children = group.children
     for index, name in enumerate(("Source", "Motion", "Depth", "Mask")):
         assert children[name]["number"].value() == index
-        writer = children["KyvenDlss" + name + "Write"]
-        assert writer.input(0) is children[name]
-        assert writer["file_type"].value() == "exr"
-        assert writer["datatype"].value() == "32 bit float"
-        assert writer["raw"].value()
-        assert not writer["autocrop"].value()
+    writers = [child for child in children.values() if child.kind == "Write"]
+    assert len(writers) == 1
+    writer = writers[0]
+    assert writer is children["KyvenDlssInputWrite"]
+    assert writer.input(0) is children["KyvenDlssInputBounds"]
+    assert writer["channels"].value() == "all"
+    assert writer["file_type"].value() == "exr"
+    assert writer["datatype"].value() == "32 bit float"
+    assert writer["compression"].value() == "Zip (16 scanlines)"
+    assert writer["raw"].value()
+    assert not writer["autocrop"].value()
     copy = children["KyvenDlssSourceChannels"]
     assert copy.input(0) is children["Source"]
     assert copy.input(1) is children["KyvenDlssRead"]
@@ -557,6 +577,108 @@ def test_node_keeps_source_alpha_and_aovs_and_exports_float_linear_guides(graph)
         "rgba.red", "rgba.green", "rgba.blue"}
     assert all(node.kind not in {"Premult", "Unpremult"} for node in children.values())
     assert not nuke.stack
+
+
+def test_packed_input_export_remaps_guides_and_reads_one_cached_snapshot(graph, monkeypatch, tmp_path):
+    from kyven_nuke import dlss_inputs, input_cache
+
+    nuke, group = graph
+    guides = nuke.source
+    guides.channels = lambda: ["rgba.red", "rgba.green", "rgba.blue", "rgba.alpha", "depth.Z"]
+    for index in (1, 2, 3):
+        group.setInput(index, guides)
+    settings = {"temporal": True, "motion_consistency": True, "motion_x": "R", "motion_y": "G",
+                "forward_x": "B", "forward_y": "A", "depth_channel": "depth.Z", "mask_source": "input"}
+    monkeypatch.setattr(dlss_node, "_request_settings", lambda node: settings)
+    monkeypatch.setattr(dlss_node, "_operation_node", lambda name: group)
+    group["motion_x"].setValue("R")
+    group["motion_y"].setValue("G")
+    group["mask_source"].setValue("Mask Input")
+    specs = input_cache._specs(group, 1, 1, 1)
+    assert len(specs) == 1
+    writer, path = specs[0]
+    assert path.name == "input.0001.exr"
+    pack = group.children["KyvenDlssPackMotion"]
+    assert not pack["disable"].value()
+    assert [pack[f"from{i}"].value() for i in range(4)] == [
+        "rgba.red", "rgba.green", "rgba.blue", "rgba.alpha"]
+    assert [pack[f"to{i}"].value() for i in range(4)] == list(dlss_inputs.MOTION)
+    nuke.execute = Mock(side_effect=lambda writer, *_: Path(writer["file"].value()).write_bytes(b"snapshot"))
+    assert input_cache.export_input(nuke, group, writer, 1, path)
+    assert not input_cache.export_input(nuke, group, writer, 1, path)
+    group["intensity"].setValue(1.5)
+    assert input_cache.ready(group, path, 1)
+    payload, _, _ = dlss_node._export(group.fullName(), 1, "packed", settings, False)
+    assert {payload[field] for field in ("source", "motion", "depth", "mask")} == {str(path)}
+    assert payload["mask_channel"] == dlss_inputs.MASK
+    assert payload["depth_channel"] == dlss_inputs.DEPTH
+    assert payload["motion_x"] == dlss_inputs.MOTION[0]
+    assert nuke.execute.call_count == 1
+    group["motion_x"].setValue("B")
+    assert not input_cache.ready(group, path, 1)
+    group["motion_x"].setValue("R")
+    assert input_cache.ready(group, path, 1)
+    group.setInput(2, None)
+    assert not input_cache.ready(group, path, 1)
+
+
+@pytest.mark.parametrize("failure", ["size", "channel"])
+def test_pack_rejects_invalid_guides_instead_of_writing_black(graph, failure):
+    nuke, group = graph
+    guide = Node(nuke, "Constant", "BadGuide")
+    group.setInput(1, guide)
+    if failure == "size":
+        guide.width = lambda: 123
+    with pytest.raises(RuntimeError, match="match Source|missing channels"):
+        dlss_node._packed_input_writer(group, {"mask_source": "none", "temporal": False})
+
+
+def test_packed_input_ignores_unused_guides_and_upgrades_legacy_writers(graph):
+    from kyven_nuke import dlss_inputs
+
+    nuke, group = graph
+    identity = group["kyven_uuid"].value()
+    node_inputs = dict(group.inputs)
+    group.begin()
+    try:
+        for name in ("Source", "Motion", "Depth", "Mask"):
+            nuke.nodes.Write(name="KyvenDlss" + name + "Write")
+    finally:
+        group.end()
+    group.setInput(3, Node(nuke, "Constant", "IgnoredMask"))
+    dlss_node._packed_input_writer(group, {"mask_source": "none", "temporal": False})
+    assert group["kyven_uuid"].value() == identity
+    assert group.input(0) == node_inputs[0]
+    assert sum(child.kind == "Write" for child in group.children.values()) == 1
+    for name in ("Motion", "Depth", "Mask"):
+        assert group.children["KyvenDlssPack" + name]["disable"].value()
+    assert dlss_inputs.payload(group, {"mask_source": "source_alpha"}, Path("test.exr")) == {
+        "source": "test.exr"}
+
+
+def test_packed_range_writes_one_file_per_frame_and_only_adds_missing_frames(graph, monkeypatch):
+    from kyven_nuke import input_cache
+
+    nuke, group = graph
+    monkeypatch.setattr(dlss_node, "_request_settings", lambda node: {"temporal": False, "mask_source": "none"})
+    progress = Mock()
+    progress.isCancelled.return_value = False
+    monkeypatch.setattr(nuke, "ProgressTask", lambda *_: progress, raising=False)
+    monkeypatch.setattr(nuke, "frame", lambda frame=None: 1)
+    nuke.execute = Mock(side_effect=lambda writer, first, last:
+                        Path(writer["file"].value()).write_bytes(f"pixels:{first}".encode()))
+    assert input_cache.prepare_range(nuke, group, 1, 3)
+    assert nuke.execute.call_count == 3
+    assert input_cache.prepare_range(nuke, group, 2, 4)
+    assert nuke.execute.call_count == 4
+    group["intensity"].setValue(0.5)
+    assert input_cache.prepare_range(nuke, group, 1, 4)
+    assert nuke.execute.call_count == 4
+    assert input_cache.prepare_range(nuke, group, 2, 3, refresh=True)
+    assert nuke.execute.call_count == 6
+    folder = dlss_node._dlss_cache_root(group) / "_kyven_work/inputs"
+    assert {path.name for path in folder.glob("*.exr")} == {
+        f"input.{frame:04d}.exr" for frame in range(1, 5)}
 
 
 def test_mask_interface_selects_neural_guide_and_shows_only_relevant_controls(graph):
@@ -692,8 +814,8 @@ def test_source_to_live_result_survives_nuke_export_and_read_notifications(
     nuke.execute = export
     try:
         from kyven_nuke.input_cache import export_input
-        input_path = dlss_node._dlss_cache_root(group) / "_kyven_work/inputs/source.0001.exr"
-        export_input(nuke, group, dlss_node._inside(group, "KyvenDlssSourceWrite"), 1, input_path)
+        input_path = dlss_node._dlss_cache_root(group) / "_kyven_work/inputs/input.0001.exr"
+        export_input(nuke, group, dlss_node._inside(group, "KyvenDlssInputWrite"), 1, input_path)
         nuke._frame = 1
         dlss_node.process_current_frame(group, live=True)
         deadline = time.monotonic() + 5

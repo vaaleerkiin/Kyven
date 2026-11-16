@@ -72,6 +72,14 @@ direction, channel mapping and units required by DLSS before using an external f
 
 Hover over controls for English help. For input snapshots and upstream changes, see [input preparation](NUKE.md#input-preparation-and-processing).
 
+Input caching writes one multilayer EXR per frame, containing Source RGB/alpha and only
+the selected motion, depth and active mask channels. The server reads it once and reuses
+the decoded channels for all guides. Transport remains 32-bit float with lossless ZIP
+compression: HDR, negative values, alpha and vectors retain their precision. Packing
+reduces file/open overhead; size savings depend on the shot and connected channels.
+Update/restart both Nuke and the Kyven server (API 37). Reopening the script or upgrading
+the DLSS node installs the new writer while preserving its UUID, connections and settings.
+
 ## Alpha as an inference guide
 
 **Mask Alpha Input** offers **Full Frame** (default), **Source Alpha** and **Mask Input**.
