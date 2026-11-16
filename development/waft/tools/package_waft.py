@@ -27,7 +27,7 @@ text = text.replace(' addUserKnob {20 WAFT}', ''' addUserKnob {20 WAFT}
  grid_cleanup 1
  addUserKnob {7 cleanup_range l "Edge Threshold" t "Vector difference, in working-resolution pixels, over which smoothing is reduced. Lower values preserve smaller motion boundaries; higher values suppress stronger ripple." R 0.01 2}
  cleanup_range 0.25
- addUserKnob {26 model_info l "Model" T "WAFT-a1 / 5 iterations / v4"}''')
+ addUserKnob {26 model_info l "Model" T "WAFT-a1 / 5 iterations / v5"}''')
 text = text.replace('  serialiseKnob {iters:12;}\n', '')
 # Both directions must honor the same precision setting.
 text = text.replace('  name Inference1', '  halfPrecision {{parent.halfPrecision}}\n  name Inference1')
@@ -164,7 +164,7 @@ text = text[:ui_start] + '\n'.join(layout) + text[ui_end:]
 (target / 'WAFT.gizmo').write_text(text, encoding='utf-8')
 (target / 'cat.json').write_text(json.dumps({
     'minimum_nuke_version_required': 16.0,
-    'version': 4,
+    'version': 5,
     'category': 'Optical Flow',
     'description': 'Warping-Alone Field Transforms. WAFT-a1, motion and SmartVector outputs.',
     'cats': [{'filepath': 'WAFT.gizmo', 'name': 'WAFT', 'icon': 'WAFT.png'}]

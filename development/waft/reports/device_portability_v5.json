@@ -1,0 +1,124 @@
+{
+  "package_version": 5,
+  "export_torch": "2.10.0+cu128",
+  "nuke": "16.0v4",
+  "source_models": {
+    "WAFT.cat": {
+      "size_bytes": 130442609,
+      "sha256": "105bfd914a5990a696b71817d42950a7cde219645fa04c77d553460e1367c042"
+    },
+    "WAFT_FP32.cat": {
+      "size_bytes": 256147894,
+      "sha256": "28c25baef720db392e110964dfcdd27a0d1f60706793c1888fc7cfa99aabf210"
+    }
+  },
+  "repaired_models": {
+    "WAFT.cat": {
+      "size_bytes": 130456965,
+      "sha256": "aa7c6add7f00dd9146d53b14833c976498b4bf62658028c4baedddd9947bda90"
+    },
+    "WAFT_FP32.cat": {
+      "size_bytes": 256162830,
+      "sha256": "811a1c4ecd0818b9b77507fb90efae3577c5cf117ee7cace58aa3da94102b381"
+    }
+  },
+  "original_cpu_load_gpu_failure_reproduced": true,
+  "portability": [
+    {
+      "model": "WAFT.cat",
+      "size": [
+        128,
+        192
+      ],
+      "max_error": 0.007592916488647461
+    },
+    {
+      "model": "WAFT.cat",
+      "size": [
+        160,
+        240
+      ],
+      "max_error": 0.006868839263916016
+    },
+    {
+      "model": "WAFT.cat",
+      "size": [
+        288,
+        512
+      ],
+      "max_error": 0.00746607780456543
+    },
+    {
+      "model": "WAFT_FP32.cat",
+      "size": [
+        128,
+        192
+      ],
+      "max_error": 0.0,
+      "cpu_return_max_error": 0.005567789077758789
+    },
+    {
+      "model": "WAFT_FP32.cat",
+      "size": [
+        160,
+        240
+      ],
+      "max_error": 0.0
+    },
+    {
+      "model": "WAFT_FP32.cat",
+      "size": [
+        288,
+        512
+      ],
+      "max_error": 0.0
+    }
+  ],
+  "nuke_device_matrix": [
+    {
+      "case": "0_True_0",
+      "samples": [
+        4.0526652336120605,
+        -2.9934802055358887,
+        -3.97153639793396,
+        3.025315999984741
+      ]
+    },
+    {
+      "case": "1_True_1",
+      "samples": [
+        4.052283763885498,
+        -2.993198871612549,
+        -3.972903251647949,
+        3.0248591899871826
+      ]
+    },
+    {
+      "case": "1_False_2",
+      "samples": [
+        4.052333354949951,
+        -2.993243455886841,
+        -3.972949743270874,
+        3.0249898433685303
+      ]
+    },
+    {
+      "case": "0_False_3",
+      "samples": [
+        4.052333354949951,
+        -2.993243455886841,
+        -3.972949743270874,
+        3.0249898433685303
+      ]
+    },
+    {
+      "case": "0_True_4",
+      "samples": [
+        4.0526652336120605,
+        -2.9934802055358887,
+        -3.97153639793396,
+        3.025315999984741
+      ]
+    }
+  ]
+}

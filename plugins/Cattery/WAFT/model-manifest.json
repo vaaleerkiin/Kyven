@@ -1,12 +1,12 @@
 {
   "models": {
     "WAFT.cat": {
-      "size_bytes": 130442609,
-      "sha256": "105bfd914a5990a696b71817d42950a7cde219645fa04c77d553460e1367c042"
+      "size_bytes": 130456965,
+      "sha256": "aa7c6add7f00dd9146d53b14833c976498b4bf62658028c4baedddd9947bda90"
     },
     "WAFT_FP32.cat": {
-      "size_bytes": 256147894,
-      "sha256": "28c25baef720db392e110964dfcdd27a0d1f60706793c1888fc7cfa99aabf210"
+      "size_bytes": 256162830,
+      "sha256": "811a1c4ecd0818b9b77507fb90efae3577c5cf117ee7cace58aa3da94102b381"
     }
   }
 }

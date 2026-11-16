@@ -99,9 +99,20 @@ checks are available; they require CUDA and the checkpoint:
 
 ```powershell
 .\.venv\Scripts\python.exe tools\verify_upstream.py
+.\.venv\Scripts\python.exe tools\verify_portability.py
 .\.venv\Scripts\python.exe tools\benchmark_precision.py FP32
 .\.venv\Scripts\python.exe tools\benchmark_precision.py FP16
 ```
+
+Version 5 fixes frozen tensor placement, including a CPU-loaded model subsequently
+used on GPU. `verify_portability.py` covers that path, compares translated-image
+flow against the source models at three resolutions, and returns FP32 to CPU.
+The GPU FP16 tolerance is 0.02 pixels; FP32 GPU tolerance is 0.002 pixels.
+To repair the existing installed weights without downloading a checkpoint, run
+`tools/repair_devices.py` before the two CatFileCreator commands in section 3.
+This extracts the TorchScript archive, adds input-device placement for non-scalar
+tensor constants, and writes both `.pt` files to `build/`. Run the portability
+check before replacing the installed models, then render the new package in Nuke.
 
 User-video scripts reference an external clip in their source. That clip is not
 included; point those scripts at your own footage before rerunning them.

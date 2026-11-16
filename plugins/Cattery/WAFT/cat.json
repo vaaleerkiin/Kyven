@@ -1,6 +1,6 @@
 {
     "minimum_nuke_version_required": 16.0,
-    "version": 4,
+    "version": 5,
     "category": "Optical Flow",
     "description": "Warping-Alone Field Transforms. WAFT-a1, motion and SmartVector outputs.",
     "cats": [

@@ -6,7 +6,7 @@
 WAFT-a1 estimates optical flow between adjacent frames and outputs either Motion
 Vectors or Smart Vectors. It is a self-contained Cattery plugin bundled alongside
 Kyven: calculations use Nuke's native Inference nodes, with no Kyven Server or
-Model Manager download. Package version 4 uses five model iterations.
+Model Manager download. Package version 5 uses five model iterations.
 
 ## First use
 
@@ -83,7 +83,10 @@ Process/Cache buttons and Folder/Name/Version cache contract do not apply.
 Changing Precision or Use GPU recreates the two internal Inference operators so
 Nuke cannot retain a previously loaded model on the wrong device. This fixes a
 reproduced `Expected all tensors to be on the same device` failure after switching
-between GPU and CPU. Both embedded models are unchanged. After updating the
+between GPU and CPU. Version 5 also explicitly places frozen model tensors on the
+input device: loading a model on CPU and subsequently using it on GPU must not
+leave normalization arrays or weights on CPU. Both embedded `.cat` files must be
+updated together with the callback module. After updating the
 callback module, restart Nuke and create a fresh WAFT node before testing again.
 
 GPU FP16 is the recommended starting mode. FP32 provides a CPU option but can be

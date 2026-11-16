@@ -15,6 +15,11 @@ for name in ['export_validation', 'upstream_validation', 'fp16_validation', 'nuk
     validation[name] = json.loads(report.read_text())
     report_origins[name] = 'current build' if report.parent.name == 'build' else 'saved baseline'
 validation['report_origins'] = report_origins
+for name in ('device_validation', 'portability_validation'):
+    report = root / 'build' / (name + '.json')
+    if report.is_file():
+        validation[name] = json.loads(report.read_text())
+        report_origins[name] = 'current build'
 validation['source_commit'] = json.loads((root / 'provenance.json').read_text())['source_commit']
 model = package / 'Cattery/WAFT/WAFT.cat'
 validation['cat_sha256'] = hashlib.sha256(model.read_bytes()).hexdigest()
@@ -27,7 +32,7 @@ for name in ('WAFT.cat', 'WAFT_FP32.cat'):
     }
 (model.parent / 'model-manifest.json').write_text(json.dumps(model_manifest, indent=2) + '\n')
 validation['precision'] = 'FP16 on GPU; FP32 flow accumulation; optional FP32 model for CPU'
-validation['package_version'] = 4
+validation['package_version'] = 5
 validation['default_processing_long_edge'] = 512
 (package / 'validation.json').write_text(json.dumps(validation, indent=2))
 output = root / 'WAFT-Cattery-Nuke16.zip'

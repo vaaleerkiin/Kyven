@@ -10,7 +10,7 @@ Gizmo {
  addUserKnob {26 kyven_logo l "" +STARTLINE}
  addUserKnob {26 kyven_title l "" -STARTLINE T "<font size='5' color='#dce9f2'><b>KYVEN WAFT</b></font>"}
  addUserKnob {26 model_section l "" +STARTLINE T "<br><font color='#9fc7e8'><b>MODEL AND PERFORMANCE</b></font>"}
- addUserKnob {26 model_info l "Model" T "WAFT-a1 / 5 iterations / v4"}
+ addUserKnob {26 model_info l "Model" T "WAFT-a1 / 5 iterations / v5"}
  addUserKnob {4 precision l "Precision" t "GPU FP16 uses half precision weights and attention, with float32 flow accumulation. FP32 supports CPU. Turning off GPU automatically selects the FP32 model." M {"GPU FP16 (Fast)" "FP32 (Compatible)"}}
  addUserKnob {6 useGPUIfAvailable l "Use GPU if available" t "Select this to render on the <b>Local GPU</b>, if available.\n\nYou can select this even if no GPU is currently available on your machine. The GPU will then be used whenever the script is opened on a machine which does have a GPU available. You should also select this if you wish to render from the command line with the <b>--gpu</b> option.\n\nIf this node requires full frames from its inputs, and is therefore unable to reduce its memory overhead, it will fall back to the CPU if an attempt to render a frame on the GPU fails due to lack of memory. When this occurs, a warning message will be printed to the console." +STARTLINE}
  useGPUIfAvailable true

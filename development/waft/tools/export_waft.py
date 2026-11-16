@@ -14,6 +14,7 @@ import types
 import torch
 from torch import Tensor, nn
 import torch.nn.functional as F
+from device_portability import make_devices_dynamic
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'WAFT-source'
@@ -117,24 +118,6 @@ def make_model(checkpoint):
         if hasattr(layer, 'fused_attn'):
             layer.fused_attn = False
     return model
-
-
-def make_devices_dynamic(module):
-    graph = module.graph
-    input_value = list(graph.inputs())[1]
-    device = graph.create('prim::device', [input_value])
-    device.output().setType(torch._C.DeviceObjType.get())
-    device.insertBefore(next(graph.nodes()))
-    def visit(block):
-        for node in list(block.nodes()):
-            if node.kind() == 'prim::Constant' and str(node.output().type()) == 'Device':
-                node.output().replaceAllUsesWith(device.output())
-                node.destroy()
-            else:
-                for child in node.blocks():
-                    visit(child)
-    visit(graph)
-    torch._C._jit_pass_lint(graph)
 
 
 def main():
