@@ -83,8 +83,6 @@ def prepare_trimap_preview(payload: dict[str, Any]) -> dict[str, Any]:
             width, height = mask.size
             roi = _roi(payload)
             region = resolve_region(roi, width, height) if roi is not None else None
-            if region is not None:
-                mask = mask.crop((region.x0, region.y0, region.x1, region.y1))
             pixels = np.asarray(mask)
     except (OSError, ValueError) as exc:
         raise KyvenError(
@@ -100,7 +98,8 @@ def prepare_trimap_preview(payload: dict[str, Any]) -> dict[str, Any]:
     )
     if region is not None:
         full = np.zeros((height, width), dtype=np.uint8)
-        full[region.y0 : region.y1, region.x0 : region.x1] = trimap
+        full[region.y0 : region.y1, region.x0 : region.x1] = trimap[
+            region.y0 : region.y1, region.x0 : region.x1]
         trimap = full
     try:
         write_mask_png_atomic(output_path, trimap)

@@ -386,6 +386,8 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
     node.begin()
     try:
         channel_switch = nuke.toNode("KyvenInpaintMaskChannel")
+        from kyven_nuke.mask_input import force_alpha_mask
+        force_alpha_mask(node, channel_switch)
         output_switch = nuke.toNode("KyvenOutputSwitch")
         difference = nuke.toNode("KyvenDifference")
         source = nuke.toNode("Source")
@@ -1013,7 +1015,8 @@ def _ensure_input_color_control(node: Any) -> None:
         colorspace.setTooltip("Define the colorspace that the input image is in.")
         _add_knob(nuke, node, colorspace)
     try:
-        node["in_colorspace"].makeLink("KyvenInputToSRGB", "colorspace_in")
+        # Use the actual Link_Knob, not its resolved target Enumeration_Knob.
+        node.knobs()["in_colorspace"].makeLink("KyvenInputToSRGB", "colorspace_in")
     except (RuntimeError, ValueError):
         # New groups add the public knob before their internal graph exists.
         # The second call after graph construction completes the link.
@@ -1028,7 +1031,7 @@ def _ensure_inpaint_mask_sliders(node: Any) -> None:
 
     nuke = _nuke()
     if "mask_channel" in node.knobs():
-        node["mask_channel"].setLabel("Mask Input Channel")
+        node["mask_channel"].setVisible(False)
     if "preprocess_mask" not in node.knobs():
         enabled = nuke.Boolean_Knob("preprocess_mask", "Preprocess Input Mask")
         enabled.setValue(True)
@@ -1042,7 +1045,7 @@ def _ensure_inpaint_mask_sliders(node: Any) -> None:
             node[obsolete].setVisible(False)
             if obsolete.startswith("preview_"):
                 node[obsolete].setValue(False)
-    _place_knob_after(node, "preprocess_mask", "mask_channel")
+    _place_knob_after(node, "preprocess_mask", "mask_section")
     _place_knob_after(node, "preview_model_mask", "preprocess_mask")
     node["preview_model_mask"].clearFlag(nuke.STARTLINE)
     _ensure_double_slider(node, "mask_threshold", "Threshold", 0, 1, 0)
@@ -1174,7 +1177,6 @@ def _repair_inpaint_interface(node: Any) -> None:
 
     if "mask_section" not in node.knobs():
         _add_section(nuke, node, "mask_section", "MASK")
-    add(nuke.Enumeration_Knob("mask_channel", "Mask Input Channel", ["Alpha", "Red"]))
     if "preprocess_mask" not in node.knobs():
         preprocess = nuke.Boolean_Knob("preprocess_mask", "Preprocess Input Mask")
         preprocess.setValue(True)
@@ -1283,7 +1285,6 @@ def create_inpaint_node() -> Any:
     _add_knob(nuke, node, nuke.Text_Knob("model_help", "", "Fast: fixed 512 x 512 model input, CPU-friendly and best for Live. Use a tight Auto ROI for more detail."))
     _ensure_refinement_controls(node)
     _add_section(nuke, node, "mask_section", "MASK")
-    _add_knob(nuke, node, nuke.Enumeration_Knob("mask_channel", "Mask Input Channel", ["Alpha", "Red"]))
     preprocess = nuke.Boolean_Knob("preprocess_mask", "Preprocess Input Mask"); preprocess.setValue(True); _add_knob(nuke, node, preprocess)
     invert = nuke.Boolean_Knob("invert_mask", "Invert Input Mask"); _add_knob(nuke, node, invert)
     _ensure_inpaint_mask_sliders(node)
@@ -1335,11 +1336,9 @@ def create_inpaint_node() -> Any:
         out = nuke.nodes.Output(name="Output"); out.setInput(0, output_switch)
         sw = nuke.nodes.Write(name="KyvenInpaintSourceWrite"); sw.setInput(0, src); sw["file_type"].setValue("tiff"); sw["channels"].setValue("rgb")
         alpha = nuke.nodes.Shuffle(name="KyvenInpaintMaskAlpha"); alpha.setInput(0, msk)
-        red = nuke.nodes.Shuffle(name="KyvenInpaintMaskRed"); red.setInput(0, msk)
         for channel in ("red", "green", "blue", "alpha"):
             if channel in alpha.knobs(): alpha[channel].setValue("alpha")
-            if channel in red.knobs(): red[channel].setValue("red")
-        channel_switch = nuke.nodes.Switch(name="KyvenInpaintMaskChannel"); channel_switch.setInput(0, alpha); channel_switch.setInput(1, red); channel_switch["which"].setExpression("parent.mask_channel")
+        channel_switch = nuke.nodes.Switch(name="KyvenInpaintMaskChannel"); channel_switch.setInput(0, alpha); channel_switch["which"].setValue(0)
         combined = nuke.nodes.Copy(name="KyvenInpaintCombined"); combined.setInput(0, src); combined.setInput(1, channel_switch); combined["from0"].setValue("rgba.red"); combined["to0"].setValue("rgba.alpha")
         sw.setInput(0, combined); sw["channels"].setValue("rgba")
         if "compression" in sw.knobs(): sw["compression"].setValue(0)

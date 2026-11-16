@@ -45,10 +45,10 @@ def refine_big_lama(
 ) -> Any:
     """Run LaMa's coarse-to-fine bottleneck optimization on one padded RGB crop."""
 
+    cancellation.raise_if_cancelled()
     import torch
     from torch.nn import functional
 
-    cancellation.raise_if_cancelled()
     layers = tuple(model.generator.model.children())
     if len(layers) < 24:
         raise RuntimeError("The installed Big-LaMa checkpoint does not expose refinement layers.")

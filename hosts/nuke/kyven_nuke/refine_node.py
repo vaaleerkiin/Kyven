@@ -125,7 +125,8 @@ REFINE_OUTPUT_HELP = (
 )
 REFINE_TRIMAP_HELP = (
     "CPU-only preview; these controls never run ViTMatte.<br>"
-    "<b>On</b>: build from mask &nbsp; | &nbsp; <b>Off</b>: use artist trimap"
+    "<b>On</b>: alpha > 0 becomes solid before building the edge<br>"
+    "<b>Off</b>: preserve an artist guide's gray unknown region"
 )
 REFINE_LIVE_HELP = (
     "Live follows timeline and model / ROI changes asynchronously.<br>"
@@ -1084,6 +1085,27 @@ def _ensure_refine_output_controls(node: Any) -> None:
         output = nuke.toNode("Output")
         if source is None or refined is None or mask_channel is None or output is None:
             raise RuntimeError("Selected node is not a compatible Kyven Refine Group.")
+        from kyven_nuke.mask_input import force_alpha_mask
+        force_alpha_mask(node, mask_channel)
+        support = nuke.toNode("KyvenRefineMaskSupport")
+        if support is None:
+            support = nuke.nodes.Expression(name="KyvenRefineMaskSupport")
+        support.setInput(0, mask_channel)
+        for index, channel in enumerate(("r", "g", "b", "a")):
+            support[f"expr{index}"].setValue(
+                f"parent.generate_trimap ? ({channel} > 0) : "
+                f"({channel} >= 170.0/255 ? 1 : ({channel} <= 85.0/255 ? 0 : 128.0/255))")
+        writer = nuke.toNode("KyvenRefineMaskWrite")
+        if writer is not None:
+            export = nuke.toNode("KyvenRefineMaskExport")
+            if export is None:
+                export = nuke.nodes.Copy(name="KyvenRefineMaskExport")
+            export.setInput(0, support)
+            export.setInput(1, mask_channel)
+            export["from0"].setValue("rgba.alpha")
+            export["to0"].setValue("rgba.alpha")
+            writer.setInput(0, export)
+            writer["channels"].setValue("rgba")
         source.setXpos(-120)
         if mask_input is not None:
             mask_input.setXpos(120)
@@ -1091,14 +1113,16 @@ def _ensure_refine_output_controls(node: Any) -> None:
         foreground = nuke.toNode("KyvenTrimapForeground")
         if foreground is None:
             foreground = nuke.nodes.Dilate(name="KyvenTrimapForeground")
-        foreground.setInput(0, mask_channel)
-        foreground["size"].setExpression("-parent.foreground_radius")
+        foreground.setInput(0, support)
+        foreground["channels"].setValue("rgba")
+        foreground["size"].setExpression("-floor(parent.foreground_radius)")
 
         possible = nuke.toNode("KyvenTrimapPossibleForeground")
         if possible is None:
             possible = nuke.nodes.Dilate(name="KyvenTrimapPossibleForeground")
-        possible.setInput(0, mask_channel)
-        possible["size"].setExpression("parent.background_radius")
+        possible.setInput(0, support)
+        possible["channels"].setValue("rgba")
+        possible["size"].setExpression("floor(parent.background_radius)")
 
         foreground_half = nuke.toNode("KyvenTrimapForegroundHalf")
         if foreground_half is None:
@@ -1106,7 +1130,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
                 name="KyvenTrimapForegroundHalf", value=0.5
             )
         foreground_half.setInput(0, foreground)
-        foreground_half["value"].setValue(0.5)
+        foreground_half["value"].setValue(127.0 / 255)
 
         possible_half = nuke.toNode("KyvenTrimapPossibleHalf")
         if possible_half is None:
@@ -1114,7 +1138,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
                 name="KyvenTrimapPossibleHalf", value=0.5
             )
         possible_half.setInput(0, possible)
-        possible_half["value"].setValue(0.5)
+        possible_half["value"].setValue(128.0 / 255)
 
         generated_trimap = nuke.toNode("KyvenGeneratedTrimap")
         if generated_trimap is None:
@@ -1128,15 +1152,28 @@ def _ensure_refine_output_controls(node: Any) -> None:
         generated_selector = nuke.toNode("KyvenGeneratedTrimapSwitch")
         if generated_selector is None:
             generated_selector = nuke.nodes.Switch(name="KyvenGeneratedTrimapSwitch")
-        generated_selector.setInput(0, mask_channel)
+        generated_selector.setInput(0, support)
         generated_selector.setInput(1, generated_trimap)
         generated_selector["which"].setExpression("parent.generate_trimap")
+
+        guidance = nuke.toNode("KyvenTrimapROI")
+        if guidance is None:
+            guidance = nuke.nodes.Expression(name="KyvenTrimapROI")
+        guidance.setInput(0, generated_selector)
+        x0 = "max(0,min(parent.processing_roi.x,parent.processing_roi.r))"
+        x1 = "min(width,max(parent.processing_roi.x,parent.processing_roi.r))"
+        y0 = "max(0,min(parent.processing_roi.y,parent.processing_roi.t))"
+        y1 = "min(height,max(parent.processing_roi.y,parent.processing_roi.t))"
+        inside = f"(x >= floor({x0}) && x < ceil({x1}) && y >= floor({y0}) && y < ceil({y1}))"
+        bypass = f"(parent.crop_mode != 1 || {x0} >= {x1} || {y0} >= {y1})"
+        for index, channel in enumerate(("r", "g", "b", "a")):
+            guidance[f"expr{index}"].setValue(f"({bypass} || {inside}) ? {channel} : 0")
 
         trimap = nuke.toNode("KyvenTrimapSwitch")
         if trimap is None:
             trimap = nuke.nodes.Switch(name="KyvenTrimapSwitch")
             trimap["which"].setValue(0)
-        trimap.setInput(0, generated_selector)
+        trimap.setInput(0, guidance)
 
         refined_rgba = nuke.toNode("KyvenMatteRGBA")
         if refined_rgba is None:
@@ -1381,11 +1418,6 @@ def create_refine_node() -> Any:
     _add_knob(nuke, node, tile_overlap, start_line=False)
 
     _add_section(nuke, node, "trimap_section", "TRIMAP")
-    _add_knob(
-        nuke,
-        node,
-        nuke.Enumeration_Knob("mask_channel", "Mask Input Channel", ["Alpha", "Red"]),
-    )
     generate = nuke.Boolean_Knob("generate_trimap", "Generate Trimap from Mask")
     generate.setValue(True)
     _add_knob(nuke, node, generate)
@@ -1506,15 +1538,9 @@ def create_refine_node() -> Any:
         for channel in ("red", "green", "blue", "alpha"):
             if channel in alpha_extract.knobs():
                 alpha_extract[channel].setValue("alpha")
-        red_extract = nuke.nodes.Shuffle(name="KyvenMaskExtractRed")
-        red_extract.setInput(0, mask)
-        for channel in ("red", "green", "blue", "alpha"):
-            if channel in red_extract.knobs():
-                red_extract[channel].setValue("red")
         mask_channel = nuke.nodes.Switch(name="KyvenMaskChannelSwitch")
         mask_channel.setInput(0, alpha_extract)
-        mask_channel.setInput(1, red_extract)
-        mask_channel["which"].setExpression("parent.mask_channel")
+        mask_channel["which"].setValue(0)
         empty = nuke.nodes.Multiply(name="KyvenEmptyMatte", value=0.0)
         empty.setInput(0, source)
         matte_switch = nuke.nodes.Switch(name="KyvenMatteSwitch")

@@ -133,7 +133,8 @@ fields participate in the deterministic cache key. The worker reports progress a
 cancellation during each refinement iteration.
 Empty masks return Source unchanged without loading a model.
 
-Successful Segment, Refine, and Inpaint outputs receive an atomic `.kyven.json` sidecar manifest.
+Successful Segment, Refine, and Inpaint outputs receive an atomic manifest under
+`_kyven_work/manifests/<output filename>.kyven.json`; legacy adjacent sidecars remain readable.
 It contains the deterministic cache key and result metadata. A repeated request validates both the
 manifest and every required image/NPZ before returning a cache hit; missing or corrupt media forces
 a safe recalculation.

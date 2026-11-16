@@ -110,3 +110,36 @@ def test_animated_mask_settings_are_verified_at_the_cached_frame(context):
     assert not input_cache.ready(node, path, 1003)
     knob.valueAt = lambda frame: frame * 3
     assert not input_cache.ready(node, path, 1002)
+
+
+def test_corrupt_index_can_be_refreshed_without_deleting_images(context):
+    node, writer, nuke, root = context
+    path = root / 'source.tif'
+    input_cache.export_input(nuke, node, writer, 1, path)
+    from kyven.cache_layout import work_root
+    (work_root(path) / 'inputs.sqlite3').write_bytes(b'broken database')
+    assert not input_cache.ready(node, path, 1)
+    input_cache.export_input(nuke, node, writer, 1, path, refresh=True)
+    assert input_cache.ready(node, path, 1)
+    assert nuke.execute.call_count == 2
+
+
+@pytest.mark.parametrize('kind', ['refine', 'inpaint'])
+def test_alpha_only_upgrade_invalidates_legacy_input_snapshots(context, kind):
+    node, writer, nuke, root = context
+    path = root / 'mask.tif'
+    input_cache.export_input(nuke, node, writer, 1, path)
+    node.values['kyven_kind'] = Knob(kind)
+    assert not input_cache.ready(node, path, 1)
+    input_cache.export_input(nuke, node, writer, 1, path)
+    assert input_cache.ready(node, path, 1)
+
+
+def test_generated_vs_manual_guidance_requires_new_snapshot(context):
+    node, writer, nuke, root = context
+    node.values['kyven_kind'] = Knob('refine')
+    node.values['generate_trimap'] = Knob(True)
+    path = root/'mask.tif'
+    input_cache.export_input(nuke, node, writer, 1, path)
+    node['generate_trimap'].setValue(False)
+    assert not input_cache.ready(node, path, 1)

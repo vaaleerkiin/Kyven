@@ -39,7 +39,9 @@ def generate_trimap(
 ) -> NDArray[np.uint8]:
     """Build a three-state trimap from a coarse binary or grayscale mask."""
 
-    binary = np.asarray(mask, dtype=np.uint8) >= 128
+    # A generated guide starts from alpha support, including faint soft edges.
+    # Artist-authored three-state guidance uses normalize_trimap instead.
+    binary = np.asarray(mask) > 0
     foreground_pixels = (
         _box_counts(binary, foreground_radius) == (foreground_radius * 2 + 1) ** 2
     )

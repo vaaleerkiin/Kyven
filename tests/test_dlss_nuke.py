@@ -292,8 +292,8 @@ def test_live_renders_once_after_a_single_edit_without_further_ui_events(graph, 
     ("intensity", 0.6), ("local_tone", 0.6), ("local_structure", 0.6),
     ("skin_structure", 0.5), ("style", "Natural"), ("preset", "Preset 1"),
     ("processing_scale", "0.5"), ("temporal", True), ("temporal_strength", 0.6),
-    ("rejection", 0.2), ("scene_cut", 0.6), ("motion_x", "backward.u"),
-    ("motion_y", "backward.v"), ("motion_units", "UV"), ("motion_y_up", False),
+    ("rejection", 0.2), ("scene_cut", 0.6), ("motion_x", "R"),
+    ("motion_y", "G"), ("motion_units", "UV"), ("motion_y_up", False),
     ("motion_scale_x", 2), ("motion_scale_y", 2), ("depth_channel", "R"),
     ("cache_version", "v002"), ("reset_epoch", 1),
     ("hdr_rolloff", False), ("rolloff_knee", 0.7), ("mask_source", "Source Alpha"),
@@ -398,6 +398,38 @@ def test_mask_channel_is_always_alpha_even_for_older_saved_nodes(graph, monkeypa
     restyle_dlss_node(group, upgrade=True)
     assert group["mask_channel"].value() == "A"
     assert not group["mask_channel"].visible
+
+
+def test_new_dlss_node_uses_backward_motion_without_rgb(graph):
+    from kyven.dlss.images import channel
+
+    _, group = graph
+    vectors = {"backward.u": object(), "backward.v": object()}
+    assert channel(vectors, group["motion_x"].value()) is vectors["backward.u"]
+    assert channel(vectors, group["motion_y"].value()) is vectors["backward.v"]
+    assert group["motion_units"].value() == "Pixels"
+    assert group["motion_y_up"].value()
+
+
+@pytest.mark.parametrize("mapping, expected", [
+    (("R", "G"), ("R", "G")),
+    (("custom.x", "custom.y"), ("custom.x", "custom.y")),
+])
+def test_upgrade_preserves_existing_motion_mapping(graph, mapping, expected):
+    from kyven_nuke.dlss_interface import restyle_dlss_node
+
+    _, group = graph
+    identity = group["kyven_uuid"].value()
+    group["dlss_ui_version"].setValue(8)
+    group["motion_x"].setValue(mapping[0])
+    group["motion_y"].setValue(mapping[1])
+    restyle_dlss_node(group, upgrade=True)
+    assert (group["motion_x"].value(), group["motion_y"].value()) == expected
+    assert group["kyven_uuid"].value() == identity
+    group["motion_x"].setValue("R")
+    group["motion_y"].setValue("G")
+    restyle_dlss_node(group, upgrade=True)
+    assert (group["motion_x"].value(), group["motion_y"].value()) == ("R", "G")
 
 
 def test_nuke_vector_button_maps_channels_without_creating_a_generator(graph):

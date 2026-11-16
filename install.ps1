@@ -232,12 +232,6 @@ try {
     Write-Step "Installing PyTorch and SAM 2 / HQ-SAM 2 inside .venv"
     Invoke-Native $VenvPython @("-m", "pip", "install", "-r", $Requirements)
 
-    Write-Step "Installing pinned official TAPNet code without its unused JAX stack"
-    Invoke-Native $VenvPython @(
-        "-m", "pip", "install", "--no-deps",
-        "tapnet[torch] @ git+https://github.com/google-deepmind/tapnet.git@c2cbab81cc06092b5f05bfe2da7bfec54e2079c9"
-    )
-
     Write-Step "Installing Kyven inside .venv"
     Invoke-Native $VenvPython @("-m", "pip", "install", "--upgrade", ".")
 

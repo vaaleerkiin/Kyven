@@ -84,6 +84,9 @@ class RefineService:
         with Image.open(request.source) as source_file, Image.open(request.mask) as mask_file:
             source = source_file.convert("RGB")
             mask = mask_file.convert("L")
+            # Nuke snapshots carry prepared guidance in RGB and original coarse alpha
+            # separately, so binarization never alters pixels outside the model ROI.
+            coarse_alpha = mask_file.getchannel("A") if "A" in mask_file.getbands() else mask.copy()
         if source.size != mask.size:
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
@@ -115,8 +118,6 @@ class RefineService:
         trimap_pixels = full_trimap[crop_box[1] : crop_box[3], crop_box[0] : crop_box[2]]
         token.report_progress(0.10, "Prepared ViTMatte trimap")
         trimap_output = request.trimap_output
-        if trimap_output is not None:
-            write_mask_png_atomic(trimap_output, full_trimap)
         token.report_progress(0.15, "Preparing refinement inputs")
         with tempfile.TemporaryDirectory(prefix="kyven-refine-") as directory:
             root = Path(directory)
@@ -144,7 +145,14 @@ class RefineService:
                 message="The refinement provider returned an invalid alpha size.",
                 technical_detail=f"Expected {expected}, received {refined.shape}.",
             )
-        full = np.asarray(mask, dtype=np.float32) / 255.0
+        if not np.isfinite(refined).all():
+            raise KyvenError(ErrorCode.INFERENCE_FAILED,
+                             "The refinement provider returned nonfinite alpha values.")
+        if trimap_output is not None:
+            guidance = np.zeros_like(full_trimap)
+            guidance[region.y0 : region.y1, region.x0 : region.x1] = trimap_pixels
+            write_mask_png_atomic(trimap_output, guidance)
+        full = np.asarray(coarse_alpha, dtype=np.float32) / 255.0
         full[region.y0 : region.y1, region.x0 : region.x1] = refined
         refined = full
         write_mask_png_atomic(request.output, refined)

@@ -17,6 +17,7 @@ from kyven_nuke.branding import add_node_branding
 from kyven_nuke.client import NukeKyvenClientError
 from kyven_nuke.color_management import set_data_io
 from kyven_nuke.input_cache import current_input, prepare_range, use_input
+from kyven_nuke.knob_tools import suspend_callbacks
 from kyven_nuke.payload import MODEL_IDS, MODEL_LABELS, segment_payload, segment_video_payload
 from kyven_nuke.preferences import default_model_index
 from kyven_nuke.runtime import ensure_server, stop_server
@@ -27,8 +28,8 @@ OUTPUT_MODES = (
     "Source + Alpha",
     "Alpha",
     "Cutout",
-    "Source + Trimap",
-    "Trimap",
+    "Source + Edge Guide",
+    "Edge Guide",
     "Bypass",
 )
 _range_cancellations: set[str] = set()
@@ -2302,6 +2303,7 @@ def _add_section(nuke: Any, node: Any, name: str, title: str) -> None:
     _add_knob(nuke, node, nuke.Text_Knob(name, "", _section_markup(title)))
 
 
+@suspend_callbacks
 def _ensure_double_slider(
     node: Any,
     name: str,
@@ -2324,7 +2326,7 @@ def _ensure_double_slider(
     names = list(node.knobs())
     tail = []
     if existing is not None:
-        tail = [node[knob_name] for knob_name in names[names.index(name) :]]
+        tail = [node.knobs()[knob_name] for knob_name in names[names.index(name) :]]
         for knob in tail:
             node.removeKnob(knob)
     slider = nuke.Double_Knob(name, label)
@@ -2344,6 +2346,7 @@ def _ensure_double_slider(
     return slider
 
 
+@suspend_callbacks
 def _place_knob_after(node: Any, knob_name: str, anchor_name: str) -> None:
     """Move an existing user knob directly after an anchor without recreating controls."""
 
@@ -2355,7 +2358,7 @@ def _place_knob_after(node: Any, knob_name: str, anchor_name: str) -> None:
     if knob_index == anchor_index + 1 or knob_index <= anchor_index:
         return
     tail_names = names[anchor_index + 1 :]
-    tail = [node[name] for name in tail_names]
+    tail = [node.knobs()[name] for name in tail_names]
     for knob in tail:
         node.removeKnob(knob)
     ordered = [node_knob for node_knob in tail if node_knob.name() == knob_name]
@@ -2452,8 +2455,8 @@ def _restyle_node_ui(node: Any) -> None:
             "<b>Alpha</b>: mask in RGB + alpha &nbsp; | &nbsp; "
             "<b>Source + Alpha</b>: original RGB, mask in alpha<br>"
             "<b>Cutout</b>: premultiplied foreground<br>"
-            "<b>Source + Trimap</b>: original RGB, confidence trimap in alpha<br>"
-            "<b>Trimap</b>: confidence trimap in RGB + alpha &nbsp; | &nbsp; "
+            "<b>Source + Edge Guide</b>: original RGB, edge guide in alpha<br>"
+            "<b>Edge Guide</b>: white object, gray uncertain edge, black background &nbsp; | &nbsp; "
             "<b>Bypass</b>: source unchanged"
         )
     if "roi_help" in node.knobs():
@@ -2533,15 +2536,17 @@ def _ensure_output_controls(node: Any) -> None:
             "<b>Alpha</b>: mask in RGB + alpha &nbsp; | &nbsp; "
             "<b>Source + Alpha</b>: original RGB, mask in alpha<br>"
             "<b>Cutout</b>: premultiplied foreground<br>"
-            "<b>Source + Trimap</b>: original RGB, confidence trimap in alpha<br>"
-            "<b>Trimap</b>: confidence trimap in RGB + alpha &nbsp; | &nbsp; "
+            "<b>Source + Edge Guide</b>: original RGB, edge guide in alpha<br>"
+            "<b>Edge Guide</b>: white object, gray uncertain edge, black background &nbsp; | &nbsp; "
             "<b>Bypass</b>: source unchanged",
         )
         _add_knob(nuke, node, help_text)
     else:
         previous_output = {
             "Matte": "Alpha",
-            "Confidence Trimap": "Trimap",
+            "Confidence Trimap": "Edge Guide",
+            "Trimap": "Edge Guide",
+            "Source + Trimap": "Source + Edge Guide",
             "Alpha Premult": "Cutout",
             "Source (Bypass)": "Bypass",
         }.get(previous_output, previous_output)
@@ -3312,8 +3317,8 @@ def create_segment_node() -> Any:
             "<b>Alpha</b>: mask in RGB + alpha &nbsp; | &nbsp; "
             "<b>Source + Alpha</b>: original RGB, mask in alpha<br>"
             "<b>Cutout</b>: premultiplied foreground<br>"
-            "<b>Source + Trimap</b>: original RGB, confidence trimap in alpha<br>"
-            "<b>Trimap</b>: confidence trimap in RGB + alpha &nbsp; | &nbsp; "
+            "<b>Source + Edge Guide</b>: original RGB, edge guide in alpha<br>"
+            "<b>Edge Guide</b>: white object, gray uncertain edge, black background &nbsp; | &nbsp; "
             "<b>Bypass</b>: source unchanged",
         ),
     )

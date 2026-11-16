@@ -760,8 +760,8 @@ def create_dlss_node() -> Any:
         tooltip="Choose the neural control guide. White allows changes, black protects. Source alpha is preserved.")
     add("String_Knob", "mask_channel", "Mask Channel", "A")
     add("Boolean_Knob", "protect_outside", "Protect RGB Outside Mask", True)
-    add("String_Knob", "motion_x", "Motion X Channel", "R")
-    add("String_Knob", "motion_y", "Motion Y Channel", "G")
+    add("String_Knob", "motion_x", "Motion X Channel", "backward.u")
+    add("String_Knob", "motion_y", "Motion Y Channel", "backward.v")
     add("Enumeration_Knob", "motion_units", "Motion Units", "Pixels", choices=["Pixels", "UV"])
     add("Boolean_Knob", "motion_y_up", "Motion Y Points Up (Nuke)", True,
         tooltip="Vectors must map current pixels to previous frame. Forward flow cannot be fixed by negation.")

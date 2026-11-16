@@ -136,7 +136,10 @@ memory limits, qualification results and remaining real-motion work.
 
 1. Generate vectors externally and connect Motion.
 2. Select exact EXR channels in **Motion X/Y Channel**, for example `R/G` or
-   `backward.u/backward.v`. No channel or direction is guessed.
+    `backward.u/backward.v`. New Nuke nodes default to `backward.u/backward.v`, matching
+    WAFT in **Motion Vectors** mode and native Nuke motion channels; Motion needs no RGB.
+    Loading or upgrading an older node preserves its selected channels, including explicit
+    `R/G` mappings. No channel or direction is guessed.
    **Use Nuke Backward Channels** applies the conventional Nuke mapping explicitly.
 3. At frame `t`, vectors must point from each current pixel to its position at `t-1`.
    A feature moving 5 px right needs X = -5. Negating forward flow does not generally produce

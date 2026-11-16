@@ -35,9 +35,10 @@ Paint / Segment mask -----------> Kyven Inpaint (input 0, right)
 ```
 
 Input 1 supplies Source RGB. Input 0 defines pixels to remove and supplies the mask used by mask-alpha output modes.
-The connector labels are the safest guide: Source is on the left and Mask is on the right. Choose
-Alpha or Red with **Mask Input Channel** and use **Invert Input Mask** when the mask convention is
-reversed.
+The connector labels are the safest guide: Source is on the left and Mask is on the right.
+Mask always reads **alpha**; the channel selector is removed from the interface, including
+upgraded nodes. Copy an RGB-only mask into alpha upstream. Use **Invert Input Mask** when the
+mask convention is reversed.
 
 ## Choosing a model
 

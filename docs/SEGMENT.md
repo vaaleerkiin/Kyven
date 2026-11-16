@@ -168,7 +168,7 @@ For a confidence-guided soft alpha:
 
 ```text
 Source ----------------------------> Refine Source
-Source -> Segment (Output: Trimap) -> Refine Mask
+Source -> Segment (Output: Edge Guide) -> Refine Mask
 ```
 
 Disable **Generate Trimap from Mask** in Refine so ViTMatte receives SAM's actual uncertainty.
@@ -180,11 +180,13 @@ Disable **Generate Trimap from Mask** in Refine so ViTMatte receives SAM's actua
 | **Source + Alpha** | Original Source RGB with generated mask in alpha; default |
 | **Alpha** | Binary mask in RGB and alpha |
 | **Cutout** | Source premultiplied by the generated alpha |
-| **Source + Trimap** | Original RGB with confidence trimap in alpha |
-| **Trimap** | Exact black/gray/white confidence guidance in RGB and alpha |
+| **Source + Edge Guide** | Original RGB with edge guidance in alpha |
+| **Edge Guide** | White: object; black: background; gray: uncertain pixels for Refine |
 | **Bypass** | Unchanged Source |
 
 Output switching uses native Nuke nodes and never reruns SAM.
+**Edge Guide** is the clearer interface name for SAM's three-state confidence trimap.
+Existing scripts keep the same output selection when the old labels are upgraded.
 
 ## Cache layout
 

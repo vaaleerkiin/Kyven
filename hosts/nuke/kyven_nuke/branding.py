@@ -6,6 +6,8 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
+from kyven_nuke.knob_tools import suspend_callbacks
+
 PROJECT_URL = "https://github.com/vaaleerkiin/Kyven"
 LOGO_PATH = Path(__file__).resolve().parents[1] / "icons" / "kyven_logo.png"
 
@@ -25,6 +27,7 @@ def logo_markup() -> str:
     return f'<a href="{PROJECT_URL}" title="Open Kyven on GitHub"><img src="{logo_path}" width="48" height="48"></a>'
 
 
+@suspend_callbacks
 def add_node_branding(node: Any, nuke: Any) -> None:
     """Add a compact linked logo to the top of a Kyven node."""
 
@@ -41,7 +44,7 @@ def add_node_branding(node: Any, nuke: Any) -> None:
     if "kyven" not in names or "kyven_logo" not in names:
         return
     anchor = names.index("kyven")
-    tail = [node[name] for name in names[anchor + 1 :]]
+    tail = [node.knobs()[name] for name in names[anchor + 1 :]]
     for knob in tail:
         node.removeKnob(knob)
     preferred = ("kyven_logo", "kyven_title")

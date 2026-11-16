@@ -16,9 +16,13 @@ def _receipt(path: Path) -> Path:
 
 def _state(node: Any, frame: int) -> dict:
     # Inpaint exports a processed model mask; these edits invalidate that input snapshot.
-    names = ("mask_grow", "mask_threshold", "invert_mask", "preprocess_mask", "input_colorspace")
+    names = ("mask_grow", "mask_threshold", "invert_mask", "preprocess_mask", "input_colorspace",
+             "in_colorspace", "generate_trimap")
     from kyven_nuke.node import _knob_value_at
-    return {name: _knob_value_at(node[name], frame) for name in names if name in node.knobs()}
+    state = {name: _knob_value_at(node[name], frame) for name in names if name in node.knobs()}
+    if "kyven_kind" in node.knobs() and node["kyven_kind"].value() in {"refine", "inpaint"}:
+        state["mask_input_contract"] = "alpha-only-positive-v1"
+    return state
 
 
 def ready(node: Any, path: Path, frame: int | None = None) -> bool:
@@ -94,7 +98,7 @@ def use_input(nuke: Any, node: Any, writer: Any, frame: int) -> None:
 
 
 def current_input(nuke: Any, node: Any, writer: Any, frame: int) -> None:
-    """Current Frame may fill its own missing snapshot; ranges remain explicit."""
+    """Prepare a missing current-frame snapshot; ready snapshots are reused."""
     pattern = str(writer["file"].value())
     path = Path(pattern % frame if "%" in pattern else pattern)
     export_input(nuke, node, writer, frame, path)

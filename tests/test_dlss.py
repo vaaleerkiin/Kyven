@@ -68,6 +68,19 @@ def shot(tmp_path):
     return request, source, provider, DlssService(registry)
 
 
+def test_native_backward_vectors_need_no_rgb_channels(shot):
+    import OpenEXR
+
+    request, original, provider, service = shot
+    dx = np.full(original.shape[:2], 2.0, dtype=np.float32)
+    dy = np.full(original.shape[:2], -3.0, dtype=np.float32)
+    with OpenEXR.File({}, {"backward.u": dx, "backward.v": dy}) as image:
+        image.write(str(request.motion))
+    service.run(replace(request, motion_x="backward.u", motion_y="backward.v"))
+    np.testing.assert_array_equal(provider.calls[-1]["motion"][..., 0], dx)
+    np.testing.assert_array_equal(provider.calls[-1]["motion"][..., 1], -dy)
+
+
 def test_alpha_is_delivered_to_inference_as_a_guide_without_premultiplying(shot):
     request, original, provider, service = shot
     request = replace(request, mask_source="source_alpha")

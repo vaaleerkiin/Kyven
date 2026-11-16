@@ -62,12 +62,14 @@ class TrimapTests(unittest.TestCase):
             foreground = (
                 np.asarray(
                     image.filter(ImageFilter.MinFilter(foreground_radius * 2 + 1))
+                    if foreground_radius else image
                 )
                 >= 128
             )
             possible = (
                 np.asarray(
                     image.filter(ImageFilter.MaxFilter(background_radius * 2 + 1))
+                    if background_radius else image
                 )
                 >= 128
             )
@@ -221,7 +223,7 @@ class RefineServiceTests(unittest.TestCase):
                 self.assertIn(matte.getpixel((1, 1)), {127, 128})
             with Image.open(trimap_output) as trimap:
                 self.assertEqual(trimap.size, (8, 8))
-                self.assertEqual(trimap.getpixel((6, 6)), 128)
+                self.assertEqual(trimap.getpixel((6, 6)), 0)
                 self.assertEqual(trimap.getpixel((1, 1)), 128)
             self.assertEqual(result.trimap_output, trimap_output)
             self.assertEqual(result.metadata["processing_roi"]["width"], 4)

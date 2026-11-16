@@ -7,7 +7,7 @@ from typing import Any
 from kyven_nuke.branding import add_node_branding
 from kyven_nuke.node import _add_knob, _add_section, _nuke
 
-INTERFACE_VERSION = 8
+INTERFACE_VERSION = 9
 PROCESSING_SCALES = ["1", "0.5", "0.25", "0.125"]
 
 
@@ -79,7 +79,7 @@ def restyle_dlss_node(node: Any, *, upgrade: bool = False) -> None:
             "Source Alpha or Mask Input guides DLSS inference; output alpha is preserved.")
         ensure("Text_Knob", "advanced_help", "")
         node["advanced_help"].setValue(
-            "Generate vectors upstream: VectorGenerator or SmartVector > VectorToMotion.<br>"
+            "Generate vectors upstream: VectorGenerator, WAFT (Motion Vectors), or SmartVector > VectorToMotion.<br>"
             "Backward channels: current to previous. Forward channels: current to next, for validation.<br>"
             "Vectors must match Source dimensions; use data/raw channels.")
         ensure("PyScript_Knob", "create_result_read", "Create Result Read").setCommand(

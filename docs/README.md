@@ -74,13 +74,16 @@ Move to heavier models only when the shot demonstrates a quality limitation.
 | Create roto on one frame | Segment `Process Current Frame` | Add negative points or Refine |
 | Propagate roto through a shot | Segment video tracking | Add correction frames; enable Seamless Key Frame if the primary key jumps |
 | Improve a coarse edge | Refine + generated trimap | Inspect Trimap, then adjust erosion/dilation |
-| Use SAM uncertainty in Refine | Segment `Trimap` output | Disable Refine `Generate Trimap from Mask` |
+| Use SAM uncertainty in Refine | Segment `Edge Guide` output | Disable Refine `Generate Trimap from Mask` |
 | Remove an object quickly | Inpaint + Auto ROI + LaMa ONNX | Switch to Big-LaMa Native when texture detail is insufficient |
 | Reconstruct a shot on a supported RTX system | DLSS with Source | Add external Motion vectors for temporal stability |
 | Generate motion or smart vectors | WAFT SmartVector with Source sequence | Choose output mode; write all channels to EXR |
 | Hand cache to another artist | Open `<Cache Folder>/<Name>/<Version>/` | Read `<Name>_<Version>.%04d.png` for Segment, Refine or Inpaint; DLSS uses `.exr` |
 
 ## Documentation conventions
+
+For developers, [Testing Kyven](TESTING.md) describes regression suites, real Nuke checks and
+the additional GPU/release qualification steps.
 
 - **Source** means the original RGB input.
 - **Mask** means the artist or model mask supplied to a node.

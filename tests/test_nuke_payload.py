@@ -831,8 +831,8 @@ TCP 127.0.0.1:8766 0.0.0.0:0 ESTABLISHED 13"""
                 "Source + Alpha",
                 "Alpha",
                 "Cutout",
-                "Source + Trimap",
-                "Trimap",
+                "Source + Edge Guide",
+                "Edge Guide",
                 "Bypass",
             ),
         )

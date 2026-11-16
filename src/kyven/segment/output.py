@@ -20,6 +20,8 @@ def write_mask_png_atomic(output: Path, mask: np.ndarray) -> None:
             message="The provider returned an invalid mask shape.",
             technical_detail=f"Expected 2 dimensions, received {pixels.shape}.",
         )
+    if not np.isfinite(pixels).all():
+        raise KyvenError(ErrorCode.INFERENCE_FAILED, "The provider returned nonfinite mask values.")
     if np.issubdtype(pixels.dtype, np.floating):
         pixels = np.clip(pixels, 0.0, 1.0) * 255.0
     elif np.issubdtype(pixels.dtype, np.bool_):

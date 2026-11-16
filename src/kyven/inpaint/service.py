@@ -248,10 +248,14 @@ class InpaintService:
                 replace(request, source=crop_source_path, mask=crop_mask_path, roi=None, crop_mode="full"),
                 token,
             )
-        predicted = np.asarray(prediction.rgb, dtype=np.uint8)
+        predicted = np.asarray(prediction.rgb)
         expected = (region.height, region.width, 3)
         if predicted.shape != expected:
             raise KyvenError(ErrorCode.INFERENCE_FAILED, "The inpaint provider returned an invalid image size.", technical_detail=f"Expected {expected}, received {predicted.shape}.")
+        if not np.isfinite(predicted).all():
+            raise KyvenError(ErrorCode.INFERENCE_FAILED,
+                             "The inpaint provider returned nonfinite RGB values.")
+        predicted = np.clip(predicted, 0, 255).astype(np.uint8)
 
         original_crop = source_pixels[region.y0 : region.y1, region.x0 : region.x1]
         predicted, color_offset = _match_patch_color(

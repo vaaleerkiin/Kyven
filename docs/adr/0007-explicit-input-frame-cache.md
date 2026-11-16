@@ -3,6 +3,12 @@
 - Status: Accepted (owner request)
 - Date: 2026-11-15
 
+## Current contract
+
+Current Frame, Frame Range, tracking and Live prepare missing or invalid snapshots before inference.
+Ready snapshots are reused. Cache Frames remains a separate preparation action; Refresh Frames
+explicitly replaces inputs after upstream edits. The updates below record how this contract evolved.
+
 ## Decision
 
 Separate input preparation from inference in all four Nuke adapters. Add Cache Frames and Refresh

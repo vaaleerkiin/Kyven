@@ -138,6 +138,14 @@ extension means upstream hole filling was skipped, but Kyven's own post-process 
 
 ## Read or cache problems
 
+If the input SQLite index is corrupt, Kyven quarantines it as
+`_kyven_work/inputs.sqlite3.corrupt-<id>` (with any WAL/SHM files) and rebuilds the input inventory
+as frames are prepared again. Source snapshots and rendered results are preserved. Process or
+Cache Frames fills the missing inventory; Refresh Frames deliberately re-exports inputs.
+Database locks, read-only folders and disk I/O failures are reported instead of being treated as
+corruption. Resolve the competing writer or storage problem before retrying. Keep the quarantined
+files until the new input cache works if diagnostics are needed.
+
 The panel displays the exact cache directory for the current node. Use `Create Matte Read` for
 Segment/Refine or `Create Result Read` for Inpaint and DLSS only after processing succeeds. Both buttons copy
 the active internal Read, including its frame range. If files were deleted externally, process again. After upstream edits, use **Refresh Frames** for the affected scope before processing. For DLSS setup and temporal artifacts, see the [DLSS guide](DLSS.md) and [temporal guide](DLSS_TEMPORAL.md).

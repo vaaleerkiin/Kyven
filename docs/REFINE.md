@@ -25,7 +25,7 @@ from **Kyven > Model Manager...** without rerunning the portable installer.
 
 ## Quick start
 
-1. Connect Source and a coarse Mask as shown below. Choose Alpha or Red for the mask channel.
+1. Connect Source and a coarse Mask with the matte in alpha, as shown below.
 2. Choose an installed model and set Cache Folder, Refine Name and Version.
 3. Inspect **Trimap** output and adjust Foreground Erosion and Background Dilation; disable trimap generation if your input is already a trimap.
 4. Press **Process Current Frame** and inspect **Source + Refined Alpha**. Set the frame range and process it when the result is ready.
@@ -42,14 +42,20 @@ Source -> Kyven Segment ---> Kyven Refine (input 0, right)
 Input 1 is the original RGB image. Input 0 is normally any mask with useful alpha: Segment, Keyer,
 Paint, or a corrected combination of those nodes. The connector labels are the safest guide: Source
 is on the left and Mask is on the right.
-`Mask Input Channel` defaults to Alpha; choose Red for a grayscale RGB mask or artist trimap.
+The Mask input always reads **alpha**. There is no Alpha/Red selector. For a grayscale RGB
+image, copy its matte into alpha upstream with a Shuffle or Copy node. Existing nodes also use
+alpha after upgrade; their old channel selector is hidden and disconnected.
 
 ## Trimap option
 
 `Generate Trimap from Mask` is enabled by default and is part of Refine, not a separate node.
+Every positive input alpha becomes 1 before erosion/dilation; zero and negative alpha become 0.
+This happens before the Nuke input snapshot is quantized, so faint positive edges are retained.
 Foreground erosion produces definite white foreground, background dilation produces the gray
 unknown band, and pixels outside the band remain definite black background. Disable the option only
 when the Mask input is already an artist-created black/gray/white trimap.
+With generation disabled, alpha is quantized to three guidance states; the gray unknown region
+is deliberately preserved. In Segment this input is called **Edge Guide**.
 
 The `Output` selector includes the exact trimap written for ViTMatte:
 
