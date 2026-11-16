@@ -243,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         if args.command == "serve":
+            print("[Kyven] Checking local device and preparing HTTP server", file=sys.stderr, flush=True)
             from kyven.dlss.service import DlssService
             from kyven.segment.video import VideoSegmentService
             from kyven.server.app import KyvenServer, ServerConfig

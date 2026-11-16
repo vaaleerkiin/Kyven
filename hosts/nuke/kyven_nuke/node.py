@@ -20,7 +20,7 @@ from kyven_nuke.input_cache import current_input, prepare_range, use_input
 from kyven_nuke.knob_tools import suspend_callbacks
 from kyven_nuke.payload import MODEL_IDS, MODEL_LABELS, segment_payload, segment_video_payload
 from kyven_nuke.preferences import default_model_index
-from kyven_nuke.runtime import ensure_server, stop_server
+from kyven_nuke.runtime import ServerStartCancelled, ensure_server, stop_server
 
 MAX_PROMPT_POINTS = 32
 MAX_CORRECTION_FRAMES = 32
@@ -2227,30 +2227,65 @@ def _apply_model_labels(node_name: str, labels: list[str]) -> None:
 
 def start_server() -> None:
     nuke = _nuke()
+    reports = [_server_control_progress(node) for node in nuke.selectedNodes()
+               if "kyven_status" in node.knobs()]
+
+    def report(message: str) -> None:
+        for callback in reports:
+            callback(message)
+
+    report("Starting Kyven Server...")
 
     def start() -> None:
         try:
-            ensure_server()
+            ensure_server(progress_callback=report)
+            report("Kyven Server is ready.")
             nuke.executeInMainThread(nuke.message, args=("Kyven Server is ready.",))
+        except ServerStartCancelled as exc:
+            report(str(exc))
         except Exception as exc:  # noqa: BLE001 - background boundary must report to the host UI
+            report(f"Kyven Server failed: {exc}")
             nuke.executeInMainThread(nuke.message, args=(f"Kyven Server failed: {exc}",))
 
     threading.Thread(target=start, name="kyven-server-start", daemon=True).start()
+
+
+def stop_server_from_menu() -> None:
+    """Stop the local server or cancel a cold start from Nuke's Tab menu."""
+    nuke = _nuke()
+    reports = [_server_control_progress(node) for node in nuke.selectedNodes()
+               if "kyven_status" in node.knobs()]
+    for report in reports:
+        report("Stopping Kyven Server...")
+
+    def stop() -> None:
+        try:
+            stopped = stop_server()
+            message = "Kyven Server stopped." if stopped else "Kyven Server is already stopped."
+        except Exception as exc:  # noqa: BLE001 - host background boundary.
+            message = f"Kyven Server stop failed: {exc}"
+        for report in reports:
+            report(message)
+        nuke.executeInMainThread(nuke.message, args=(message,))
+
+    threading.Thread(target=stop, name="kyven-server-stop", daemon=True).start()
 
 
 def start_server_for_node() -> None:
     """Start or validate Kyven Server and report through the calling node Status."""
 
     nuke = _nuke()
-    node_name = nuke.thisNode().fullName()
-    _set_status(node_name, "Starting Kyven Server...")
+    report = _server_control_progress(nuke.thisNode())
+    report("Starting Kyven Server...")
 
     def start() -> None:
         try:
-            ensure_server(progress_callback=_server_progress(node_name))
-            nuke.executeInMainThread(_set_status, args=(node_name, "Kyven Server is ready."))
+            ensure_server(progress_callback=report)
+            report("Kyven Server is ready.")
+        except ServerStartCancelled as exc:
+            report(str(exc))
         except Exception as exc:  # noqa: BLE001
-            nuke.executeInMainThread(_set_status, args=(node_name, f"Server start failed: {exc}"))
+            report(f"Server start failed: {exc}")
 
     threading.Thread(target=start, name="kyven-node-server-start", daemon=True).start()
 
@@ -2262,18 +2297,40 @@ def stop_server_for_node() -> None:
     node = nuke.thisNode()
     if not nuke.ask("Stop Kyven Server?\n\nActive processing may be interrupted."):
         return
-    node_name = node.fullName()
-    _set_status(node_name, "Stopping Kyven Server...")
+    report = _server_control_progress(node)
+    report("Stopping Kyven Server...")
 
     def stop() -> None:
         try:
             stopped = stop_server()
             message = "Kyven Server stopped." if stopped else "Kyven Server is already stopped."
-            nuke.executeInMainThread(_set_status, args=(node_name, message))
+            report(message)
         except Exception as exc:  # noqa: BLE001
-            nuke.executeInMainThread(_set_status, args=(node_name, f"Server stop failed: {exc}"))
+            report(f"Server stop failed: {exc}")
 
     threading.Thread(target=stop, name="kyven-node-server-stop", daemon=True).start()
+
+
+def _server_control_progress(node: Any):
+    """Idle nodes have no processing registration. Pin status updates to their UUID."""
+    name = str(node.fullName())
+    knobs = node.knobs()
+    identity_name = "kyven_uuid" if "kyven_uuid" in knobs else "cache_uuid"
+    identity = str(node[identity_name].value()) if identity_name in knobs else name
+
+    def report(message: str) -> None:
+        def apply() -> None:
+            nuke = _nuke()
+            nuke.root().begin()
+            try:
+                target = _find_operation_node(name, identity)
+                if target is not None:
+                    target["kyven_status"].setValue(message)
+            finally:
+                nuke.root().end()
+        _nuke().executeInMainThread(apply)
+
+    return report
 
 
 def _add_knob(nuke: Any, node: Any, knob: Any, *, start_line: bool = True) -> Any:

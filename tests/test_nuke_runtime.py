@@ -61,3 +61,22 @@ def test_real_nuke_dlss_snapshot_is_lossless_single_part_and_survives_reopen(tmp
         for name, values in expected.items():
             assert actual[name].pixels.dtype == np.float32
             np.testing.assert_array_equal(actual[name].pixels, values)
+
+
+def test_real_nuke_server_start_stop_and_offline_cache(tmp_path):
+    executable = os.environ.get('KYVEN_NUKE_EXECUTABLE')
+    if not executable:
+        pytest.skip('Set KYVEN_NUKE_EXECUTABLE for licensed Nuke integration checks')
+    import numpy as np
+    exr = pytest.importorskip('OpenEXR')
+    rgba = np.full((2, 2, 4), 0.2, np.float32)
+    rgba[..., 3] = 0.75
+    with exr.File({'compression': exr.ZIP_COMPRESSION}, {'RGBA': rgba}) as image:
+        image.write(str(tmp_path / 'cached.exr'))
+    script = Path(__file__).parent / 'nuke/dlss_server_controls.py'
+    result = subprocess.run([executable, '--nukex', '-i', '-t', str(script)],
+        env={**os.environ, 'KYVEN_SERVER_CONTROL_TEST': str(tmp_path)},
+        capture_output=True, text=True, timeout=150, check=False,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads((tmp_path / 'controls.json').read_text())['passed']

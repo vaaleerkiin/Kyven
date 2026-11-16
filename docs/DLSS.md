@@ -80,6 +80,16 @@ reduces file/open overhead; size savings depend on the shot and connected channe
 Update/restart both Nuke and the Kyven server (API 37). Reopening the script or upgrading
 the DLSS node installs the new writer while preserving its UUID, connections and settings.
 
+**Load Cache** reads an existing public result sequence from Cache Folder / Name / Version
+without starting the server or requiring the DLSS runtime. It turns off Live and selects Result
+so playback is not replaced by new inference. With Source connected, its alpha/AOVs are retained;
+without Source, the cached RGBA is displayed directly. Missing results report the expected path
+in Status. Multilayer input snapshots alone are not completed DLSS results.
+
+Use **Tab > Start Kyven Server** / **Stop Kyven Server** for explicit backend control. Cold starts
+allow up to 120 seconds, report elapsed time and initialization stage, and clean up failed starts.
+Stop can cancel an in-progress launch. See [server startup](NUKE.md#hover-help) for logs and updates.
+
 ## Alpha as an inference guide
 
 **Mask Alpha Input** offers **Full Frame** (default), **Source Alpha** and **Mask Input**.

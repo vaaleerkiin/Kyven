@@ -1062,3 +1062,97 @@ def test_host_adapter_import_does_not_load_inference_or_exr_libraries():
     result = subprocess.run([sys.executable, "-c", script], env=env, capture_output=True,
                             text=True, check=True)
     assert json.loads(result.stdout) == []
+
+
+@pytest.mark.parametrize('failure', [False, True])
+def test_idle_node_server_start_reports_progress_and_errors_without_processing(graph, monkeypatch, failure):
+    from kyven_nuke import node as adapter
+
+    nuke, group = graph
+    nuke.callback_node = group
+    messages = []
+    original = group['kyven_status'].setValue
+    def status(value):
+        messages.append(value)
+        original(value)
+    monkeypatch.setattr(group['kyven_status'], 'setValue', status)
+    monkeypatch.setattr(adapter.threading, 'Thread', lambda target, **kwargs: SimpleNamespace(start=target))
+    def start(progress_callback):
+        progress_callback('Cold start: importing backend')
+        if failure:
+            raise RuntimeError('backend could not import')
+    monkeypatch.setattr(adapter, 'ensure_server', start)
+    adapter.start_server_for_node()
+    assert 'Starting Kyven Server...' in messages
+    assert 'Cold start: importing backend' in messages
+    assert ('Server start failed: backend could not import' if failure else
+            'Kyven Server is ready.') == group['kyven_status'].value()
+
+
+def test_server_status_callback_does_not_update_replacement_node(graph):
+    from kyven_nuke import node as adapter
+
+    nuke, group = graph
+    report = adapter._server_control_progress(group)
+    replacement = Node(nuke, 'Group', group.fullName())
+    replacement.addKnob(Knob('kyven_uuid'))
+    replacement['kyven_uuid'].setValue('replacement')
+    replacement.addKnob(Knob('kyven_status'))
+    replacement['kyven_status'].setValue('new node')
+    nuke.top[group.fullName()] = replacement
+    report('late old server update')
+    assert replacement['kyven_status'].value() == 'new node'
+
+
+def test_tab_stop_reports_on_selected_idle_node(graph, monkeypatch):
+    from kyven_nuke import node as adapter
+
+    nuke, group = graph
+    monkeypatch.setattr(nuke, 'selectedNodes', lambda: [group])
+    monkeypatch.setattr(nuke, 'message', Mock(), raising=False)
+    monkeypatch.setattr(adapter.threading, 'Thread', lambda target, **kwargs: SimpleNamespace(start=target))
+    monkeypatch.setattr(adapter, 'stop_server', lambda: True)
+    adapter.stop_server_from_menu()
+    assert group['kyven_status'].value() == 'Kyven Server stopped.'
+
+
+def test_cancelled_node_server_start_is_not_reported_as_failure(graph, monkeypatch):
+    from kyven_nuke import node as adapter
+    from kyven_nuke.runtime import ServerStartCancelled
+
+    nuke, group = graph
+    nuke.callback_node = group
+    monkeypatch.setattr(adapter.threading, 'Thread', lambda target, **kwargs: SimpleNamespace(start=target))
+    monkeypatch.setattr(adapter, 'ensure_server', Mock(side_effect=ServerStartCancelled('Startup cancelled.')))
+    adapter.start_server_for_node()
+    assert group['kyven_status'].value() == 'Startup cancelled.'
+
+
+@pytest.mark.parametrize('connected', [False, True])
+def test_load_cache_is_offline_stops_live_and_selects_result(graph, monkeypatch, connected):
+    nuke, group = graph
+    nuke.auto_notify = True
+    group['output_mode'].setValue('Source')
+    if not connected:
+        group.setInput(0, None)
+    path = Path(str(dlss_node._public_pattern(group)) % 1001)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b'cached result; fake Nuke does not decode')
+    timer = Mock()
+    dlss_node._live_timers[dlss_node._identity(group)] = timer
+    monkeypatch.setattr(dlss_node, 'ensure_server', lambda **kwargs: pytest.fail('Cache must not start a server'))
+    dlss_node.load_cache(group)
+    assert not group['live_mode'].value()
+    timer.cancel.assert_called_once()
+    assert group['output_mode'].value() == 'Result'
+    assert group.children['KyvenDlssResultSwitch']['which'].value() == 1
+    assert 'frames 1001-1001' in group['kyven_status'].value()
+    expected = 'KyvenDlssSourceChannels' if connected else 'KyvenDlssRead'
+    assert group.children['KyvenDlssResultSwitch'].input(1) is group.children[expected]
+
+
+def test_missing_cache_error_is_visible_on_idle_node(graph):
+    _, group = graph
+    dlss_node.load_cache(group)
+    assert 'No rendered DLSS sequence' in group['kyven_status'].value()
+    assert str(dlss_node._public_pattern(group)).replace('\\', '/') in group['kyven_status'].value()

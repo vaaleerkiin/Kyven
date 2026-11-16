@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
 
 
 def reset_inherited_dll_directory() -> None:
@@ -21,6 +23,13 @@ def reset_inherited_dll_directory() -> None:
 
 def main() -> int:
     reset_inherited_dll_directory()
+    # The Nuke adapter can be updated with git/ZIP while the private environment
+    # still contains an older wheel. Running this checkout's entry point must
+    # import this checkout's backend, even under Python's isolated (-I) mode.
+    if not __package__:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    if len(sys.argv) > 1 and sys.argv[1] == "serve":
+        print("[Kyven] Loading backend", file=sys.stderr, flush=True)
     from kyven.cli import main as cli_main
 
     return cli_main()

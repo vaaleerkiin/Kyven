@@ -17,6 +17,8 @@ PORT = 18788
 REQUIRED_API_VERSION = 37
 LEGACY_PORTS = (8765, 8766, 8767, 8768, 8769, 18768, 18769, 18770, 18771, 18772, 18773, 18774, 18775, 18776, 18777, 18778, 18779, 18780, 18781, 18782, 18783, 18784, 18785, 18786, 18787)
 _server_start_lock = threading.Lock()
+_startup_cancel: threading.Event | None = None
+_stop_generation = 0
 _server_state_lock = threading.RLock()
 _server_state = {
     "status": "unknown",
@@ -33,6 +35,10 @@ HQ_SAM2_RUNTIME_URL = (
 
 class RuntimeInstallCancelled(RuntimeError):
     """Raised when the artist cancels an optional model runtime installation."""
+
+
+class ServerStartCancelled(RuntimeError):
+    """The artist stopped the server while this start was running or queued."""
 
 
 def _runtime_probe(runtime_id: str) -> str:
@@ -190,8 +196,16 @@ def _startup_failure(log_path: Path, return_code: int) -> RuntimeError:
     return RuntimeError(f"Kyven server exited with code {return_code}. {detail}")
 
 
-def client() -> NukeKyvenClient:
-    return NukeKyvenClient.from_token_file(config.token_file(), port=PORT)
+def _server_entrypoint(executable: Path) -> list[str]:
+    checkout = config.root() / "src" / "kyven" / "server" / "bootstrap.py"
+    if checkout.is_file():
+        return [str(executable), "-I", "-u", str(checkout)]
+    return [str(executable), "-I", "-u", "-m", "kyven.server.bootstrap"]
+
+
+def client(timeout_seconds: float = 10.0) -> NukeKyvenClient:
+    return NukeKyvenClient.from_token_file(config.token_file(), port=PORT,
+                                         timeout_seconds=timeout_seconds)
 
 
 def _listener_pids(netstat_output: str, port: int = PORT) -> tuple[int, ...]:
@@ -239,15 +253,12 @@ def _terminate_authenticated_listener() -> None:
     os.kill(pids[0], signal.SIGTERM)
 
 
-def stop_server(timeout_seconds: float = 10.0) -> bool:
-    """Stop only the authenticated Kyven service on the configured port."""
-
-    _update_server_state("stopping", "Stopping Kyven Server...")
+def _stop_running_server(timeout_seconds: float = 10.0) -> bool:
+    """Stop only a listener authenticated by Kyven's token."""
     try:
-        current = client()
+        current = client(timeout_seconds=1.0)
         health = current.health()
     except (OSError, NukeKyvenClientError):
-        _update_server_state("stopped", "Kyven Server is stopped.")
         return False
     if health.get("service") != "kyven":
         raise RuntimeError(f"Port {PORT} is not owned by a Kyven service.")
@@ -258,14 +269,28 @@ def stop_server(timeout_seconds: float = 10.0) -> bool:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         try:
-            client().health()
+            client(timeout_seconds=1.0).health()
         except (OSError, NukeKyvenClientError):
-            _update_server_state("stopped", "Kyven Server stopped.")
             return True
         time.sleep(0.1)
     message = f"Kyven Server did not stop within {timeout_seconds:g} seconds."
     _update_server_state("failed", message)
     raise RuntimeError(message)
+
+
+def stop_server(timeout_seconds: float = 10.0) -> bool:
+    """Cancel current/queued starts and stop the authenticated local service."""
+    global _stop_generation
+    _update_server_state("stopping", "Stopping Kyven Server...")
+    with _server_state_lock:
+        _stop_generation += 1
+        starting = _startup_cancel
+        if starting is not None:
+            starting.set()
+    stopped = _stop_running_server(timeout_seconds)
+    message = "Kyven Server startup cancelled." if starting is not None else "Kyven Server stopped."
+    _update_server_state("stopped", message if stopped or starting is not None else "Kyven Server is stopped.")
+    return stopped or starting is not None
 
 
 def _unload_legacy_servers() -> None:
@@ -297,24 +322,110 @@ def _unload_legacy_servers() -> None:
             continue
 
 
-def ensure_server(timeout_seconds: float = 30.0, progress_callback=None) -> NukeKyvenClient:
+def _terminate_startup(process: subprocess.Popen) -> None:
+    """Reap only the child created by this launch, never an unrelated listener."""
+    if process.poll() is None:
+        process.terminate()
     try:
-        existing = client()
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
+def _startup_stage(log_path: Path) -> str:
+    try:
+        with log_path.open("rb") as log:
+            log.seek(max(0, log_path.stat().st_size - 2048))
+            lines = log.read().decode("utf-8", errors="replace").splitlines()
+        for line in reversed(lines):
+            if line.startswith("[Kyven] "):
+                return line.removeprefix("[Kyven] ")
+    except OSError:
+        pass
+    return "Initializing backend"
+
+
+def _launch_server(timeout_seconds: float, progress_callback, cancelled: threading.Event) -> NukeKyvenClient:
+    started_at = time.monotonic()
+    _update_server_state("starting", "Checking older Kyven server processes...", started_at)
+    _report_progress(progress_callback, "Starting server: checking older processes...")
+    _unload_legacy_servers()
+    executable = config.python_executable()
+    if not executable.is_file():
+        raise RuntimeError(f"Kyven Python executable was not found: {executable}")
+    log_path = config.runtime_dir() / "server.log"
+    config.runtime_dir().mkdir(parents=True, exist_ok=True)
+    if cancelled.is_set():
+        raise ServerStartCancelled("Kyven Server startup cancelled.")
+    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    with log_path.open("w", encoding="utf-8") as log:
+        _update_server_state("starting", "Launching isolated Python runtime...")
+        _report_progress(progress_callback, "Starting server: launching runtime...")
+        process = subprocess.Popen(
+            _server_entrypoint(executable) + [
+                "serve", "--models-dir", str(config.models_dir()), "--device", "auto",
+                "--port", str(PORT), "--token-file", str(config.token_file()),
+            ],
+            cwd=str(config.root()),
+            env={**_server_environment(executable_dir=executable.parent),
+                 "KYVEN_RUNTIME_DIR": str(config.runtime_dir())},
+            stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+            creationflags=creation_flags,
+        )
+    deadline = time.monotonic() + timeout_seconds
+    try:
+        while time.monotonic() < deadline:
+            if cancelled.is_set():
+                raise ServerStartCancelled("Kyven Server startup cancelled.")
+            return_code = process.poll()
+            if return_code is not None:
+                raise _startup_failure(log_path, return_code)
+            try:
+                current = client(timeout_seconds=1.0)
+                _check_health(current)
+            except (OSError, NukeKyvenClientError) as exc:
+                if "incompatible" in str(exc).lower():
+                    raise RuntimeError(f"{exc} Update Kyven's backend installation. Log: {log_path}") from exc
+                elapsed = time.monotonic() - started_at
+                message = f"{_startup_stage(log_path)} | {elapsed:.1f}s / {timeout_seconds:g}s"
+                _update_server_state("starting", message)
+                _report_progress(progress_callback, message)
+                time.sleep(0.2)
+                continue
+            if cancelled.is_set():
+                raise ServerStartCancelled("Kyven Server startup cancelled.")
+            elapsed = time.monotonic() - started_at
+            message = f"Kyven Server is ready in {elapsed:.1f}s."
+            _update_server_state("ready", message)
+            _report_progress(progress_callback, message)
+            return current
+        raise RuntimeError(f"Kyven Server did not become ready within {timeout_seconds:g} seconds. See {log_path}")
+    except Exception:
+        _terminate_startup(process)
+        raise
+
+
+def ensure_server(timeout_seconds: float = 120.0, progress_callback=None) -> NukeKyvenClient:
+    """Serialize starts/restarts, report progress, and clean up failed child processes."""
+    global _startup_cancel
+    with _server_state_lock:
+        generation = _stop_generation
+    try:
+        existing = client(timeout_seconds=1.0)
         _check_health(existing)
         _update_server_state("ready", "Kyven Server is ready.")
         _report_progress(progress_callback, "Kyven Server is ready.")
         return existing
-    except NukeKyvenClientError as exc:
-        if "incompatible" in str(exc).lower():
-            _update_server_state("restarting", "Restarting outdated Kyven Server...")
-            _report_progress(progress_callback, "Restarting outdated Kyven Server...")
-            stop_server()
-    except OSError:
+    except (NukeKyvenClientError, OSError):
         pass
-
+    _report_progress(progress_callback, "Checking startup; waiting for any other Kyven launch...")
     with _server_start_lock:
+        with _server_state_lock:
+            if generation != _stop_generation:
+                raise ServerStartCancelled("Kyven Server startup cancelled.")
         try:
-            existing = client()
+            existing = client(timeout_seconds=1.0)
             _check_health(existing)
             _update_server_state("ready", "Kyven Server is ready.")
             _report_progress(progress_callback, "Kyven Server became ready while waiting.")
@@ -323,77 +434,21 @@ def ensure_server(timeout_seconds: float = 30.0, progress_callback=None) -> Nuke
             if "incompatible" in str(exc).lower():
                 _update_server_state("restarting", "Restarting outdated Kyven Server...")
                 _report_progress(progress_callback, "Restarting outdated Kyven Server...")
-                stop_server()
+                _stop_running_server()
         except OSError:
             pass
-
-        started_at = time.monotonic()
-        _update_server_state("starting", "Checking older Kyven server processes...", started_at)
-        _report_progress(progress_callback, "Starting server: checking older processes...")
-        _unload_legacy_servers()
-        executable = config.python_executable()
-        if not executable.is_file():
-            message = f"Kyven Python executable was not found: {executable}"
-            _update_server_state("failed", message)
-            raise RuntimeError(message)
-        log_path = config.runtime_dir() / "server.log"
-        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        cancellation = threading.Event()
+        with _server_state_lock:
+            if generation != _stop_generation:
+                raise ServerStartCancelled("Kyven Server startup cancelled.")
+            _startup_cancel = cancellation
         try:
-            config.runtime_dir().mkdir(parents=True, exist_ok=True)
-            with log_path.open("w", encoding="utf-8") as log:
-                _update_server_state("starting", "Launching isolated Python runtime...")
-                _report_progress(progress_callback, "Starting server: launching runtime...")
-                process = subprocess.Popen(
-                    [
-                        str(executable),
-                        "-I",
-                        "-m",
-                        "kyven.server.bootstrap",
-                        "serve",
-                        "--models-dir",
-                        str(config.models_dir()),
-                        "--device",
-                        "auto",
-                        "--port",
-                        str(PORT),
-                        "--token-file",
-                        str(config.token_file()),
-                    ],
-                    cwd=str(config.root()),
-                    env={**_server_environment(executable_dir=executable.parent),
-                         "KYVEN_RUNTIME_DIR": str(config.runtime_dir())},
-                    stdin=subprocess.DEVNULL,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    creationflags=creation_flags,
-                )
-        except OSError as exc:
-            message = f"Could not launch Kyven Server: {exc}. Log: {log_path}"
-            _update_server_state("failed", message)
-            raise RuntimeError(message) from exc
-        deadline = time.monotonic() + timeout_seconds
-        while time.monotonic() < deadline:
-            return_code = process.poll()
-            if return_code is not None:
-                failure = _startup_failure(log_path, return_code)
-                _update_server_state("failed", str(failure))
-                raise failure
-            try:
-                current = client()
-                _check_health(current)
-                elapsed = time.monotonic() - started_at
-                message = f"Kyven Server is ready in {elapsed:.1f}s."
-                _update_server_state("ready", message)
-                _report_progress(progress_callback, message)
-                return current
-            except (OSError, NukeKyvenClientError):
-                elapsed = time.monotonic() - started_at
-                message = f"Starting Kyven Server... {elapsed:.1f}s / {timeout_seconds:g}s"
-                _update_server_state("starting", message)
-                _report_progress(progress_callback, message)
-                time.sleep(0.2)
-        message = (
-            f"Kyven server did not become ready within {timeout_seconds:g} seconds. See {log_path}"
-        )
-        _update_server_state("failed", message)
-        raise RuntimeError(message)
+            return _launch_server(timeout_seconds, progress_callback, cancellation)
+        except Exception as exc:
+            status = "stopped" if cancellation.is_set() else "failed"
+            _update_server_state(status, str(exc))
+            _report_progress(progress_callback, str(exc))
+            raise
+        finally:
+            with _server_state_lock:
+                _startup_cancel = None

@@ -8,6 +8,7 @@ from kyven_nuke.node import (
     create_segment_node,
     repair_segment_nodes,
     start_server,
+    stop_server_from_menu,
     upgrade_selected_segment_node,
 )
 from kyven_nuke.refine_node import create_refine_node, upgrade_selected_refine_node
@@ -21,6 +22,7 @@ __all__ = [
     "repair_segment_nodes",
     "show_model_manager",
     "start_server",
+    "stop_server_from_menu",
     "update_live_nodes",
     "upgrade_selected_dlss_node",
     "upgrade_selected_inpaint_node",

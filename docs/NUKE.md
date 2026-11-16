@@ -245,6 +245,17 @@ are retained. Public result sequences and Source alpha/AOV preservation are unch
 
 ### Hover help
 
+Press **Tab** in the Node Graph and search **Start Kyven Server** or **Stop Kyven Server**
+to control the shared backend without creating a node. The same actions are under Nodes > Kyven
+and beside node Status. Startup reports progress on selected Kyven nodes, waits up to 120 seconds
+for a cold Python/GPU initialization, and reports completion or the actual failure. Repeated starts
+share one launch. Stop cancels a pending launch; failed/timed-out children are cleaned up before retry.
+The log is `<Kyven>/.runtime/server.log` (or the configured runtime folder).
+
+Source checkouts launch their current backend directly, so updating the Nuke plugin with Git/ZIP
+cannot silently select an older backend wheel in the private environment. Packaged installations
+without source files use the installed backend. Server API mismatches fail explicitly.
+
 Hover over Kyven controls for plain-English explanations of their purpose, adjustment direction, and relevant dependencies. Segment, Refine, Inpaint and DLSS include help for processing, output, input caching, and model-specific settings. New nodes receive help automatically; use the corresponding Upgrade Selected Node menu action for existing nodes, or reopen the script to run node repair. Help is local and does not load inference models or use GPU memory.
 
 Manual Process Current Frame, Process Frame Range and Segment tracking switch Live Current Frame
