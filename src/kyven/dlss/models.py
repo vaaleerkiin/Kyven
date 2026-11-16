@@ -51,6 +51,7 @@ class DlssRequest:
     protect_outside: bool = True
     max_dimension: int = 1024
     hdr_rolloff: bool = True
+    preserve_source_color: bool = True
     rolloff_knee: float = 0.5
     timeout: float = 120.0
 
@@ -72,7 +73,8 @@ class DlssRequest:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int):
                 invalid(f"DLSS {name} must be an integer.")
-        for name in ("temporal", "reset", "motion_y_up", "protect_outside", "hdr_rolloff", "motion_consistency"):
+        for name in ("temporal", "reset", "motion_y_up", "protect_outside", "hdr_rolloff",
+                     "motion_consistency", "preserve_source_color"):
             if not isinstance(getattr(self, name), bool):
                 invalid(f"DLSS {name} must be a boolean.")
         inputs = (self.source, self.worker, self.motion, self.mask, self.depth)
@@ -131,7 +133,8 @@ class DlssRequest:
                     if isinstance(values[name], bool) or int(values[name]) != values[name]:
                         raise ValueError(f"{name} must be an integer")
                     values[name] = int(values[name])
-            for name in ("temporal", "reset", "motion_y_up", "protect_outside", "hdr_rolloff", "motion_consistency"):
+            for name in ("temporal", "reset", "motion_y_up", "protect_outside", "hdr_rolloff",
+                         "motion_consistency", "preserve_source_color"):
                 if name in values and not isinstance(values[name], bool):
                     raise ValueError(f"{name} must be a boolean")
             request = cls(**values)

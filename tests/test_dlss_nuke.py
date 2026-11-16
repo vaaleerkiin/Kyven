@@ -1128,6 +1128,24 @@ def test_cancelled_node_server_start_is_not_reported_as_failure(graph, monkeypat
     assert group['kyven_status'].value() == 'Startup cancelled.'
 
 
+def test_source_color_preservation_defaults_on_and_upgrade_keeps_artist_choice(graph, monkeypatch):
+    from kyven_nuke.dlss_interface import restyle_dlss_node
+    from kyven_nuke.input_cache import _state
+
+    _, group = graph
+    monkeypatch.setattr(dlss_node, 'resolve_worker', lambda *args: Path(sys.executable))
+    assert dlss_node._request_settings(group)['preserve_source_color']
+    signature, snapshot = dlss_node._signature(group), _state(group, 1)
+    group['preserve_source_color'].setValue(False)
+    assert dlss_node._signature(group) != signature
+    assert _state(group, 1) == snapshot
+    restyle_dlss_node(group, upgrade=True)
+    assert not group['preserve_source_color'].value()
+    group.removeKnob(group['preserve_source_color'])
+    restyle_dlss_node(group, upgrade=True)
+    assert group['preserve_source_color'].value()
+
+
 @pytest.mark.parametrize('connected', [False, True])
 def test_load_cache_is_offline_stops_live_and_selects_result(graph, monkeypatch, connected):
     nuke, group = graph

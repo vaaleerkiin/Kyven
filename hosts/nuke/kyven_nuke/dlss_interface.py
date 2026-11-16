@@ -7,7 +7,7 @@ from typing import Any
 from kyven_nuke.branding import add_node_branding
 from kyven_nuke.node import _add_knob, _add_section, _nuke
 
-INTERFACE_VERSION = 9
+INTERFACE_VERSION = 10
 PROCESSING_SCALES = ["1", "0.5", "0.25", "0.125"]
 
 
@@ -30,10 +30,10 @@ def restyle_dlss_node(node: Any, *, upgrade: bool = False) -> None:
         ensure("Int_Knob", "dlss_ui_version", "Interface Version", INTERFACE_VERSION).setVisible(False)
         ensure("Text_Knob", "kyven_title", "",
                '<font size="5" color="#dce9f2"><b>KYVEN / DLSS</b></font><br>'
-               '<font color="#91a3b0">Neural Reconstruction | External Motion | API 37</font>')
+               '<font color="#91a3b0">Neural Reconstruction | External Motion | API 38</font>')
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / DLSS</b></font><br>'
-            '<font color="#91a3b0">Neural Reconstruction | External Motion | API 37</font>')
+            '<font color="#91a3b0">Neural Reconstruction | External Motion | API 38</font>')
         ensure("Enumeration_Knob", "model", "Model", "Kyven DLSS Neural Reconstruction",
                choices=["Kyven DLSS Neural Reconstruction"])
         ensure("PyScript_Knob", "refresh_models", "Refresh Models").setCommand(
@@ -50,6 +50,9 @@ def restyle_dlss_node(node: Any, *, upgrade: bool = False) -> None:
             "Processing is limited to 8192 pixels on the longest side.")
         node["max_dimension"].setVisible(False)
         ensure("Boolean_Knob", "hdr_rolloff", "HDR Rolloff", True)
+        ensure("Boolean_Knob", "preserve_source_color", "Preserve Source Color", True).setTooltip(
+            "Retain Source RGB ratios while using the reconstructed brightness/detail. "
+            "Disable to keep the neural model's color and relighting changes.")
         ensure("Double_Knob", "rolloff_knee", "Rolloff Knee", 0.5).setRange(0.01, 0.95)
         ensure("Enumeration_Knob", "history_frames", "History Buffer", "3",
                choices=["1", "2", "3", "4"]).setTooltip(
@@ -138,7 +141,7 @@ def restyle_dlss_node(node: Any, *, upgrade: bool = False) -> None:
         primary = [
             "kyven_logo", "kyven_title", "model_section", "model", "processing_scale",
             "refresh_models", "open_model_manager", "model_help",
-            "reconstruction_section", "hdr_rolloff", "intensity", "local_tone", "local_structure", "style", "preset",
+            "reconstruction_section", "hdr_rolloff", "preserve_source_color", "intensity", "local_tone", "local_structure", "style", "preset",
             "mask_section", "mask_source", "mask_channel", "protect_outside", "mask_help",
             "temporal_section", "temporal", "history_frames", "temporal_strength", "history_status",
             "processing_section", "live_mode", "process_frame", "cancel", "first_frame", "last_frame",

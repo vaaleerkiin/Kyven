@@ -59,7 +59,7 @@ _SETTINGS = (
     "intensity", "local_tone", "local_structure", "skin_structure", "style", "preset",
     "temporal_strength", "rejection", "scene_cut", "protect_outside", "max_dimension",
     "reset_epoch", "cache_root", "dlss_name", "cache_version", "processing_scale",
-    "hdr_rolloff", "rolloff_knee",
+    "hdr_rolloff", "rolloff_knee", "preserve_source_color",
     "history_frames", "history_budget_mb", "history_clamp", "depth_rejection",
     "motion_consistency", "forward_x", "forward_y", "consistency_threshold",
 )

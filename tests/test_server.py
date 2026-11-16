@@ -159,7 +159,7 @@ class ServerTests(unittest.TestCase):
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
                 health = client.health()
                 self.assertEqual(health["status"], "ok")
-                self.assertEqual(health["api_version"], 37)
+                self.assertEqual(health["api_version"], 38)
                 self.assertEqual(health["loaded_providers"], [])
                 self.assertIn("counts", health["jobs"])
                 self.assertEqual(len(client.models()), 12)

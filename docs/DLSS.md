@@ -77,7 +77,7 @@ the selected motion, depth and active mask channels. The server reads it once an
 the decoded channels for all guides. Transport remains 32-bit float with lossless ZIP
 compression: HDR, negative values, alpha and vectors retain their precision. Packing
 reduces file/open overhead; size savings depend on the shot and connected channels.
-Update/restart both Nuke and the Kyven server (API 37). Reopening the script or upgrading
+Update/restart both Nuke and the Kyven server (API 38). Reopening the script or upgrading
 the DLSS node installs the new writer while preserving its UUID, connections and settings.
 
 **Load Cache** reads an existing public result sequence from Cache Folder / Name / Version
@@ -117,8 +117,27 @@ where appropriate. The node adds no implicit Premult/Unpremult operations.
 
 ## Internal HDR rolloff
 
+**Preserve Source Color** defaults on for new and upgraded nodes. Native NR can change
+color balance even with Style = Default; real-runtime color-chart tests showed, for example,
+increased red in blue regions. This option retains Source RGB ratios by fitting one
+nonnegative brightness gain per pixel to the reconstructed RGB. Neural brightness/detail
+changes remain, while new color casts are rejected. It does not estimate a white balance or
+swap channels. Disable it to keep native color/relighting changes.
+
+The fit uses no gamut-specific luminance weights and works in scene-linear RGB working
+spaces, including negative components. Exact black stays black; alpha is untouched. It runs
+after HDR restoration, resizing, Intensity and temporal accumulation, in bounded CPU strips.
+Changing the option invalidates processed output/history while reusing prepared input EXRs.
+Reprocess existing frames to apply it; Load Cache displays the previously rendered result.
+
+Repeat the optional native color qualification with:
+
+```powershell
+.venv\Scripts\python.exe scripts\qualify_dlss_color.py --worker .runtime\dlss\bin\KyvenDLSSWorker.exe --output .runtime\dlss-color-qa
+```
+
 **Intensity** scales the scene-linear reconstruction change: 0 preserves Source, 1 uses the
-full reconstruction, and 2 doubles its correction. Native inference runs at unit intensity
+full correction (with Source color preservation when enabled), and 2 doubles its correction. Native inference runs at unit intensity
 because its intensity control fades RGB toward black. Existing outputs are invalidated on reprocessing.
 
 **HDR Rolloff** defaults on. It conditions scene-linear RGB before inference, then restores the

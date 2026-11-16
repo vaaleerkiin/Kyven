@@ -47,3 +47,24 @@ def restore_residual(predicted: np.ndarray, working: np.ndarray,
         with np.errstate(over="ignore"):
             result[start:end] = difference * inverse_gain[start:end, ..., None]
     return result
+
+
+def preserve_source_color(source: np.ndarray, reconstructed: np.ndarray) -> None:
+    """Project reconstructed RGB onto Source RGB in place using one nonnegative gain.
+
+    Uniform gain retains Source chromaticity in any linear RGB primaries, including
+    negative scene-linear components. The least-squares projection uses no frame
+    statistics, gamut-dependent luminance weights or estimated white balance.
+    Exact black stays black. Float64 strip temporaries cover the float32 HDR range.
+    """
+    for start in range(0, source.shape[0], 128):
+        end = start + 128
+        original = source[start:end].astype(np.float64)
+        generated = reconstructed[start:end].astype(np.float64)
+        denominator = np.sum(original * original, axis=-1)
+        gain = np.ones_like(denominator)
+        np.divide(np.sum(original * generated, axis=-1), denominator,
+                  out=gain, where=denominator > 0)
+        np.maximum(gain, 0, out=gain)
+        with np.errstate(over="ignore", invalid="ignore"):
+            reconstructed[start:end] = original * gain[..., None]

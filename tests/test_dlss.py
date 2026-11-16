@@ -61,7 +61,8 @@ def shot(tmp_path):
     write_exr(tmp_path / "motion.exr", vectors)
     (tmp_path / "worker.exe").write_bytes(b"synthetic worker identity; never executed")
     request = DlssRequest(source=tmp_path / "source.exr", output=tmp_path / "result.exr",
-                          worker=tmp_path / "worker.exe", motion=tmp_path / "motion.exr")
+                          worker=tmp_path / "worker.exe", motion=tmp_path / "motion.exr",
+                          preserve_source_color=False)
     provider = SyntheticDlss()
     registry = ProviderRegistry()
     registry.register("dlss-external", lambda: provider)
@@ -142,6 +143,47 @@ def test_packed_input_does_not_invent_missing_guide_channels(shot):
     with pytest.raises(KyvenError, match="channel is missing"):
         service.run(replace(request, motion=request.source, motion_x="kyven_dlss_motion.x"))
     assert not provider.calls
+
+
+@pytest.mark.parametrize("intensity", [0, 0.5, 1, 2])
+def test_source_color_preservation_rejects_neural_tint_at_source_resolution(shot, monkeypatch, intensity):
+    request, source, provider, service = shot
+    source[..., :3] = [0.04, 0.08, 0.6]
+    source[..., 3] = 0.1234567
+    write_exr(request.source, source)
+    def tint(request, rgba, motion, mask, depth, reset, cancellation):
+        result = rgba.copy()
+        result[..., :3] *= [1.8, 0.7, 1.2]
+        return result
+    monkeypatch.setattr(provider, "predict", tint)
+    request = replace(request, preserve_source_color=True, intensity=intensity)
+    result = service.run(request)
+    c = read_channels(request.output)
+    rgb = np.stack([c[name] for name in ("R", "G", "B")], -1)
+    gain = rgb[..., 2] / source[..., 2]
+    np.testing.assert_allclose(rgb, source[..., :3] * gain[..., None], rtol=1e-6)
+    np.testing.assert_array_equal(c["A"], source[..., 3])
+    assert result["metadata"]["source_color"] == "preserved_rgb_ratios"
+    if intensity == 0:
+        np.testing.assert_array_equal(rgb, source[..., :3])
+    else:
+        assert not np.array_equal(rgb, source[..., :3])
+    native = service.run(replace(request, preserve_source_color=False))
+    assert native["cache_key"] != result["cache_key"]
+    assert native["metadata"]["source_color"] == "native_relighting"
+
+
+def test_preserve_source_color_is_a_validated_default_and_resets_temporal_history(shot):
+    request, _, provider, service = shot
+    payload = {"source": str(request.source), "output": str(request.output), "worker": str(request.worker)}
+    assert DlssRequest.from_payload(payload).preserve_source_color
+    with pytest.raises(KyvenError):
+        DlssRequest.from_payload(dict(payload, preserve_source_color="true"))
+    first = service.run(replace(request, temporal=True))
+    second = service.run(replace(request, temporal=True, frame=2, preserve_source_color=True))
+    assert first["cache_key"] != second["cache_key"]
+    assert second["metadata"]["history_reason"] == "settings_or_session_changed"
+    assert provider.calls[-1]["reset"]
 
 
 @pytest.mark.parametrize("intensity", [0, 0.5, 1, 2])
@@ -558,7 +600,7 @@ def test_authenticated_dlss_endpoint_uses_existing_job_queue_and_durable_cache(s
     payload = {"source": str(request.source), "output": str(request.output),
                "worker": str(request.worker), "mask_source": "source_alpha"}
     try:
-        assert client.health()["api_version"] == 37
+        assert client.health()["api_version"] == 38
         with pytest.raises(KyvenClientError):
             KyvenClient(client.base_url, "y" * 32).submit_dlss(payload)
         with pytest.raises(KyvenClientError):

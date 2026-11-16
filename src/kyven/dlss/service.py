@@ -12,7 +12,7 @@ import numpy as np
 
 from kyven.cache_manifest import read_valid_manifest, write_manifest_atomic
 from kyven.cancellation import CancellationToken
-from kyven.dlss.color import prepare, restore_residual
+from kyven.dlss.color import prepare, preserve_source_color, restore_residual
 from kyven.dlss.history import TemporalBuffer, TemporalFrame
 from kyven.dlss.images import channel, read_channels, resize, write_exr
 from kyven.dlss.models import DlssRequest
@@ -163,7 +163,7 @@ class DlssService:
         small[..., :3], inverse_gain = prepare(source, enabled=request.hdr_rolloff,
                                               knee=request.rolloff_knee)
         provider = self.registry.activate("dlss-external")
-        config = digest({"version": 6, "settings": request.settings(), "runtime": runtime,
+        config = digest({"version": 7, "settings": request.settings(), "runtime": runtime,
                          "size": size, "source_size": (width, height),
                          "has_motion": motion is not None, "has_depth": depth is not None})
         history = self._history
@@ -246,6 +246,8 @@ class DlssService:
         result = rgba.copy()
         with np.errstate(over="ignore", invalid="ignore"):
             result[..., :3] += correction
+        if request.preserve_source_color:
+            preserve_source_color(rgba[..., :3], result[..., :3])
         if not np.isfinite(result).all():
             raise KyvenError(ErrorCode.INFERENCE_FAILED,
                              "Restored DLSS RGB exceeds the finite float32 EXR range.")
@@ -257,6 +259,7 @@ class DlssService:
         metadata["guide_convention"] = "artist_white_allows; native_rgba_white_allows"
         metadata["hdr_rolloff"] = "anchored_peak_shoulder_v1" if request.hdr_rolloff else "off"
         metadata["rolloff_knee"] = request.rolloff_knee
+        metadata["source_color"] = "preserved_rgb_ratios" if request.preserve_source_color else "native_relighting"
         metadata.update(accumulation)
         if request.temporal:
             self._buffer.append(TemporalFrame(source, raw_residual, mask, motion, forward, depth),

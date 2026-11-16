@@ -98,6 +98,7 @@ DLSS = {
     "model": "Kyven's local DLSS neural reconstruction runtime. Use Model Manager to install and check the required worker and runtime components.",
     "processing_scale": "Scales source width and height for neural processing. 1 uses full size; 0.5 uses half width and half height, reducing work and memory but also fine detail. Output stays at Source resolution; processing is limited to 8192 pixels on the longest side.",
     "hdr_rolloff": "Compresses highlights and handles negative RGB for neural inference, then restores the neural change to the original scene-linear range. Keep enabled for HDR sources; original alpha is preserved.",
+    "preserve_source_color": "Keeps Source RGB ratios while applying the reconstructed brightness and detail. Enabled by default to prevent neural color casts. Disable to retain the model's full color and relighting changes.",
     "rolloff_knee": "Sets where highlight compression starts when HDR Rolloff is enabled. Lower values compress a wider highlight range; higher values leave more of the lower range untouched.",
     "intensity": "Overall strength of neural reconstruction. Increase for a stronger change; reduce if the image looks overprocessed. Start at 1 and compare with Source output.",
     "local_tone": "Neural local-tone control. Higher values request stronger local tonal treatment; lower values make it subtler. Compare on your image because the response depends on the runtime and content.",
