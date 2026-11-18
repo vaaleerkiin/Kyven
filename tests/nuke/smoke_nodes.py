@@ -24,7 +24,7 @@ def run():
     fmt = nuke.addFormat('12 10 0 0 12 10 1 KyvenSmoke')
     source = nuke.nodes.Constant(format=fmt.name())
     mask = nuke.nodes.Expression(inputs=[source], expr0='0', expr1='0', expr2='0',
-        expr3='x>=3 && x<9 && y>=2 && y<8 ? 0.000001 : 0')
+        expr3='x>=3 && x<9 && y>=2 && y<8 ? 1 : 0')
     refine = refine_node.create_refine_node()
     refine.setInput(refine_node.SOURCE_INPUT, source)
     refine.setInput(refine_node.MASK_INPUT, mask)
@@ -56,8 +56,10 @@ def run():
     refine['background_radius'].setValue(0)
     check('snapshot keeps faint alpha separately',
           abs(refine.node('KyvenRefineMaskExport').sample('rgba.alpha', 5, 5) - 0.000001) < 1e-10)
-    check('snapshot RGB keeps faint alpha support before quantization',
-          refine.node('KyvenRefineMaskExport').sample('rgba.red', 5, 5) == 1)
+    check('snapshot RGB preserves original alpha without binarization',
+          abs(refine.node('KyvenRefineMaskExport').sample('rgba.red', 5, 5) - 0.000001) < 1e-10)
+    check('faint alpha is background with Cattery cutoffs', refine.sample('rgba.red', 5, 5) == 0)
+    mask['expr3'].setValue('x>=3 && x<9 && y>=2 && y<8 ? 1 : 0')
     refine['crop_mode'].setValue('manual')
     refine['processing_roi'].setValue([4, 3, 8, 7])
     check('native guide is black outside ROI', refine.sample('rgba.red', 3, 2) == 0)
@@ -65,9 +67,49 @@ def run():
     refine['processing_roi'].setValue([4.2, 3.2, 7.8, 6.8])
     check('fractional ROI uses backend floor/ceil bounds', refine.sample('rgba.red', 4, 3) == 1)
     refine['generate_trimap'].setValue(False)
-    for value, expected in ((0, 0), (0.1, 0), (0.5, 128/255), (0.9, 1), (1, 1)):
+    for value, expected in ((0, 0), (0.001, 0), (0.1, 128/255), (0.5, 128/255),
+                            (0.9, 128/255), (0.999, 1), (1, 1)):
         mask['expr3'].setValue(str(value))
         check(f'manual guide {value}', abs(refine.sample('rgba.red', 5, 5)-expected) < 1e-6)
+
+    # Equivalent to the trimap-only branch of the installed Cattery ViTMatte gizmo:
+    # grayscale morphology -> Dissolve 0.5 -> 0.01/0.99 thresholds.
+    erode = nuke.nodes.Dilate(inputs=[mask])
+    erode['channels'].setValue('alpha')
+    dilate = nuke.nodes.Dilate(inputs=[mask])
+    dilate['channels'].setValue('alpha')
+    average = nuke.nodes.Dissolve(inputs=[erode, dilate])
+    average['which'].setValue(0.5)
+    reference = nuke.nodes.Expression(inputs=[average])
+    reference['expr3'].setValue('a < 0.01 ? 0 : (a > 0.99 ? 1 : 128.0/255)')
+    refine['generate_trimap'].setValue(True)
+    refine['crop_mode'].setValue('full')
+    mask['expr3'].setValue('x<2 ? 0.001 : x<4 ? 0.1 : x<6 ? 0.5 : x<8 ? 0.9 : 1')
+    report['refine_exports'] = []
+    export_root = Path(os.environ['KYVEN_NUKE_SMOKE_REPORT']).parent
+    for foreground, background in ((0, 0), (1, 2), (2, 1)):
+        refine['foreground_radius'].setValue(foreground)
+        refine['background_radius'].setValue(background)
+        erode['size'].setValue(-foreground)
+        dilate['size'].setValue(background)
+        samples = []
+        for y in range(10):
+            row = []
+            for x in range(12):
+                expected = reference.sample('rgba.alpha', x, y)
+                actual = refine.sample('rgba.red', x, y)
+                assert abs(actual-expected) < 1e-6, (foreground, background, x, y, expected, actual)
+                row.append(round(expected*255))
+            samples.append(row)
+        check(f'Cattery soft-mask morphology {foreground}/{background}', True)
+        writer = refine.node('KyvenRefineMaskWrite')
+        refine_node._configure_export_writers(None, writer)
+        path = export_root / f'refine-mask-{foreground}-{background}.tif'
+        writer['file'].setValue(str(path).replace('\\', '/'))
+        nuke.execute(writer, 1, 1)
+        report['refine_exports'].append({'mask': str(path), 'foreground_radius': foreground,
+                                       'background_radius': background, 'expected': samples[::-1]})
+    mask['expr3'].setValue('1')
     legacy = nuke.Enumeration_Knob('mask_channel', 'Old Mask Channel', ['Alpha', 'Red'])
     refine.addKnob(legacy)
     legacy.setValue(1)

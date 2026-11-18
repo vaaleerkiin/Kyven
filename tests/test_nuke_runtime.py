@@ -20,6 +20,16 @@ def test_real_nuke_nodes_guidance_upgrades_and_reopen(tmp_path):
     assert report.is_file(), result.stdout + result.stderr
     payload = json.loads(report.read_text())
     assert payload.get('ok'), json.dumps(payload, indent=2) + result.stderr
+    import numpy as np
+    from PIL import Image
+
+    from kyven.refine.trimap import generate_trimap
+
+    for export in payload['refine_exports']:
+        with Image.open(export['mask']) as image:
+            mask = np.asarray(image.convert('L'))
+        actual = generate_trimap(mask, export['foreground_radius'], export['background_radius'])
+        np.testing.assert_array_equal(actual, export['expected'])
 
 
 def test_real_nuke_dlss_snapshot_is_lossless_single_part_and_survives_reopen(tmp_path):

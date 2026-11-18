@@ -85,7 +85,7 @@ class RefineService:
             source = source_file.convert("RGB")
             mask = mask_file.convert("L")
             # Nuke snapshots carry prepared guidance in RGB and original coarse alpha
-            # separately, so binarization never alters pixels outside the model ROI.
+            # separately, so guidance preparation never alters pixels outside the model ROI.
             coarse_alpha = mask_file.getchannel("A") if "A" in mask_file.getbands() else mask.copy()
         if source.size != mask.size:
             raise KyvenError(

@@ -49,11 +49,11 @@ alpha after upgrade; their old channel selector is hidden and disconnected.
 ## Trimap option
 
 `Generate Trimap from Mask` is enabled by default and is part of Refine, not a separate node.
-Every positive input alpha becomes 1 before erosion/dilation; zero and negative alpha become 0.
-This happens before the Nuke input snapshot is quantized, so faint positive edges are retained.
-Foreground erosion produces definite white foreground, background dilation produces the gray
-unknown band, and pixels outside the band remain definite black background. Disable the option only
-when the Mask input is already an artist-created black/gray/white trimap.
+Generation uses the simple Cattery ViTMatte recipe: erode and dilate the original Mask alpha,
+average those two masks equally, then map values below 0.01 to black, above 0.99 to white,
+and everything else to gray. The mask is not binarized before morphology. Foreground Erosion and
+Background Dilation control the two radii. Disable the option when the Mask input is already
+an artist-created black/gray/white trimap; the same cutoffs apply without erosion/dilation.
 With generation disabled, alpha is quantized to three guidance states; the gray unknown region
 is deliberately preserved. In Segment this input is called **Edge Guide**.
 
@@ -121,3 +121,6 @@ After updating the repository and restarting Nuke, select an older Refine Group 
 `Kyven > Upgrade Selected Refine Node`. The command adds the current seven output modes without
 discarding the existing refined matte. The trimap outputs become available immediately from the
 CPU-only preview; process a frame or range only when you want a new ViTMatte result.
+
+After restoring Cattery-style trimap preparation, processing automatically refreshes old input
+snapshots and invalidates results from the previous positive-alpha recipe. Reprocess affected frames.

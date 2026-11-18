@@ -20,20 +20,48 @@ from kyven.segment.providers.registry import ProviderRegistry
     [0] * 9, [255] * 9, [0, 1, 64, 85, 127, 128, 169, 170, 255],
 ])
 @pytest.mark.parametrize('radii', [(0, 0), (1, 2), (2, 1), (6, 6)])
-def test_positive_alpha_is_binarized_before_morphology(values, radii):
+def test_cattery_averages_original_mask_before_quantizing(values, radii):
     mask = np.tile(np.asarray(values, dtype=np.uint8), (7, 1))
-    binary = Image.fromarray((mask > 0).astype(np.uint8) * 255)
+    image = Image.fromarray(mask)
     foreground, background = radii
-    eroded = np.asarray(binary.filter(ImageFilter.MinFilter(2 * foreground + 1)) if foreground else binary) > 0
-    dilated = np.asarray(binary.filter(ImageFilter.MaxFilter(2 * background + 1)) if background else binary) > 0
-    expected = np.where(eroded, 255, np.where(dilated, 128, 0))
+    eroded = np.asarray(image.filter(ImageFilter.MinFilter(2 * foreground + 1)) if foreground else image)
+    dilated = np.asarray(image.filter(ImageFilter.MaxFilter(2 * background + 1)) if background else image)
+    average = (eroded.astype(np.float32) + dilated.astype(np.float32)) * 0.5 / 255
+    expected = np.where(average > 0.99, 255, np.where(average < 0.01, 0, 128))
     np.testing.assert_array_equal(generate_trimap(mask, *radii), expected)
 
 
 def test_manual_guide_preserves_uncertainty_and_uses_explicit_boundaries():
     np.testing.assert_array_equal(
-        normalize_trimap(np.array([[0, 85, 86, 128, 169, 170, 255]], dtype=np.uint8)),
-        [[0, 0, 128, 128, 128, 255, 255]])
+        normalize_trimap(np.array([[0, 2, 3, 25, 128, 229, 252, 253, 255]], dtype=np.uint8)),
+        [[0, 0, 128, 128, 128, 128, 128, 255, 255]])
+
+
+@pytest.mark.parametrize('radii', [(0, 0), (1, 2), (3, 1), (20, 15)])
+def test_grayscale_morphology_matches_cattery_min_max_reference(radii):
+    mask = np.random.default_rng(17).integers(0, 256, (19, 23), dtype=np.uint8)
+    image = Image.fromarray(mask)
+    foreground, background = radii
+    eroded = np.asarray(image.filter(ImageFilter.MinFilter(2 * foreground + 1)) if foreground else image)
+    dilated = np.asarray(image.filter(ImageFilter.MaxFilter(2 * background + 1)) if background else image)
+    # Assert the extrema too: quantizing a random average alone can hide filter bugs.
+    from kyven.refine.trimap import _box_extreme
+    np.testing.assert_array_equal(_box_extreme(mask, foreground, maximum=False), eroded)
+    np.testing.assert_array_equal(_box_extreme(mask, background, maximum=True), dilated)
+
+
+def test_faint_background_is_not_promoted_to_solid_foreground():
+    mask = np.ones((11, 13), dtype=np.uint8)
+    mask[3:8, 4:9] = 255
+    actual = generate_trimap(mask, 1, 1)
+    assert actual[0, 0] == 0
+    assert actual[3, 4] == 128
+    assert actual[5, 6] == 255
+
+
+def test_soft_mask_without_morphology_uses_cattery_cutoffs():
+    mask = np.array([[0, 1, 25, 128, 229, 254, 255]], dtype=np.uint8)
+    np.testing.assert_array_equal(generate_trimap(mask, 0, 0), [[0, 0, 128, 128, 128, 255, 255]])
 
 
 @pytest.fixture
@@ -117,10 +145,10 @@ def test_outside_backend_roi_is_rejected_before_prediction(guidance_job):
     assert not request.output.exists()
 
 
-def test_binary_guidance_snapshot_preserves_original_soft_alpha_outside_roi(guidance_job):
+def test_guidance_snapshot_preserves_original_soft_alpha_outside_roi(guidance_job):
     request, _, service, original = guidance_job
     snapshot = np.empty((*original.shape, 4), dtype=np.uint8)
-    snapshot[..., :3] = ((original > 0).astype(np.uint8)*255)[..., None]
+    snapshot[..., :3] = original[..., None]
     snapshot[..., 3] = original
     Image.fromarray(snapshot).save(request.mask)
     request = replace(request, crop_mode='manual', roi=BoxPrompt(4, 3, 8, 7))

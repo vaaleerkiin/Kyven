@@ -55,7 +55,7 @@ class SyntheticRefinementProvider(RefinementProvider):
 
 
 class TrimapTests(unittest.TestCase):
-    def test_integral_morphology_matches_pillow_rank_filters(self) -> None:
+    def test_binary_morphology_matches_pillow_rank_filters(self) -> None:
         pixels = (np.random.default_rng(7).random((23, 31)) > 0.58).astype(np.uint8) * 255
         image = Image.fromarray(pixels, mode="L")
         for foreground_radius, background_radius in ((0, 0), (1, 2), (3, 1)):
@@ -91,7 +91,7 @@ class TrimapTests(unittest.TestCase):
 
     def test_artist_trimap_is_quantized(self) -> None:
         trimap = normalize_trimap(np.asarray([[0, 64, 127, 200, 255]], dtype=np.uint8))
-        self.assertEqual(trimap.tolist(), [[0, 0, 128, 255, 255]])
+        self.assertEqual(trimap.tolist(), [[0, 128, 128, 128, 255]])
 
 
 class RefineServiceTests(unittest.TestCase):

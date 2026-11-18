@@ -22,6 +22,8 @@ def _state(node: Any, frame: int) -> dict:
     state = {name: _knob_value_at(node[name], frame) for name in names if name in node.knobs()}
     if "kyven_kind" in node.knobs() and node["kyven_kind"].value() in {"refine", "inpaint"}:
         state["mask_input_contract"] = "alpha-only-positive-v1"
+        if node["kyven_kind"].value() == "refine":
+            state["mask_input_contract"] = "alpha-only-cattery-average-v2"
     if "kyven_kind" in node.knobs() and node["kyven_kind"].value() == "dlss":
         from kyven_nuke.dlss_inputs import snapshot_state
         state["dlss_input"] = snapshot_state(node, frame)

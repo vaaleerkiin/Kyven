@@ -20,8 +20,8 @@ WAFT distribution check.
 
 Regression coverage includes input snapshot reuse/refresh, settings changes, missing/corrupt media,
 cancelled exports, corrupt SQLite recovery, preserved media, batched/concurrent operations, and the
-distinction between corruption and lock/read-only/I/O errors. Refine checks cover positive-alpha
-binarization, manual three-state boundaries, empty/full/soft masks, unequal and large erosion/dilation
+distinction between corruption and lock/read-only/I/O errors. Refine checks cover Cattery-style
+erosion/dilation averaging and 0.01/0.99 cutoffs, empty/full/soft masks, unequal and large erosion/dilation
 radii, preview/model/saved-guidance equality, ROI clipping, preserved outside alpha and cache hits.
 Output tests reject NaN/Infinity and invalid shapes before successful publication. Other suites cover
 job cancellation, model lifecycle, artifact restoration, deterministic keys, old DLSS mappings,
@@ -37,8 +37,9 @@ $env:KYVEN_NUKE_EXECUTABLE = 'C:\Program Files\Nuke16.0v4\Nuke16.0.exe'
 python -m pytest tests/test_nuke_runtime.py -q -p no:cacheprovider
 ```
 
-It checks native Refine morphology against a binary reference, faint alpha before export quantization,
-manual gray guidance, manual ROI, legacy alpha-only repair, Inpaint creation/colorspace links,
+It checks native Refine morphology against binary and Cattery soft-mask references, exported TIFF
+guidance against the backend, faint background rejection, manual gray guidance, manual ROI,
+legacy alpha-only repair, Inpaint creation/colorspace links,
 Segment label migration, DLSS channel migration, UUIDs and script reopen. Without the environment
 variable it is skipped. It requires an available NukeX interactive license and is separate from CI.
 

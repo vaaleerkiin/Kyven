@@ -125,8 +125,8 @@ REFINE_OUTPUT_HELP = (
 )
 REFINE_TRIMAP_HELP = (
     "CPU-only preview; these controls never run ViTMatte.<br>"
-    "<b>On</b>: alpha > 0 becomes solid before building the edge<br>"
-    "<b>Off</b>: preserve an artist guide's gray unknown region"
+    "<b>On</b>: average erosion / dilation, as in Cattery ViTMatte<br>"
+    "<b>Off</b>: use artist trimap &nbsp; | &nbsp; Cutoffs: 0.01 / 0.99"
 )
 REFINE_LIVE_HELP = (
     "Live follows timeline and model / ROI changes asynchronously.<br>"
@@ -1092,9 +1092,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
             support = nuke.nodes.Expression(name="KyvenRefineMaskSupport")
         support.setInput(0, mask_channel)
         for index, channel in enumerate(("r", "g", "b", "a")):
-            support[f"expr{index}"].setValue(
-                f"parent.generate_trimap ? ({channel} > 0) : "
-                f"({channel} >= 170.0/255 ? 1 : ({channel} <= 85.0/255 ? 0 : 128.0/255))")
+            support[f"expr{index}"].setValue(channel)
         writer = nuke.toNode("KyvenRefineMaskWrite")
         if writer is not None:
             export = nuke.toNode("KyvenRefineMaskExport")
@@ -1130,7 +1128,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
                 name="KyvenTrimapForegroundHalf", value=0.5
             )
         foreground_half.setInput(0, foreground)
-        foreground_half["value"].setValue(127.0 / 255)
+        foreground_half["value"].setValue(0.5)
 
         possible_half = nuke.toNode("KyvenTrimapPossibleHalf")
         if possible_half is None:
@@ -1138,7 +1136,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
                 name="KyvenTrimapPossibleHalf", value=0.5
             )
         possible_half.setInput(0, possible)
-        possible_half["value"].setValue(128.0 / 255)
+        possible_half["value"].setValue(0.5)
 
         generated_trimap = nuke.toNode("KyvenGeneratedTrimap")
         if generated_trimap is None:
@@ -1167,7 +1165,8 @@ def _ensure_refine_output_controls(node: Any) -> None:
         inside = f"(x >= floor({x0}) && x < ceil({x1}) && y >= floor({y0}) && y < ceil({y1}))"
         bypass = f"(parent.crop_mode != 1 || {x0} >= {x1} || {y0} >= {y1})"
         for index, channel in enumerate(("r", "g", "b", "a")):
-            guidance[f"expr{index}"].setValue(f"({bypass} || {inside}) ? {channel} : 0")
+            value = f"({channel} < 0.01 ? 0 : ({channel} > 0.99 ? 1 : 128.0/255))"
+            guidance[f"expr{index}"].setValue(f"({bypass} || {inside}) ? {value} : 0")
 
         trimap = nuke.toNode("KyvenTrimapSwitch")
         if trimap is None:

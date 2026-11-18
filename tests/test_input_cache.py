@@ -143,3 +143,23 @@ def test_generated_vs_manual_guidance_requires_new_snapshot(context):
     input_cache.export_input(nuke, node, writer, 1, path)
     node['generate_trimap'].setValue(False)
     assert not input_cache.ready(node, path, 1)
+
+
+def test_cattery_recipe_invalidates_positive_alpha_snapshots(context, monkeypatch):
+    node, writer, nuke, root = context
+    node.values['kyven_kind'] = Knob('refine')
+    path = root / 'mask.tif'
+    current_state = input_cache._state
+
+    def old_state(node, frame):
+        state = current_state(node, frame)
+        state['mask_input_contract'] = 'alpha-only-positive-v1'
+        return state
+
+    with monkeypatch.context() as patch:
+        patch.setattr(input_cache, '_state', old_state)
+        input_cache.export_input(nuke, node, writer, 1, path)
+    assert not input_cache.ready(node, path, 1)
+    input_cache.export_input(nuke, node, writer, 1, path)
+    assert input_cache.ready(node, path, 1)
+    assert nuke.execute.call_count == 2

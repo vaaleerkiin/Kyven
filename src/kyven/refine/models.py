@@ -86,7 +86,7 @@ class RefineRequest:
 
     def cache_key(self, provider_version: str, model_checksum: str) -> str:
         payload = {
-            "guidance_version": "positive-alpha-roi-v2",
+            "guidance_version": "cattery-average-trimap-v3",
             "source_sha256": file_sha256(self.source),
             "mask_sha256": file_sha256(self.mask),
             "request": self.canonical(),
