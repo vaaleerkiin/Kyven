@@ -522,6 +522,8 @@ TCP 127.0.0.1:8766 0.0.0.0:0 ESTABLISHED 13"""
         self.assertFalse(affects_live_result("max_hole_area", "segment"))
         self.assertFalse(affects_live_result("output_mode", "segment"))
         self.assertFalse(affects_live_result("output_mode", "refine"))
+        self.assertFalse(affects_live_result("roi_blend", "refine"))
+        self.assertFalse(affects_live_result("roi_feather", "refine"))
     def test_refine_payload_translates_roi_and_trimap_controls(self) -> None:
         payload = refine_payload(
             source="D:/source.png",

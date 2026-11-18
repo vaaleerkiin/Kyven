@@ -14,6 +14,7 @@ Refine converts a coarse mask into a soft alpha matte while keeping model infere
 - [Nuke graph](#nuke-graph)
 - [Trimap option](#trimap-option)
 - [Processing and performance](#processing)
+- [Optional alpha integration](#optional-alpha-integration)
 - [Cache](#cache)
 - [CLI](#cli)
 - [Updating an existing node](#updating-an-existing-node)
@@ -96,6 +97,28 @@ preview does not load or run ViTMatte; press Process only when the guidance look
 Processing ROI crops both image and mask before inference, then pastes the refined alpha into the
 full-size coarse mask. Low Memory uses 512 px tiles, Balanced uses 1024 px tiles, and Quality uses a
 full-frame pass unless a custom tile size is set. Overlap blending reduces tile seams.
+
+## Optional alpha integration
+
+For local repairs to an existing alpha, enable **Blend ROI into Input Alpha** in
+**Alpha Integration / Optional**. This is off by default and applies in **Manual** crop mode.
+The entire integration section is hidden in Auto and Full; returning to Manual restores its settings.
+It combines the already cached refined matte with the live **Mask** input alpha on the node's
+output. It does not change model inputs, crop size, trimap generation, or cached files.
+
+**ROI Feather (px)** controls the smooth transition inward from the Manual ROI boundary.
+Start with 64 px and increase it if the boundary is still visible. The center keeps the refined
+matte; outside the ROI, the original incoming float alpha is preserved. The blend changes the
+contribution of each matte without blurring hairs. A value of 0 gives a hard paste. Borders that
+touch the source image edge are not faded, and the feather is limited for very narrow ROIs.
+
+Toggling integration or adjusting its feather updates immediately, including with the server
+stopped; it does not start model processing, even with Live enabled. The three refined output modes
+use the integrated alpha. Trimap modes are independent. Use a normal Nuke **Write** connected to
+the Group to save the integrated result; **Create Matte Read** opens the cached model result.
+
+After updating, restart Nuke or use **Kyven > Upgrade Selected Refine Node** to add the optional
+controls to an existing node. Its cached matte and current processing settings are preserved.
 
 ## Cache
 

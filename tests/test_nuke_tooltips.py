@@ -24,6 +24,7 @@ INTERNAL = {
 @pytest.mark.parametrize('kind,filename', [
     ('segment', 'node.py'), ('refine', 'refine_node.py'),
     ('inpaint', 'inpaint_node.py'), ('dlss', 'dlss_node.py'),
+    ('refine', 'refine_integration.py'),
     ('dlss', 'dlss_interface.py'),
 ])
 def test_public_controls_have_help(kind, filename):

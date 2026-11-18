@@ -43,6 +43,11 @@ legacy alpha-only repair, Inpaint creation/colorspace links,
 Segment label migration, DLSS channel migration, UUIDs and script reopen. Without the environment
 variable it is skipped. It requires an available NukeX interactive license and is separate from CI.
 
+The separate Refine integration check uses a synthetic cached matte and float input alpha. It
+verifies opt-in defaults, smooth ROI blending, unchanged alpha outside the ROI, image-edge behavior,
+narrow ROIs, all refined output modes, trimap independence, upgrade/reopen, identical inference
+payloads, unchanged cache bytes, and no inference request while adjusting integration controls.
+
 ## GPU and release qualification
 
 Native graph checks do not establish quality or memory usage of SAM, Refine providers, LaMa,

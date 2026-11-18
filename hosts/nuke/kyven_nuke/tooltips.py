@@ -68,6 +68,8 @@ SEGMENT = {
 }
 
 REFINE = {
+    "roi_blend": "Optional output-only integration in Manual crop mode. Blends the cached refined matte into the incoming Mask alpha with a soft ROI border. Off by default. Changes update immediately without rerunning the model or rewriting its cache. Use a Write to save the integrated output.",
+    "roi_feather": "Width in source-image pixels of the inward transition from the refined matte to the incoming Mask alpha. Increase to soften an ROI seam; 0 gives a hard paste. Does not blur hairs or change model inputs. Active with Blend ROI into Input Alpha.",
     "model": "Selects the matting model used to recover fine edges from Source and Mask. Use Refine for hair, soft boundaries and partial transparency; the input mask must already identify the intended subject.",
     "tile_size": "Size of image tiles used for matting. 0 lets the model choose automatically. Smaller tiles can reduce peak memory but give less context; larger tiles need more memory. Tile behavior depends on the selected model.",
     "tile_overlap": "Pixels shared by neighboring tiles. Increase if tile boundaries are visible; more overlap repeats work and can take longer. Used when processing is tiled.",

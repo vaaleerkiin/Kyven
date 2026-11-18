@@ -932,6 +932,11 @@ def knob_changed() -> None:
         node["reset_roi"].setVisible(crop_mode == "manual")
     if "context_padding" in node.knobs():
         node["context_padding"].setVisible(crop_mode == "auto")
+    from kyven_nuke.refine_integration import update_controls
+    update_controls(node)
+    if name in {"roi_blend", "roi_feather"}:
+        _refresh_node_output(node)
+        return
     if "roi_enabled" in node.knobs():
         node["roi_enabled"].setVisible(False)
     if name in {
@@ -1065,6 +1070,8 @@ def _ensure_refine_output_controls(node: Any) -> None:
         _add_knob(nuke, node, nuke.Text_Knob("output_help", "", REFINE_OUTPUT_HELP))
     else:
         node["output_help"].setValue(REFINE_OUTPUT_HELP)
+    from kyven_nuke.refine_integration import build_graph, ensure_controls
+    ensure_controls(node)
     if "kyven_trimap_preview_frame" not in node.knobs():
         preview_frame = nuke.Int_Knob("kyven_trimap_preview_frame", "Trimap Preview Frame")
         preview_frame.setValue(-2147483647)
@@ -1174,11 +1181,13 @@ def _ensure_refine_output_controls(node: Any) -> None:
             trimap["which"].setValue(0)
         trimap.setInput(0, guidance)
 
+        integrated = build_graph(nuke, refined, mask_channel)
+
         refined_rgba = nuke.toNode("KyvenMatteRGBA")
         if refined_rgba is None:
             refined_rgba = nuke.nodes.Copy(name="KyvenMatteRGBA")
-        refined_rgba.setInput(0, refined)
-        refined_rgba.setInput(1, refined)
+        refined_rgba.setInput(0, integrated)
+        refined_rgba.setInput(1, integrated)
         refined_rgba["from0"].setValue("rgba.red")
         refined_rgba["to0"].setValue("rgba.alpha")
 
@@ -1186,7 +1195,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
         if source_refined is None:
             source_refined = nuke.nodes.Copy(name="KyvenSourceAlpha")
         source_refined.setInput(0, source)
-        source_refined.setInput(1, refined)
+        source_refined.setInput(1, integrated)
         source_refined["from0"].setValue("rgba.red")
         source_refined["to0"].setValue("rgba.alpha")
 
@@ -1583,6 +1592,8 @@ def knob_changed_for_node(node: Any) -> None:
     node["processing_roi"].setVisible(crop_mode == "manual")
     node["reset_roi"].setVisible(crop_mode == "manual")
     node["context_padding"].setVisible(crop_mode == "auto")
+    from kyven_nuke.refine_integration import update_controls
+    update_controls(node)
     if "roi_enabled" in node.knobs():
         node["roi_enabled"].setVisible(False)
     if node.input(MASK_INPUT) is not None:

@@ -32,6 +32,28 @@ def test_real_nuke_nodes_guidance_upgrades_and_reopen(tmp_path):
         np.testing.assert_array_equal(actual, export['expected'])
 
 
+def test_real_nuke_refine_optional_integration_does_not_run_model_or_change_cache(tmp_path):
+    executable = os.environ.get('KYVEN_NUKE_EXECUTABLE')
+    if not executable:
+        pytest.skip('Set KYVEN_NUKE_EXECUTABLE for licensed Nuke integration checks')
+    from PIL import Image
+
+    matte = tmp_path / 'cached-matte.png'
+    Image.new('L', (96, 64), 204).save(matte)
+    original = matte.read_bytes()
+    report = tmp_path / 'integration.json'
+    script = Path(__file__).parent / 'nuke/refine_integration.py'
+    result = subprocess.run([executable, '--nukex', '-i', '-t', str(script)],
+        env={**os.environ, 'KYVEN_NUKE_INTEGRATION_REPORT': str(report),
+             'KYVEN_NUKE_INTEGRATION_MATTE': str(matte)},
+        capture_output=True, text=True, timeout=90, check=False,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+    assert report.is_file(), result.stdout + result.stderr
+    payload = json.loads(report.read_text())
+    assert payload.get('ok'), json.dumps(payload, indent=2) + result.stderr
+    assert matte.read_bytes() == original
+
+
 def test_real_nuke_dlss_snapshot_is_lossless_single_part_and_survives_reopen(tmp_path):
     executable = os.environ.get('KYVEN_NUKE_EXECUTABLE')
     if not executable:
