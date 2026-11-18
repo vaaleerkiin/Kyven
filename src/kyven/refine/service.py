@@ -13,38 +13,10 @@ from kyven.cache_manifest import read_valid_manifest, write_manifest_atomic
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
 from kyven.refine.models import RefineRequest, RefineResult
+from kyven.refine.regions import full_region, refine_region
 from kyven.refine.trimap import generate_trimap, normalize_trimap
 from kyven.segment.output import write_mask_png_atomic
 from kyven.segment.providers.registry import ProviderRegistry
-from kyven.segment.roi import ResolvedRegion, resolve_region
-
-
-def _full_region(width: int, height: int) -> ResolvedRegion:
-    return ResolvedRegion(
-        x0=0,
-        y0=0,
-        x1=width,
-        y1=height,
-        source_width=width,
-        source_height=height,
-    )
-
-
-def _auto_region(trimap: np.ndarray, padding: int) -> ResolvedRegion:
-    """Bound foreground and unknown trimap pixels, then add model context."""
-
-    height, width = trimap.shape
-    ys, xs = np.nonzero(trimap > 0)
-    if xs.size == 0:
-        return _full_region(width, height)
-    return ResolvedRegion(
-        x0=max(0, int(xs.min()) - padding),
-        y0=max(0, int(ys.min()) - padding),
-        x1=min(width, int(xs.max()) + 1 + padding),
-        y1=min(height, int(ys.max()) + 1 + padding),
-        source_width=width,
-        source_height=height,
-    )
 
 
 class RefineService:
@@ -107,12 +79,7 @@ class RefineService:
             if request.crop_mode == "full" and request.roi is not None
             else request.crop_mode
         )
-        if effective_crop_mode == "manual":
-            region = resolve_region(request.roi, source.width, source.height)
-        elif effective_crop_mode == "auto":
-            region = _auto_region(full_trimap, request.context_padding)
-        else:
-            region = _full_region(source.width, source.height)
+        region = refine_region(full_trimap, effective_crop_mode, request.roi, request.context_padding)
         crop_box = (region.x0, region.y0, region.x1, region.y1)
         source_crop = source.crop(crop_box)
         trimap_pixels = full_trimap[crop_box[1] : crop_box[3], crop_box[0] : crop_box[2]]
@@ -123,7 +90,7 @@ class RefineService:
             root = Path(directory)
             source_path = request.source
             trimap_path = root / "trimap.png"
-            if region != _full_region(source.width, source.height):
+            if region != full_region(source.width, source.height):
                 source_path = root / "source.png"
                 source_crop.save(source_path)
             Image.fromarray(trimap_pixels, mode="L").save(trimap_path)

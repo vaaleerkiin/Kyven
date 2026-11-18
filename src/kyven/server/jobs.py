@@ -404,6 +404,7 @@ class JobManager:
             background_radius=int(payload.get("background_radius", 15)),
             tile_size=int(payload.get("tile_size", default_tile)),
             tile_overlap=int(payload.get("tile_overlap", 64)),
+            skip_known_tiles=bool(payload.get("skip_known_tiles", True)),
         )
 
     def submit_refine(self, payload: dict[str, Any]) -> str:

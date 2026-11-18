@@ -99,6 +99,9 @@ class NukeKyvenClient:
     def preview_trimap(self, payload):
         return self._request("POST", "/v1/preview/trimap", payload, timeout_seconds=60.0)
 
+    def preview_refine_tiles(self, payload):
+        return self._request("POST", "/v1/preview/refine-tiles", payload, timeout_seconds=60.0)
+
     def preview_mask_postprocess(self, payload):
         return self._request(
             "POST",

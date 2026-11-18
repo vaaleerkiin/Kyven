@@ -24,6 +24,8 @@ def affects_live_result(knob_name: str, kind: str) -> bool:
             "processing_roi",
             "tile_size",
             "tile_overlap",
+            "tile_mode",
+            "skip_known_tiles",
             "detail_radius",
             "detail_strength",
         }
@@ -85,6 +87,10 @@ def _run_requested_update(node_name: str, revision: int) -> None:
         return
     kind = str(node["kyven_kind"].value()) if "kyven_kind" in node.knobs() else "segment"
     if kind == "refine":
+        from kyven_nuke.refine_tile_preview import is_preview, request_preview
+        if is_preview(node):
+            request_preview(node)
+            return
         if node.input(0) is None or node.input(1) is None:
             return
         from kyven_nuke.refine_node import process_current_frame
@@ -149,6 +155,11 @@ def _update_live_nodes() -> None:
 
             poll_live(node)
             continue
+        if kind == "refine":
+            from kyven_nuke.refine_tile_preview import is_preview, request_preview
+            if is_preview(node):
+                request_preview(node)
+                continue
         if (
             kind == "refine"
             and "kyven_trimap_preview_frame" in knobs

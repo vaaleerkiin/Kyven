@@ -54,6 +54,36 @@ def test_real_nuke_refine_optional_integration_does_not_run_model_or_change_cach
     assert matte.read_bytes() == original
 
 
+def test_real_nuke_tile_preview_uses_cpu_http_planner_with_no_inference(tmp_path):
+    executable = os.environ.get('KYVEN_NUKE_EXECUTABLE')
+    if not executable:
+        pytest.skip('Set KYVEN_NUKE_EXECUTABLE for licensed Nuke integration checks')
+    from kyven.models.catalog import ModelCatalog
+    from kyven.segment.providers.registry import ProviderRegistry
+    from kyven.segment.service import SegmentService
+    from kyven.server.app import KyvenServer, ServerConfig
+    from kyven.server.jobs import JobManager
+
+    registry = ProviderRegistry()
+    server = KyvenServer(ServerConfig(token='x'*32, models_dir=tmp_path, port=0),
+        JobManager(SegmentService(registry)), registry, ModelCatalog.builtin())
+    server.start()
+    report = tmp_path/'tile-preview.json'
+    script = Path(__file__).parent/'nuke/refine_tile_preview.py'
+    try:
+        result = subprocess.run([executable, '--nukex', '-i', '-t', str(script)],
+            env={**os.environ, 'KYVEN_NUKE_TILE_PREVIEW_REPORT': str(report),
+                 'KYVEN_NUKE_TILE_PREVIEW_URL': f'http://127.0.0.1:{server.port}'},
+            capture_output=True, text=True, timeout=90, check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+        assert report.is_file(), result.stdout + result.stderr
+        payload = json.loads(report.read_text())
+        assert payload.get('ok'), json.dumps(payload, indent=2) + result.stdout + result.stderr
+        assert not registry.loaded_ids
+    finally:
+        server.shutdown()
+
+
 def test_real_nuke_dlss_snapshot_is_lossless_single_part_and_survives_reopen(tmp_path):
     executable = os.environ.get('KYVEN_NUKE_EXECUTABLE')
     if not executable:

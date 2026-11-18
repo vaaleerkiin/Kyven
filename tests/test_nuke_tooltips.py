@@ -18,6 +18,8 @@ INTERNAL = {
     'correction_frames', 'key_frame_previous', 'roi_enabled', 'processing_size',
     'dlss_ui_version', 'legacy_mask_source', 'worker', 'max_dimension', 'reset_epoch',
     'mask_channel',  # DLSS hides this; other nodes are checked separately below.
+    'tile_preview_bounds', 'tile_preview_bounds_valid', 'tile_preview_size',
+    'tile_preview_previous_output',
 }
 
 
@@ -25,6 +27,8 @@ INTERNAL = {
     ('segment', 'node.py'), ('refine', 'refine_node.py'),
     ('inpaint', 'inpaint_node.py'), ('dlss', 'dlss_node.py'),
     ('refine', 'refine_integration.py'),
+    ('refine', 'refine_tiling.py'),
+    ('refine', 'refine_tile_preview.py'),
     ('dlss', 'dlss_interface.py'),
 ])
 def test_public_controls_have_help(kind, filename):

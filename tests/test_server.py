@@ -159,7 +159,7 @@ class ServerTests(unittest.TestCase):
                 client = KyvenClient(f"http://127.0.0.1:{server.port}", token)
                 health = client.health()
                 self.assertEqual(health["status"], "ok")
-                self.assertEqual(health["api_version"], 38)
+                self.assertEqual(health["api_version"], 40)
                 self.assertEqual(health["loaded_providers"], [])
                 self.assertIn("counts", health["jobs"])
                 self.assertEqual(len(client.models()), 12)
@@ -267,6 +267,15 @@ class ServerTests(unittest.TestCase):
                     }
                 )
                 self.assertTrue(trimap_result["generated"])
+                loaded = registry.loaded_ids
+                tiles_result = client.preview_refine_tiles({
+                    'mask': str(trimap_mask.resolve()),
+                    'output': str(root/'tile-preview.png'), 'tile_size': 128, 'tile_overlap': 32,
+                    'foreground_radius': 1, 'background_radius': 1})
+                self.assertEqual(tiles_result['tiles'], 1)
+                self.assertEqual(registry.loaded_ids, loaded)
+                with Image.open(root/'tile-preview.png') as overlay:
+                    self.assertEqual(overlay.mode, 'RGBA')
                 with Image.open(trimap_preview) as preview:
                     self.assertEqual(preview.getpixel((3, 3)), 255)
                     self.assertEqual(preview.getpixel((1, 3)), 128)

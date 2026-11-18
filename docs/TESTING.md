@@ -48,6 +48,25 @@ verifies opt-in defaults, smooth ROI blending, unchanged alpha outside the ROI, 
 narrow ROIs, all refined output modes, trimap independence, upgrade/reopen, identical inference
 payloads, unchanged cache bytes, and no inference request while adjusting integration controls.
 
+Refine tile tests compare sparse and complete inference with a context-dependent synthetic model
+for both providers, exact known 0/1, gray pixels at seams and image borders, narrow crops, full-crop
+passes, cancellation, memory errors, invalid output and cache identity. CPU preview tests compare
+each displayed RUN box and its trimap against actual inference inputs for Full/Auto/Manual modes.
+A fresh subprocess confirms preview imports no Torch/Transformers. Licensed Nuke checks cover
+explicit modes, legacy custom-size migration, CPU HTTP preview, Viewer compositing, updated counts,
+frame changes, temporary-file cleanup, reopen, and suppressed Live inference in Tile Preview.
+Slider checks cover preserved animated Context Padding, live square outlines matching every planned
+edge (including fractional ROI, top-left Y orientation and last-edge alignment), one mask export
+across repeated same-frame edits, explicit refresh, and frame invalidation. Cache checks cover
+upstream edits, immutable guidance, morphology changes and the memory bound.
+The simplified selector is checked for Tiles/Full Crop only, stable sizes across profile changes,
+legacy Auto migration and preserved size/overlap values when toggling Full Crop.
+Show Tiles is checked for default-off behavior, return to all seven normal output modes,
+dropdown synchronization, preserved payload/snapshots, stale background completion and script reopen.
+Interactive preview regressions check native yellow guidance before any HTTP response, immediate
+trimap-slider changes without export, correctly premultiplied colors, a stable three-row preview
+block during loading/success/error, preserved Nuke RAM cache and coalesced slider-event bursts.
+
 ## GPU and release qualification
 
 Native graph checks do not establish quality or memory usage of SAM, Refine providers, LaMa,

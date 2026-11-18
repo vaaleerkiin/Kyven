@@ -10,8 +10,10 @@ from PIL import Image
 
 from kyven.errors import ErrorCode, KyvenError
 from kyven.inpaint.masks import prepare_inpaint_masks
+from kyven.refine.models import RefineRequest
+from kyven.refine.tile_preview import draw_tile_preview
 from kyven.refine.trimap import generate_trimap, normalize_trimap
-from kyven.segment.models import BoxPrompt
+from kyven.segment.models import BoxPrompt, ExecutionProfile
 from kyven.segment.output import confidence_trimap, read_logits_npz, write_mask_png_atomic
 from kyven.segment.postprocess import fill_enclosed_holes
 from kyven.segment.roi import resolve_region
@@ -115,6 +117,35 @@ def prepare_trimap_preview(payload: dict[str, Any]) -> dict[str, Any]:
         "foreground_radius": foreground_radius,
         "background_radius": background_radius,
     }
+
+
+def prepare_refine_tiles_preview(payload: dict[str, Any]) -> dict[str, Any]:
+    """Plan and draw tiles without activating any model provider."""
+
+    mask = _absolute_file(payload, 'mask', must_exist=True)
+    output = _absolute_file(payload, 'output', must_exist=False)
+    try:
+        profile = ExecutionProfile(str(payload.get('profile', 'balanced')))
+        default_tile = {'low_memory': 512, 'balanced': 1024, 'quality': 0}[profile.value]
+        request = RefineRequest(
+            source=mask, mask=mask, output=output, profile=profile,
+            roi=_roi(payload), crop_mode=str(payload.get('crop_mode', 'full')),
+            context_padding=int(payload.get('context_padding', 128)),
+            generate_trimap=bool(payload.get('generate_trimap', True)),
+            foreground_radius=int(payload.get('foreground_radius', 10)),
+            background_radius=int(payload.get('background_radius', 15)),
+            tile_size=int(payload.get('tile_size', default_tile)),
+            tile_overlap=int(payload.get('tile_overlap', 64)),
+            skip_known_tiles=bool(payload.get('skip_known_tiles', True)),
+        )
+        if 'image_width' in payload and 'image_height' in payload:
+            with Image.open(mask) as image:
+                if image.size != (int(payload['image_width']), int(payload['image_height'])):
+                    raise ValueError('Source and mask/trimap dimensions must match.')
+        return draw_tile_preview(request, labels=bool(payload.get('preview_labels', False)))
+    except (OSError, ValueError, TypeError) as exc:
+        raise KyvenError(ErrorCode.INVALID_REQUEST, 'Could not prepare the refinement tile preview.',
+                         technical_detail=str(exc)) from exc
 
 
 def postprocess_mask_preview(payload: dict[str, Any]) -> dict[str, Any]:

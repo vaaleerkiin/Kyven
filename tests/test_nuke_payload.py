@@ -129,6 +129,7 @@ class NukePayloadTests(unittest.TestCase):
                     "background_radius": Knob(15),
                     "tile_size": Knob(0),
                     "tile_overlap": Knob(64),
+                    "skip_known_tiles": Knob(False),
                 }
 
             def __getitem__(self, name):
@@ -153,6 +154,7 @@ class NukePayloadTests(unittest.TestCase):
             frame=2,
         )
         self.assertEqual(payload["roi"], {"x0": 30.0, "y0": 260.0, "x1": 230.0, "y1": 460.0})
+        self.assertFalse(payload['skip_known_tiles'])
 
     def test_active_node_is_resolved_by_uuid_after_rename(self) -> None:
         class Knob:
@@ -516,6 +518,8 @@ TCP 127.0.0.1:8766 0.0.0.0:0 ESTABLISHED 13"""
         self.assertTrue(affects_live_result("positive_point_3", "segment"))
         self.assertTrue(affects_live_result("prompt_box", "segment"))
         self.assertTrue(affects_live_result("processing_roi", "refine"))
+        self.assertTrue(affects_live_result("tile_mode", "refine"))
+        self.assertTrue(affects_live_result("skip_known_tiles", "refine"))
         self.assertTrue(affects_live_result("in_colorspace", "inpaint"))
         self.assertFalse(affects_live_result("input_color_space", "inpaint"))
         self.assertFalse(affects_live_result("foreground_radius", "refine"))
@@ -524,6 +528,7 @@ TCP 127.0.0.1:8766 0.0.0.0:0 ESTABLISHED 13"""
         self.assertFalse(affects_live_result("output_mode", "refine"))
         self.assertFalse(affects_live_result("roi_blend", "refine"))
         self.assertFalse(affects_live_result("roi_feather", "refine"))
+        self.assertFalse(affects_live_result("show_tiles", "refine"))
     def test_refine_payload_translates_roi_and_trimap_controls(self) -> None:
         payload = refine_payload(
             source="D:/source.png",
@@ -848,6 +853,7 @@ TCP 127.0.0.1:8766 0.0.0.0:0 ESTABLISHED 13"""
                 "Source + Trimap Alpha",
                 "Trimap Cutout",
                 "Source (Bypass)",
+                "Tile Preview",
             ),
         )
         self.assertEqual(

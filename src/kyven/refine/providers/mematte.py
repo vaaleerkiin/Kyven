@@ -14,7 +14,7 @@ from kyven.errors import ErrorCode, KyvenError
 from kyven.hashing import cached_file_sha256
 from kyven.refine.models import RefinementCapabilities, RefinePrediction, RefineRequest
 from kyven.refine.providers.base import RefinementProvider
-from kyven.refine.providers.vitmatte import VitMatteProvider
+from kyven.refine.tiling import infer_tiles, plan_tiles
 
 
 class MEMatteProvider(RefinementProvider):
@@ -55,7 +55,7 @@ class MEMatteProvider(RefinementProvider):
         return RefinementCapabilities(
             provider_id=self._provider_id,
             display_name=self._display_name,
-            provider_version="2",
+            provider_version="3",
             model_checksum=self._checksum_if_present(),
             license_name="MIT",
             license_url=self._license_url,
@@ -157,66 +157,31 @@ class MEMatteProvider(RefinementProvider):
 
     def predict(self, request: RefineRequest, cancellation: CancellationToken) -> RefinePrediction:
         request.validate()
-        if self._model is None:
-            cancellation.report_progress(0.18, "Loading MEMatte model")
-        else:
-            cancellation.report_progress(0.18, "Reusing loaded MEMatte model")
-        self._load(request)
-        image = Image.open(request.source).convert("RGB")
-        trimap = Image.open(request.mask).convert("L")
+        with Image.open(request.source) as source_file, Image.open(request.mask) as mask_file:
+            image = source_file.convert("RGB")
+            trimap = mask_file.convert("L")
         if image.size != trimap.size:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Source and trimap dimensions must match.")
-        tile = request.tile_size
-        if not tile or (image.width <= tile and image.height <= tile):
-            cancellation.report_progress(0.25, "Running MEMatte inference")
-            alpha = self._infer(image, trimap, request, cancellation)
-            tiles = 1
-        else:
-            alpha_sum = np.zeros((image.height, image.width), dtype=np.float32)
-            weights = np.zeros_like(alpha_sum)
-            x_starts = VitMatteProvider._starts(image.width, tile, request.tile_overlap)
-            y_starts = VitMatteProvider._starts(image.height, tile, request.tile_overlap)
-            total = len(x_starts) * len(y_starts)
-            tiles = 0
-            for y in y_starts:
-                for x in x_starts:
-                    cancellation.raise_if_cancelled()
-                    box = (x, y, min(x + tile, image.width), min(y + tile, image.height))
-                    prediction = self._infer(
-                        image.crop(box), trimap.crop(box), request, cancellation
-                    )
-                    height, width = prediction.shape
-                    weight = np.ones((height, width), dtype=np.float32)
-                    edge = min(request.tile_overlap, height // 2, width // 2)
-                    if edge:
-                        ramp = np.linspace(0.05, 1.0, edge, dtype=np.float32)
-                        if x > 0:
-                            weight[:, :edge] *= ramp
-                        if x + width < image.width:
-                            weight[:, -edge:] *= ramp[::-1]
-                        if y > 0:
-                            weight[:edge, :] *= ramp[:, None]
-                        if y + height < image.height:
-                            weight[-edge:, :] *= ramp[::-1, None]
-                    alpha_sum[y : y + height, x : x + width] += prediction * weight
-                    weights[y : y + height, x : x + width] += weight
-                    tiles += 1
-                    cancellation.report_progress(
-                        0.25 + 0.65 * tiles / total, f"Refining tile {tiles}/{total}"
-                    )
-            alpha = alpha_sum / np.maximum(weights, 1e-6)
-        trimap_pixels = np.asarray(trimap)
-        alpha = np.where(trimap_pixels >= 254, 1.0, np.where(trimap_pixels <= 1, 0.0, alpha))
-        cancellation.report_progress(0.90, "MEMatte inference complete")
+        plan = plan_tiles(trimap, request.tile_size, request.tile_overlap,
+                          request.skip_known_tiles, cancellation)
+        if plan.boxes:
+            loading = self._model is None
+            cancellation.report_progress(0.18, "Loading MEMatte model" if loading
+                                         else "Reusing loaded MEMatte model")
+            self._load(request)
+        alpha = infer_tiles(image, trimap, plan, request.tile_overlap,
+                            lambda rgb, guide: self._infer(rgb, guide, request, cancellation),
+                            cancellation)
         return RefinePrediction(
-            alpha=np.asarray(np.clip(alpha, 0.0, 1.0), dtype=np.float32),
+            alpha=alpha,
             metadata={
                 "provider": self._provider_id,
-                "device": self._resolved_device,
+                "device": self._resolved_device if plan.boxes else "not_used",
                 "profile": request.profile.value,
-                "tiles": tiles,
+                **plan.metadata,
                 "tile_size": request.tile_size,
                 "tile_overlap": request.tile_overlap,
+                "skip_known_tiles": request.skip_known_tiles,
                 "max_number_token": self._token_limit(request),
                 "variant": self._variant,
             },

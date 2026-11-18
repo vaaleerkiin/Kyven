@@ -135,6 +135,7 @@ class RefineServiceTests(unittest.TestCase):
         )
         self.assertEqual(request.tile_size, 512)
         self.assertEqual(request.tile_overlap, 64)
+        self.assertTrue(request.skip_known_tiles)
 
     def test_payload_accepts_auto_crop_with_context(self) -> None:
         request = JobManager.refine_request_from_payload(

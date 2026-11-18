@@ -11,6 +11,7 @@ from typing import Any
 from kyven_nuke.branding import add_node_branding
 from kyven_nuke.color_management import set_data_io
 from kyven_nuke.input_cache import current_input, prepare_range, use_input
+from kyven_nuke.knob_tools import suspend_callbacks
 from kyven_nuke.node import (
     _add_knob,
     _add_section,
@@ -73,6 +74,7 @@ REFINE_OUTPUT_MODES = (
     "Source + Trimap Alpha",
     "Trimap Cutout",
     "Source (Bypass)",
+    "Tile Preview",
 )
 
 
@@ -122,6 +124,7 @@ REFINE_OUTPUT_HELP = (
     "<b>Refined</b>: Matte / Source + Alpha / Cutout<br>"
     "<b>Trimap</b>: Matte / Source + Alpha / Cutout<br>"
     "<b>Source</b>: bypass &nbsp; | &nbsp; Default: Source + Refined Alpha"
+    "<br><b>Tile Preview</b>: CPU-only tile plan over Source"
 )
 REFINE_TRIMAP_HELP = (
     "CPU-only preview; these controls never run ViTMatte.<br>"
@@ -258,11 +261,9 @@ def _trimap_preview_paths(root: Path, frame: int, revision: int) -> tuple[Path, 
     )
 
 
-def _tile_size(node: Any) -> int:
-    profile = str(node["profile"].value())
-    automatic = {"low_memory": 512, "balanced": 1024, "quality": 0}[profile]
-    custom = int(node["tile_size"].value())
-    return custom if custom else automatic
+def _tile_size(node: Any, frame: int | None = None) -> int:
+    from kyven_nuke.refine_tiling import effective_tile_size
+    return effective_tile_size(node, frame)
 
 
 def _configure_export_writers(source_writer: Any | None, mask_writer: Any) -> None:
@@ -314,8 +315,10 @@ def _payload(
         generate_trimap=bool(node["generate_trimap"].value()),
         foreground_radius=int(node["foreground_radius"].value()),
         background_radius=int(node["background_radius"].value()),
-        tile_size=_tile_size(node),
-        tile_overlap=int(node["tile_overlap"].value()),
+        tile_size=_tile_size(node, frame),
+        tile_overlap=int(_knob_value_at(node["tile_overlap"], frame)),
+        skip_known_tiles=(bool(node["skip_known_tiles"].value())
+                          if "skip_known_tiles" in knob_names else True),
     )
 
 
@@ -344,9 +347,14 @@ def _apply_result(node_name: str, job: dict[str, Any]) -> None:
     roi = metadata.get("processing_roi")
     roi_text = f" | ROI {roi['width']}x{roi['height']}" if roi else ""
     cache_text = " | cache hit" if metadata.get("cache_hit") else ""
+    tiles = int(metadata.get("tiles", 1))
+    tile_text = f"{tiles} tile(s)"
+    if "tiles_total" in metadata:
+        tile_text = (f"tiles {tiles}/{int(metadata['tiles_total'])}"
+                     f" | {int(metadata.get('tiles_skipped', 0))} known skipped")
     timing_text = _job_timing_text(job)
     node["kyven_status"].setValue(
-        f"Refined - {mode} | {int(metadata.get('tiles', 1))} tile(s)"
+        f"Refined - {mode} | {tile_text}"
         f"{roi_text}{cache_text}{timing_text}"
     )
     _refresh_node_output(node)
@@ -402,7 +410,7 @@ def _activate_native_trimap_preview(node: Any) -> None:
         trimap_switch["which"].setValue(0)
     if "kyven_trimap_preview_frame" in node.knobs():
         node["kyven_trimap_preview_frame"].setValue(int(_nuke().frame()))
-    _refresh_node_output(node)
+    _refresh_node_output(node, clear_cache=False)
     if "kyven_status" in node.knobs():
         node["kyven_status"].setValue("Trimap preview ready - native Nuke graph.")
 
@@ -917,6 +925,13 @@ def knob_changed() -> None:
     if name in {"cache_root", "refine_name", "cache_version"}:
         _defer_ui_action(_apply_refine_cache_fields, str(node.fullName()))
         return
+    if name == "show_tiles":
+        from kyven_nuke.refine_tile_preview import set_display
+        set_display(node)
+        return
+    if name == "output_mode":
+        from kyven_nuke.refine_tile_preview import sync_display_control
+        sync_display_control(node)
     if name in {"inputChange", "processing_roi", "crop_mode", "roi_enabled"}:
         _clamp_bbox_knob(node, "processing_roi", SOURCE_INPUT)
     generated = bool(node["generate_trimap"].value())
@@ -934,6 +949,16 @@ def knob_changed() -> None:
         node["context_padding"].setVisible(crop_mode == "auto")
     from kyven_nuke.refine_integration import update_controls
     update_controls(node)
+    if name in {"tile_mode", "tile_size", "tile_overlap", "skip_known_tiles", "profile"}:
+        from kyven_nuke.refine_tiling import update_controls as update_tiling_controls
+        update_tiling_controls(node)
+    from kyven_nuke.refine_tile_preview import PREVIEW_KNOBS, is_preview, request_preview
+    if is_preview(node):
+        if name in PREVIEW_KNOBS:
+            request_preview(node, force=True, refresh_input=name == "inputChange",
+                            refresh_trimap=name in {"generate_trimap", "foreground_radius",
+                                                    "background_radius"})
+        return
     if name in {"roi_blend", "roi_feather"}:
         _refresh_node_output(node)
         return
@@ -990,6 +1015,7 @@ def _apply_model_labels(node_name: str, labels: list[str]) -> None:
         node["kyven_status"].setValue("Refinement model list refreshed.")
 
 
+@suspend_callbacks
 def _ensure_refine_crop_controls(node: Any) -> None:
     """Add crop modes to old nodes while preserving their previous ROI behavior."""
 
@@ -1007,12 +1033,8 @@ def _ensure_refine_crop_controls(node: Any) -> None:
         crop_mode.setValue("manual" if legacy_manual else "full")
         _add_knob(nuke, node, crop_mode)
         _place_knob_after(node, "crop_mode", "roi_section")
-    if "context_padding" not in node.knobs():
-        padding = nuke.Int_Knob("context_padding", "Context Padding (px)")
-        padding.setRange(0, 1024)
-        padding.setValue(128)
-        _add_knob(nuke, node, padding)
-        _place_knob_after(node, "context_padding", "crop_mode")
+    _ensure_double_slider(node, "context_padding", "Context Padding (px)", 0, 1024, 128)
+    _place_knob_after(node, "context_padding", "crop_mode")
     if "processing_roi" not in node.knobs():
         _add_knob(nuke, node, nuke.BBox_Knob("processing_roi", "Manual ROI"))
     if "reset_roi" not in node.knobs():
@@ -1037,6 +1059,8 @@ def _ensure_refine_output_controls(node: Any) -> None:
     nuke = _nuke()
     _ensure_input_order(node)
     _ensure_refine_crop_controls(node)
+    from kyven_nuke.refine_tiling import ensure_controls as ensure_tiling_controls
+    ensure_tiling_controls(node)
     if "kyven_title" in node.knobs():
         node["kyven_title"].setValue(
             '<font size="5" color="#dce9f2"><b>KYVEN / REFINE</b></font><br>'
@@ -1182,6 +1206,8 @@ def _ensure_refine_output_controls(node: Any) -> None:
         trimap.setInput(0, guidance)
 
         integrated = build_graph(nuke, refined, mask_channel)
+        from kyven_nuke.refine_tile_preview import build_graph as build_tile_preview_graph
+        tile_preview = build_tile_preview_graph(nuke, source)
 
         refined_rgba = nuke.toNode("KyvenMatteRGBA")
         if refined_rgba is None:
@@ -1237,6 +1263,7 @@ def _ensure_refine_output_controls(node: Any) -> None:
                 source_trimap,
                 trimap_cutout,
                 source,
+                tile_preview,
             )
         ):
             output_switch.setInput(index, branch)
@@ -1244,6 +1271,8 @@ def _ensure_refine_output_controls(node: Any) -> None:
         output.setInput(0, output_switch)
     finally:
         node.end()
+    from kyven_nuke.refine_tile_preview import sync_display_control
+    sync_display_control(node)
 
 
 def _restyle_refine_ui(node: Any) -> None:
@@ -1270,8 +1299,8 @@ def _restyle_refine_ui(node: Any) -> None:
     labels = {
         "refresh_models": "Refresh Models",
         "open_model_manager": "Model Manager...",
-        "tile_size": "Tile Size (0 = Auto)",
-        "tile_overlap": "Tile Overlap",
+        "tile_size": "Tile Size (px)",
+        "tile_overlap": "Tile Overlap (px)",
         "mask_channel": "Mask Input Channel",
         "generate_trimap": "Generate Trimap from Mask",
         "foreground_radius": "Foreground Erosion (px)",
@@ -1299,7 +1328,6 @@ def _restyle_refine_ui(node: Any) -> None:
 
     same_line = {
         "open_model_manager",
-        "tile_overlap",
         "cancel",
         "range_last",
         "delete_node_cache",
@@ -1313,6 +1341,8 @@ def _restyle_refine_ui(node: Any) -> None:
         node["delete_all_cache"].setFlag(nuke.STARTLINE)
     for name in (
         "tile_size",
+        "tile_overlap",
+        "context_padding",
         "foreground_radius",
         "background_radius",
         "create_matte_read",
@@ -1416,14 +1446,8 @@ def create_refine_node() -> Any:
         ),
         start_line=False,
     )
-    tile_size = nuke.Int_Knob("tile_size", "Tile Size (0 = Auto)")
-    tile_size.setRange(0, 8192)
-    tile_size.setValue(0)
-    _add_knob(nuke, node, tile_size)
-    tile_overlap = nuke.Int_Knob("tile_overlap", "Tile Overlap")
-    tile_overlap.setRange(0, 512)
-    tile_overlap.setValue(64)
-    _add_knob(nuke, node, tile_overlap, start_line=False)
+    _ensure_double_slider(node, "tile_size", "Tile Size (px)", 128, 2048, 1024)
+    _ensure_double_slider(node, "tile_overlap", "Tile Overlap (px)", 0, 256, 64)
 
     _add_section(nuke, node, "trimap_section", "TRIMAP")
     generate = nuke.Boolean_Knob("generate_trimap", "Generate Trimap from Mask")
@@ -1447,10 +1471,7 @@ def create_refine_node() -> Any:
     )
     crop_mode.setValue("auto")
     _add_knob(nuke, node, crop_mode)
-    padding = nuke.Int_Knob("context_padding", "Context Padding (px)")
-    padding.setRange(0, 1024)
-    padding.setValue(128)
-    _add_knob(nuke, node, padding)
+    _ensure_double_slider(node, "context_padding", "Context Padding (px)", 0, 1024, 128)
     legacy_roi = nuke.Boolean_Knob("roi_enabled", "Legacy Processing ROI")
     legacy_roi.setVisible(False)
     _add_knob(nuke, node, legacy_roi)

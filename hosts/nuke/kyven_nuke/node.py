@@ -724,12 +724,12 @@ def _set_status(node_name: str, status: str) -> None:
         node["kyven_status"].setValue(status)
 
 
-def _refresh_node_output(node: Any) -> None:
+def _refresh_node_output(node: Any, *, clear_cache: bool = True) -> None:
     """Invalidate Nuke's cached Read/viewer result after a background cache update."""
 
     nuke = _nuke()
     clear_ram_cache = getattr(nuke, "clearRAMCache", None)
-    if callable(clear_ram_cache):
+    if clear_cache and callable(clear_ram_cache):
         clear_ram_cache()
     force_validate = getattr(node, "forceValidate", None)
     if callable(force_validate):

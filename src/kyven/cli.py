@@ -95,6 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
     refine.add_argument("--roi", type=_box)
     refine.add_argument("--tile-size", default=0, type=int)
     refine.add_argument("--tile-overlap", default=64, type=int)
+    refine.add_argument("--skip-known-tiles", action=argparse.BooleanOptionalAction, default=True)
 
     inpaint = subparsers.add_parser("inpaint", help="Remove masked content from an image")
     inpaint.add_argument("--input", required=True, type=Path)
@@ -229,6 +230,7 @@ def main(argv: list[str] | None = None) -> int:
                 background_radius=args.background_radius,
                 tile_size=args.tile_size,
                 tile_overlap=args.tile_overlap,
+                skip_known_tiles=args.skip_known_tiles,
             )
             result = RefineService(registry).run(request)
             print(

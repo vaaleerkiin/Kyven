@@ -35,6 +35,7 @@ class RefineRequest:
     background_radius: int = 15
     tile_size: int = 0
     tile_overlap: int = 64
+    skip_known_tiles: bool = True
 
     def validate(self) -> None:
         for label, path in (("Source", self.source), ("Mask/trimap", self.mask)):
@@ -82,6 +83,7 @@ class RefineRequest:
             "background_radius": self.background_radius,
             "tile_size": self.tile_size,
             "tile_overlap": self.tile_overlap,
+            "skip_known_tiles": self.skip_known_tiles,
         }
 
     def cache_key(self, provider_version: str, model_checksum: str) -> str:

@@ -222,6 +222,7 @@ def refine_payload(
     tile_overlap: int = 64,
     crop_mode: str | None = None,
     context_padding: int = 128,
+    skip_known_tiles: bool = True,
 ) -> dict[str, Any]:
     effective_crop_mode = crop_mode or ("manual" if roi_enabled else "full")
     roi_payload = None
@@ -242,6 +243,7 @@ def refine_payload(
         "background_radius": int(background_radius),
         "tile_size": int(tile_size),
         "tile_overlap": int(tile_overlap),
+        "skip_known_tiles": bool(skip_known_tiles),
     }
 
 

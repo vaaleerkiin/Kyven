@@ -14,6 +14,7 @@ Refine converts a coarse mask into a soft alpha matte while keeping model infere
 - [Nuke graph](#nuke-graph)
 - [Trimap option](#trimap-option)
 - [Processing and performance](#processing)
+- [Tiling and tile preview](#tiling-and-tile-preview)
 - [Optional alpha integration](#optional-alpha-integration)
 - [Cache](#cache)
 - [CLI](#cli)
@@ -95,8 +96,79 @@ rebuilds the black/gray/white preview on CPU. The two radius controls are full-w
 preview does not load or run ViTMatte; press Process only when the guidance looks correct.
 
 Processing ROI crops both image and mask before inference, then pastes the refined alpha into the
-full-size coarse mask. Low Memory uses 512 px tiles, Balanced uses 1024 px tiles, and Quality uses a
-full-frame pass unless a custom tile size is set. Overlap blending reduces tile seams.
+full-size coarse mask. Manual ROI remains the exact model crop; tiles never extend beyond it.
+
+## Tiling and tile preview
+
+**Tiling Mode** has two explicit choices. The summary beneath the controls shows the chosen size,
+overlap, and step before processing.
+
+| Mode | Behavior |
+| --- | --- |
+| **Tiles** | Adjust **Tile Size (px)** and **Tile Overlap (px)**; size is at least 128 px |
+| **Full Crop** | One pass over the entire processing crop, with no tile grid |
+
+Auto is removed. The sliders stay visible, with size and overlap remembered and disabled in Full
+Crop. Returning to Tiles restores them. Changing Memory Profile does not change tile size; MEMatte
+still uses the profile for its model token budget.
+
+Tile size is the maximum side in source-image pixels. Images are not scaled down. Tiles run one at
+a time; smaller tiles reduce peak inference memory but give the model less context. Larger tiles
+give more context and use more memory. Different tile sizes can change the result.
+Tile Size and Tile Overlap are full-width sliders. The tile-size slider covers 128–2048 px;
+larger custom values can still be typed. Context Padding also has a full-width 0–1024 px slider
+in Auto crop mode. Numeric animation and existing values survive node upgrades.
+
+**Tile Overlap (px)** is the minimum shared border. The regular step is `Tile Size - Overlap`:
+1024 px with 64 px overlap advances by 960 px. The final row/column is aligned to the crop boundary,
+so those tiles can overlap more. Predictions blend across their shared borders to reduce tile seams.
+Overlap must be smaller than half the tile size. More overlap repeats work. Tile overlap is separate
+from the optional ROI integration feather below.
+
+**Skip Black / White Tiles** is enabled by default for both ViTMatte and MEMatte. A tile runs only
+if its **trimap** contains gray unknown pixels. Definite black and white are restored to alpha 0/1
+without model inference. This includes gray transparency inside a subject as well as its contour;
+dark/bright RGB pixels alone are not a reason to skip anything. Every active tile retains its full
+RGB and trimap context, including surrounding known areas. If the crop is fully known, no model
+is loaded or run. Disable skipping for a comparison with the complete tile grid.
+
+Full Crop still processes the whole crop when any gray pixels are present. Use Tiles
+tiling to avoid passes over large known regions. After processing, Status reports actual counts,
+for example `tiles 4/16 | 12 known skipped`.
+
+Enable **Show Tiles** to inspect the exact current-frame plan over Source before inference.
+Disable it to return to your previously selected matte, cutout, trimap or Source output; size and
+overlap stay unchanged. The toggle is off by default. **Preview Tiles** also enables the display
+and explicitly refreshes upstream inputs. Selecting **Tile Preview** directly in Output stays
+synchronized with the toggle.
+
+The preview colors are:
+
+- **Green RUN** square outlines go to the model. **Show Tile Labels** optionally adds numbers/sizes.
+- **Gray SKIP** boxes are filled from known trimap states.
+- **Yellow** marks the unknown pixels that need solving; the rest of each active box is context.
+- **Cyan** outlines the processing crop; the area outside it is shaded.
+
+View RGB to see those colors. If the Viewer is still set to Alpha from matte inspection, it also
+shows a grayscale tile-coverage diagnostic instead of a flat Source alpha.
+
+The preview also reports RUN/SKIP totals, unknown-pixel count, and crop dimensions. It uses the same
+crop resolver and tile planner as inference, including Auto bounds and Manual ROI. The local server
+builds the overlay on CPU without loading model packages or weights. Tile/trimap/ROI control changes
+and timeline moves refresh it automatically. Square outlines and the yellow unknown band follow
+size/overlap and trimap sliders immediately through a native Nuke graph, while the green/gray
+RUN/SKIP colors update in the background. The legend and preview block keep the same height while
+loading or reporting an error. Slider events are coalesced to the latest settings; color updates
+preserve Nuke's upstream RAM cache instead of forcing the comp to render again.
+The same-frame mask snapshot is reused while editing tile geometry, overlap, padding, or labels;
+the CPU server also reuses prepared guidance in a bounded 64 MB cache. Only a new frame, changed
+connections, or explicit Preview Tiles refresh requires a new mask export. Click Preview Tiles again
+after upstream edits on the same frame. While viewing Tile Preview, Live callbacks do not submit inference; explicit Process
+buttons remain available. Preview files are temporary, separate from artist result caches.
+
+If a tile runs out of memory, the job returns a structured error without publishing a partial
+result. Choose Tiles and reduce Tile Size to 512 px or smaller, or use CPU. Skipping known tiles saves
+work; it does not lower the peak memory of an active tile. Providers still unload normally.
 
 ## Optional alpha integration
 
@@ -137,13 +209,18 @@ kyven refine --input source.png --mask coarse.png --output alpha.png \
 ```
 
 Add `--manual-trimap` when the mask path is already a trimap.
+CLI/API `tile_size=0` explicitly means Full Crop. For tiled CLI processing, pass
+`--tile-size 512 --tile-overlap 64`; `--no-skip-known-tiles` processes the complete grid.
 
 ## Updating an existing node
 
 After updating the repository and restarting Nuke, select an older Refine Group and choose
-`Kyven > Upgrade Selected Refine Node`. The command adds the current seven output modes without
+`Kyven > Upgrade Selected Refine Node`. The command adds the current eight output modes without
 discarding the existing refined matte. The trimap outputs become available immediately from the
 CPU-only preview; process a frame or range only when you want a new ViTMatte result.
 
 After restoring Cattery-style trimap preparation, processing automatically refreshes old input
 snapshots and invalidates results from the previous positive-alpha recipe. Reprocess affected frames.
+The tiling upgrade preserves chosen tile sizes/overlaps and cached output paths. Legacy Auto settings
+are resolved once to explicit 512/1024 px Tiles; old Quality Auto and Full Crop remain Full Crop.
+Reprocessing refreshes manifests with active/skipped tile statistics.

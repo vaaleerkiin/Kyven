@@ -7,7 +7,6 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 from PIL import Image
 
 from kyven.cancellation import CancellationToken
@@ -15,6 +14,7 @@ from kyven.errors import ErrorCode, KyvenError
 from kyven.hashing import cached_file_sha256
 from kyven.refine.models import RefinementCapabilities, RefinePrediction, RefineRequest
 from kyven.refine.providers.base import RefinementProvider
+from kyven.refine.tiling import infer_tiles, plan_tiles, tile_starts
 
 
 class VitMatteProvider(RefinementProvider):
@@ -59,7 +59,7 @@ class VitMatteProvider(RefinementProvider):
         return RefinementCapabilities(
             provider_id=self._provider_id,
             display_name=self._display_name,
-            provider_version="2",
+            provider_version="3",
             model_checksum=self._checksum_if_present(),
             license_name="Apache-2.0",
             license_url=self._license_url,
@@ -137,79 +137,37 @@ class VitMatteProvider(RefinementProvider):
 
     @staticmethod
     def _starts(length: int, tile: int, overlap: int) -> list[int]:
-        if length <= tile:
-            return [0]
-        step = tile - overlap
-        starts = list(range(0, max(1, length - tile + 1), step))
-        final = length - tile
-        if starts[-1] != final:
-            starts.append(final)
-        return starts
+        return tile_starts(length, tile, overlap)
 
     def predict(self, request: RefineRequest, cancellation: CancellationToken) -> RefinePrediction:
         request.validate()
-        if self._model is None or self._processor is None:
-            cancellation.report_progress(0.18, "Loading ViTMatte model")
-        else:
-            cancellation.report_progress(0.18, "Reusing loaded ViTMatte model")
-        self._load()
-        image = Image.open(request.source).convert("RGB")
-        trimap = Image.open(request.mask).convert("L")
+        with Image.open(request.source) as source_file, Image.open(request.mask) as mask_file:
+            image = source_file.convert("RGB")
+            trimap = mask_file.convert("L")
         if image.size != trimap.size:
             raise KyvenError(
                 code=ErrorCode.INVALID_REQUEST,
                 message="Source and trimap dimensions must match.",
             )
-        tile = request.tile_size
-        if not tile or (image.width <= tile and image.height <= tile):
-            cancellation.report_progress(0.25, "Running ViTMatte inference")
-            alpha = self._infer(image, trimap, cancellation)
-            tiles = 1
-            cancellation.report_progress(0.90, "ViTMatte inference complete")
-        else:
-            alpha_sum = np.zeros((image.height, image.width), dtype=np.float32)
-            weights = np.zeros_like(alpha_sum)
-            tiles = 0
-            y_starts = self._starts(image.height, tile, request.tile_overlap)
-            x_starts = self._starts(image.width, tile, request.tile_overlap)
-            total_tiles = len(y_starts) * len(x_starts)
-            for y in y_starts:
-                for x in x_starts:
-                    cancellation.raise_if_cancelled()
-                    box = (x, y, min(x + tile, image.width), min(y + tile, image.height))
-                    prediction = self._infer(image.crop(box), trimap.crop(box), cancellation)
-                    height, width = prediction.shape
-                    weight = np.ones((height, width), dtype=np.float32)
-                    edge = min(request.tile_overlap, height // 2, width // 2)
-                    if edge:
-                        ramp = np.linspace(0.05, 1.0, edge, dtype=np.float32)
-                        if x > 0:
-                            weight[:, :edge] *= ramp
-                        if x + width < image.width:
-                            weight[:, -edge:] *= ramp[::-1]
-                        if y > 0:
-                            weight[:edge, :] *= ramp[:, None]
-                        if y + height < image.height:
-                            weight[-edge:, :] *= ramp[::-1, None]
-                    alpha_sum[y : y + height, x : x + width] += prediction * weight
-                    weights[y : y + height, x : x + width] += weight
-                    tiles += 1
-                    cancellation.report_progress(
-                        0.25 + 0.65 * tiles / total_tiles,
-                        f"Refining tile {tiles}/{total_tiles}",
-                    )
-            alpha = alpha_sum / np.maximum(weights, 1e-6)
-        trimap_pixels = np.asarray(trimap)
-        alpha = np.where(trimap_pixels >= 254, 1.0, np.where(trimap_pixels <= 1, 0.0, alpha))
+        plan = plan_tiles(trimap, request.tile_size, request.tile_overlap,
+                          request.skip_known_tiles, cancellation)
+        if plan.boxes:
+            loading = self._model is None or self._processor is None
+            cancellation.report_progress(0.18, "Loading ViTMatte model" if loading
+                                         else "Reusing loaded ViTMatte model")
+            self._load()
+        alpha = infer_tiles(image, trimap, plan, request.tile_overlap,
+                            lambda rgb, guide: self._infer(rgb, guide, cancellation), cancellation)
         return RefinePrediction(
-            alpha=np.asarray(np.clip(alpha, 0.0, 1.0), dtype=np.float32),
+            alpha=alpha,
             metadata={
                 "provider": self._provider_id,
-                "device": self._resolved_device,
+                "device": self._resolved_device if plan.boxes else "not_used",
                 "profile": request.profile.value,
-                "tiles": tiles,
+                **plan.metadata,
                 "tile_size": request.tile_size,
                 "tile_overlap": request.tile_overlap,
+                "skip_known_tiles": request.skip_known_tiles,
             },
         )
 

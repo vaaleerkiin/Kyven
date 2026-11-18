@@ -41,6 +41,7 @@ it must not be committed or logged.
 | `POST` | `/v1/jobs/inpaint` | Queue LaMa Source + Mask object removal |
 | `POST` | `/v1/jobs/dlss` | Queue optional local DLSS reconstruction with external motion/control guides |
 | `POST` | `/v1/preview/trimap` | Build trimap on CPU without ViTMatte |
+| `POST` | `/v1/preview/refine-tiles` | Draw exact Refine RUN/SKIP tile plan on CPU; no model loading |
 | `POST` | `/v1/preview/mask-postprocess` | Rebuild matte from raw SAM output on CPU |
 | `POST` | `/v1/preview/inpaint-mask` | Build exact LaMa model and final blend masks on CPU |
 | `GET` | `/v1/jobs/{id}` | Read status or result |
@@ -107,6 +108,21 @@ frame's original coordinates before the job succeeds.
 | `generate_trimap` | Generate three-state guidance from a coarse mask when true |
 | `foreground_radius`, `background_radius` | Erosion and dilation radii in pixels |
 | `tile_size`, `tile_overlap` | ViTMatte memory/performance controls |
+| `skip_known_tiles` | Default true; run only tiles containing unknown trimap pixels |
+
+Refine uses the same tile planner for ViTMatte and MEMatte. `tile_size=0` means one Full Crop pass;
+omitting the size uses the profile default (512 Low Memory, 1024 Balanced, 0 Quality). Results report
+`tiles`, `tiles_total`, `tiles_skipped`, and `unknown_pixels`. Known pixels are restored exactly.
+
+`/v1/preview/refine-tiles` accepts absolute `mask` and `output` paths plus the same crop, profile,
+trimap, tiling, and skip settings. Optional `image_width`/`image_height` validate the Source format.
+It writes a transparent RGBA overlay and returns those statistics, `processing_roi`, and `boxes`:
+each box has `index`, `run`, and full-canvas top-left `x0/y0/x1/y1` coordinates (exclusive right/bottom).
+The endpoint does not activate a provider, enqueue an inference job, or require a checkpoint.
+`preview_labels` optionally enables tile labels; false is the clear square-grid default.
+`trimap_bounds` returns unpadded support bounds for the immediate native Nuke grid. Prepared trimaps
+are cached by content and morphology settings with a thread-safe 64 MB limit; tile size, overlap,
+crop and label edits reuse them. `trimap_cache_hit` reports that reuse for diagnostics.
 
 Outside an enabled Refine ROI, the coarse alpha is preserved in the refined result. The persisted
 trimap is black outside the ROI because those pixels were not sent to ViTMatte.
