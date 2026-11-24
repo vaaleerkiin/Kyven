@@ -211,9 +211,18 @@ def _ensure_fill_graph(node: Any) -> None:
         clipped_mask.setInput(1, support)
         nuke.toNode("KyvenPatchMaskAlpha").setInput(1, clipped_mask)
         composite = nuke.toNode("KyvenResultComposite")
+        source_alpha = nuke.toNode("KyvenFillSafeSourceAlpha") or nuke.nodes.Expression(
+            name="KyvenFillSafeSourceAlpha")
+        source_alpha.setInput(0, source)
+        source_alpha["channel0"].setValue("rgba.alpha")
+        source_alpha["expr0"].setValue("1")
+        # Channel availability can change upstream after this group is created.
+        # Evaluate once as a knob expression, never as per-pixel Python.
+        source_alpha["disable"].setExpression(
+            '[python {int("rgba.alpha" in nuke.thisNode().input(0).channels())}]')
         preserve = nuke.toNode("KyvenFillSourceAlpha") or nuke.nodes.Copy(name="KyvenFillSourceAlpha")
         preserve.setInput(0, composite)
-        preserve.setInput(1, source)
+        preserve.setInput(1, source_alpha)
         preserve["from0"].setValue("rgba.alpha")
         preserve["to0"].setValue("rgba.alpha")
         output = nuke.toNode("KyvenOutputSwitch")

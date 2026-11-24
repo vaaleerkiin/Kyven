@@ -50,6 +50,10 @@ from the live original float Nuke Source, bypassing the model round trip. The
 default **Result** also keeps Source alpha; other output modes intentionally
 show mask alpha, generated patch or difference. An empty mask loads no model.
 
+RGB-only Source inputs receive opaque alpha instead of attempting to copy a
+missing channel. Existing Source alpha is preserved, including after upstream
+channel changes. The graph repair path also upgrades saved preview groups.
+
 Generation uses sRGB pixels and the standard Kyven input-colorspace selector.
 Generated RGB is cached as 8-bit sRGB; HDR reconstruction inside the selected
 area is not supported. Unselected Source pixels retain their original Nuke

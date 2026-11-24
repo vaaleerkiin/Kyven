@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / "hosts/nuke"), str(ROOT / "src")]
+import kyven_nuke  # noqa: F401 - Nuke evaluates node callbacks in this global namespace
 import nuke
 from kyven_nuke import generative_fill_node as fill
 from kyven_nuke import inpaint_node
@@ -81,6 +82,26 @@ try:
     _begin_node_operation(node)
     inpaint_node._apply(node.fullName(), translated_job, patch_path, mask_path, patch_path)
     check("late translation preserves a newer artist edit", node["prompt"].value() == "a newer artist edit")
+    rgb_source = nuke.nodes.Remove(inputs=[source], operation="keep", channels="rgb")
+    # Saved preview groups may still have the original unsafe Copy connection.
+    node.node("KyvenFillSourceAlpha").setInput(1, node.node("Source"))
+    fill._ensure_fill_graph(node)
+    node.setInput(inpaint_node.SOURCE_INPUT, rgb_source)
+    check("RGB fixture has no alpha", "rgba.alpha" not in rgb_source.channels())
+    check("RGB source receives opaque alpha", nuke.sample(node, "rgba.alpha", 1, 1) == 1)
+    check("RGB source renders without missing-channel error", not node.error())
+    for channel in ("rgba.red", "rgba.green", "rgba.blue"):
+        check(f"RGB Source preserved {channel}",
+              nuke.sample(rgb_source, channel, 1, 1) == nuke.sample(node, channel, 1, 1))
+    node.setInput(inpaint_node.SOURCE_INPUT, source)
+    check("RGBA alpha survives reconnecting", nuke.sample(node, "rgba.alpha", 1, 1) ==
+          nuke.sample(source, "rgba.alpha", 1, 1))
+    rgb_source["disable"].setValue(True)
+    node.setInput(inpaint_node.SOURCE_INPUT, rgb_source)
+    check("upstream alpha changes are detected without rebuilding", nuke.sample(node, "rgba.alpha", 1, 1) ==
+          nuke.sample(source, "rgba.alpha", 1, 1))
+    rgb_source["disable"].setValue(False)
+    check("upstream RGB changes restore opaque alpha", nuke.sample(node, "rgba.alpha", 1, 1) == 1)
     node["prompt"].setValue("a red ceramic vase")
     script = destination.with_suffix(".nk")
     node_name = node.name()
@@ -90,6 +111,7 @@ try:
     reopened = nuke.toNode(node_name)
     check("prompt survives reopening", reopened["prompt"].value() == "a red ceramic vase")
     check("system prompt survives reopening", bool(reopened["qwen_system_prompt"].value()))
+    check("RGB alpha fallback survives reopening", nuke.sample(reopened, "rgba.alpha", 1, 1) == 1)
     report["ok"] = True
 except Exception:  # noqa: BLE001 - record any Nuke smoke-test failure before exiting
     report["ok"] = False
