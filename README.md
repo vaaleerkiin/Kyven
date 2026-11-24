@@ -46,9 +46,7 @@ selection are for the other Kyven tools.
 1. Clone with Git LFS installed, or extract a complete Kyven bundle into its final
    writable folder. For an existing checkout, run `git lfs install` and `git lfs pull`
    to obtain the embedded WAFT models.
-2. Run `install.cmd` and choose the recommended models.
-   For Generative Fill, choose **12** to install its optional runtime and models.
-3. Add the printed plugin path to the user's `.nuke/init.py`:
+2. Add the plugin path to the user's `.nuke/init.py`:
 
 ```python
 import nuke
@@ -56,8 +54,15 @@ import nuke
 nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 ```
 
-4. Restart Nuke and open `Nodes > Kyven`.
+3. Restart Nuke and open **Nodes > Kyven > Model Manager**.
+4. Select a model and **Install Selected**. The manager installs the base runtime,
+   required components and model weights automatically. Python 3.10–3.13 must be
+   available; Python 3.12 is recommended. **Install Required Components** installs
+   just the dependencies without downloading weights.
 5. Create a node, choose **Cache Folder**, enter its **Name** and **Version**, then process.
+
+`install.cmd` remains available for installation outside Nuke; choice **12** sets
+up Generative Fill. Both routes use the same pinned dependencies and model catalog.
 
 The installer is portable: it does not require administrator access, modify the registry, or install
 system-wide Python packages. Read the [installation guide](docs/INSTALLATION.md) for requirements,

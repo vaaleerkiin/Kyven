@@ -1038,28 +1038,22 @@ TCP 127.0.0.1:8766 0.0.0.0:0 ESTABLISHED 13"""
         self.assertEqual(command[-1], HQ_SAM2_RUNTIME_URL)
 
     def test_missing_catalog_runtime_is_installed_and_verified(self) -> None:
-        process = mock.Mock(returncode=0)
-        process.communicate.return_value = ("installed", None)
         probe_missing = mock.Mock(returncode=1)
         probe_ready = mock.Mock(returncode=0)
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / "python.exe"
             executable.touch()
             with (
-                mock.patch(
-                    "kyven_nuke.runtime.config.python_executable", return_value=executable
-                ),
+                mock.patch("kyven_nuke.runtime.config.python_executable", return_value=executable),
                 mock.patch("kyven_nuke.runtime.config.root", return_value=Path(directory)),
-                mock.patch(
-                    "kyven_nuke.runtime.subprocess.run",
-                    side_effect=(probe_missing, probe_ready),
-                ),
-                mock.patch("kyven_nuke.runtime.subprocess.Popen", return_value=process) as popen,
+                mock.patch("kyven_nuke.runtime.ensure_core_runtime", return_value=False),
+                mock.patch("kyven_nuke.runtime._wait_for_install_idle", return_value=False),
+                mock.patch("kyven_nuke.runtime.subprocess.run", side_effect=(probe_missing, probe_ready)),
+                mock.patch("kyven_nuke.runtime._run_runtime_installer") as install,
             ):
                 changed = ensure_model_runtime("hq-sam2")
-
         self.assertTrue(changed)
-        self.assertEqual(popen.call_args.args[0][-1], HQ_SAM2_RUNTIME_URL)
+        self.assertEqual(install.call_args.args[0][-1], HQ_SAM2_RUNTIME_URL)
 
     def test_nuke_file_paths_use_forward_slashes(self) -> None:
         path = _nuke_file_path(Path("D:/Kyven/.runtime/source.1.png"))

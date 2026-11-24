@@ -22,6 +22,10 @@ Nuke is a thin host adapter. It exports frames, submits authenticated jobs to th
 polls progress, and reads durable cached results. The host-independent backend owns model loading,
 validation, inference, cancellation, and atomic output writes. Backend modules must not import Nuke.
 
+Model Manager can read the trusted local catalog before the backend is installed.
+It launches the existing portable base installer and optional component installers
+as external processes; installation and verification must never import Torch into Nuke.
+
 Models are selected through a trusted catalog with pinned sources, expected sizes, SHA-256 hashes,
 license metadata, and hardware guidance. Optional runtimes load lazily, and only the active model
 should occupy accelerator memory.

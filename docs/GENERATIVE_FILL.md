@@ -19,27 +19,22 @@ succeed; inspect the generated patch before accepting it.
 
 ## First use
 
-For a fresh checkout, run `install.cmd` and choose **12**, or run
-`powershell -ExecutionPolicy Bypass -File .\install.ps1 -Model flux2-klein-4b-q4-lanpaint`.
-This prepares the core environment, private worker dependencies and the complete
-verified model bundle. To add the feature to an existing installation:
-
-1. Click **Install Runtime** to prepare `.runtime/generative-fill/venv`. This
-   does not change Nuke or the core model environment.
-2. In **Model Manager**, install **FLUX.2 Klein 4B Q4 + Qwen3-4B + VAE**. The bundle
-   is about 10.83 GB decimal; all files are revision-pinned and size/SHA-256 verified.
-3. Connect Source and an alpha mask. White alpha selects edits; black preserves
+1. Open **Model Manager**, select **FLUX.2 Klein 4B Q4 + Qwen3-4B + VAE**, then
+   **Install Selected**. This installs/verifies base components, the isolated
+   runtime and the complete 10.83 GB model bundle. Files are revision-pinned and
+   size/SHA-256 verified. The manager also opens before the server is installed.
+2. Connect Source and an alpha mask. White alpha selects edits; black preserves
    Source. Mask-input RGB is ignored.
-4. Enter **Prompt** in English or Russian. Non-Latin prompts are automatically
-   translated to English before image generation. Optionally click **Improve Prompt**, inspect the rewritten
-   text, and use **Restore Original** to undo that edit.
-5. Set Cache Folder, Fill Name and Version, then **Process Current Frame**.
+3. Enter Prompt in English or Russian. Non-Latin prompts are automatically
+   translated to English. Improve Prompt and Restore Original are optional.
+4. Set Cache Folder, Fill Name and Version, then **Process Current Frame**.
 
-Equivalent setup from the repository root:
+**Install Required Components** in the manager prepares dependencies without
+weights. The node's **Install Runtime** button uses this same manager installation
+path. Python 3.10–3.13 is required; Python 3.12 is recommended.
 
-```powershell
-.venv/Scripts/python.exe scripts/setup_generative_fill.py --download-models
-```
+The equivalent optional command-line setup is
+`.venv/Scripts/python.exe scripts/setup_generative_fill.py --download-models`.
 
 ## Mask, context and output
 
@@ -108,8 +103,8 @@ Qualification on an RTX 4070 Laptop 8 GB / 32 GB RAM (2026-11-24), using a
 | Replace person, Klein + LanPaint | Requested woman in a blue coat generated |
 | Diffusion / thinking steps | 4 / 2 |
 | Actual working canvases | 688 x 768 for removal/replacement; 736 x 544 for addition |
-| GPU image generation, precomputed English embeddings | 30.2ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“37.2 s |
-| Peak PyTorch GPU allocation | 3.17ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“3.29 GiB; excludes other processes and driver memory |
+| GPU image generation, precomputed English embeddings | 30.2-37.2 s |
+| Peak PyTorch GPU allocation | 3.17-3.29 GiB; excludes other processes and driver memory |
 | Full cold request with automatic Russian translation | 67.4 s, 3.29 GiB peak |
 | OOM retry | Not needed |
 | Pixels outside each input mask | Exactly unchanged in all three runs |

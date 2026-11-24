@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -29,7 +30,39 @@ def _format_size(size_bytes):
     return f"{float(size_bytes) / (1024**2):.0f} MB"
 
 
+def _manager_models():
+    core = {"model_id": "kyven-core-runtime", "display_name": "Kyven Base Runtime",
+            "task": "setup", "runtime": "core", "core_runtime": True,
+            "installed": config.python_executable().is_file(), "size_bytes": 0}
+    catalog = config.root() / "src/kyven/resources/models/catalog.json"
+    local = json.loads(catalog.read_text(encoding="utf-8"))["models"] if catalog.is_file() else []
+    runtimes = {item["model_id"]: item.get("runtime", "") for item in local}
+    if config.python_executable().is_file():
+        try:
+            models = [dict(item, runtime=runtimes.get(item["model_id"], item.get("runtime", "")))
+                      for item in ensure_server().models()]
+            return [*models, core], True
+        except Exception as exc:  # noqa: BLE001 - the offline catalog still supports setup
+            core["setup_detail"] = str(exc)
+    return [core, *[dict(model, installed=False, needs_core=True) for model in local]], False
+
+
+def install_required_runtime(model_id):
+    try:
+        models, _ = _manager_models()
+    except (OSError, ValueError) as exc:
+        _nuke().message(f"Could not read the trusted model catalog:\n{exc}")
+        return
+    model = next((item for item in models if item["model_id"] == model_id), None)
+    if model is None:
+        _nuke().message("The selected model is not in the trusted catalog.")
+        return
+    _start_operation("runtime", model)
+
+
 def _choice_label(model):
+    if model.get("core_runtime"):
+        return "Setup | Kyven Base Runtime | install or verify base components"
     state = "installed" if model.get("installed") else "not installed"
     warning = " | VRAM warning" if model.get("compatible") is False else ""
     default = (
@@ -50,7 +83,7 @@ def show_model_manager():
 
     nuke = _nuke()
     try:
-        models = ensure_server().models()
+        models, server_ready = _manager_models()
     except Exception as exc:  # noqa: BLE001
         nuke.message(f"Could not open Kyven Model Manager:\n{exc}")
         return
@@ -61,7 +94,7 @@ def show_model_manager():
     panel = nuke.Panel("Kyven Model Manager")
     panel.addEnumerationPulldown(
         "Action",
-        "{Install Selected} {Import NVIDIA Component} {Remove Selected} {Set as Default} {Open Models Folder}",
+        "{Install Selected} {Install Required Components} {Import NVIDIA Component} {Remove Selected} {Set as Default} {Open Models Folder}",
     )
     panel.addEnumerationPulldown(
         "Model",
@@ -69,6 +102,8 @@ def show_model_manager():
     )
     panel.addNotepad(
         "Safety",
+        ("Server setup is not complete. Installing a model also installs its required components. "
+         "Python 3.10-3.13 must be available. DLSS appears after base setup.\n\n" if not server_ready else "") +
         "Downloads come only from the trusted Kyven catalog. Single-file models are verified "
         "by exact size and SHA-256; repository models are pinned to an audited revision. "
         "Required model runtimes are installed automatically into Kyven's private environment. "
@@ -91,6 +126,15 @@ def show_model_manager():
         nuke.message("The selected catalog model could not be resolved.")
         return
     model = models[index]
+    if model.get("core_runtime"):
+        if action in {"Install Selected", "Install Required Components"}:
+            _start_operation("runtime", model)
+        else:
+            nuke.message("The base runtime supports all Kyven nodes. Use Install Selected to install or verify it.")
+        return
+    if action == "Install Required Components":
+        _start_operation("runtime", model)
+        return
     if action == "Import NVIDIA Component":
         if not model.get("local_runtime"):
             nuke.message("Import NVIDIA Component applies to the DLSS entry.")
@@ -160,7 +204,7 @@ def _start_operation(action, model, source=None):
             return
         # Reserve before creating UI or starting a thread so rapid repeated actions cannot race.
         _tasks[key] = None
-    title = "Install" if action == "download" else "Remove"
+    title = "Install Components" if action == "runtime" else "Install" if action == "download" else "Remove"
     try:
         task = nuke.ProgressTask(f"Kyven Models | {title} {model['display_name']}")
         task.setMessage("Submitting model operation")
@@ -176,7 +220,11 @@ def _start_operation(action, model, source=None):
         operation_id = ""
         try:
             runtime_changed = False
-            if action == "download":
+            if action in {"download", "runtime"}:
+                if model.get("needs_core"):
+                    ensure_model_runtime("core", progress_callback=lambda message:
+                        nuke.executeInMainThread(_update_task, args=(key, 2, message)),
+                        cancel_requested=lambda: nuke.executeInMainThreadWithResult(_task_cancelled, args=(key,)))
                 runtime_changed = ensure_model_runtime(
                     str(model.get("runtime") or ""),
                     progress_callback=lambda message: nuke.executeInMainThread(
@@ -191,6 +239,11 @@ def _start_operation(action, model, source=None):
                         _update_task, args=(key, 10, "Restarting Kyven Server with the new runtime")
                     )
                     stop_server()
+            if action == "runtime":
+                nuke.executeInMainThread(_finish_runtime, args=(key, model))
+                return
+            if nuke.executeInMainThreadWithResult(_task_cancelled, args=(key,)):
+                raise RuntimeInstallCancelled("Installation cancelled before downloading model weights.")
             client = ensure_server()
             operation_id = (
                 (client.start_model_download(key, source=source) if source else
@@ -240,6 +293,15 @@ def _task_cancelled(key):
     return bool(task is not None and task.isCancelled())
 
 
+def _finish_runtime(key, model):
+    with _tasks_lock:
+        _tasks.pop(key, None)
+    _refresh_all_nodes()
+    _nuke().message(f"Required components for {model['display_name']} are ready.")
+    if model.get("core_runtime"):
+        show_model_manager()
+
+
 def _finish_operation(key, model, operation, runtime_changed=False):
     with _tasks_lock:
         _tasks.pop(key, None)
@@ -285,6 +347,13 @@ def _refresh_all_nodes():
         for task in ("segment", "refine", "inpaint")
     }
     for node in nuke.allNodes("Group"):
+        if "qwen_system_prompt" in node.knobs():
+            # This single-model node must never receive the LaMa model list.
+            from kyven_nuke.generative_fill_node import _ensure_fill_graph
+            _ensure_fill_graph(node)
+            if "kyven_status" in node.knobs():
+                node["kyven_status"].setValue("Generative Fill components and model catalog refreshed.")
+            continue
         if "kyven_kind" in node.knobs() and node["kyven_kind"].value() == "dlss":
             from kyven_nuke.dlss_node import refresh_runtime
 

@@ -266,7 +266,7 @@ try {
     Write-Step "Checking the installed runtime"
     Invoke-Native $VenvPython @(
         "-I", "-c",
-        "import torch, onnxruntime, timm; from transformers import VitMatteForImageMatting; from sam2.build_sam import build_sam2, build_sam2_hq_video_predictor; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"
+        "from kyven.server.bootstrap import reset_inherited_dll_directory; reset_inherited_dll_directory(); import torch, onnxruntime, timm; from transformers import VitMatteForImageMatting; from sam2.build_sam import build_sam2, build_sam2_hq_video_predictor; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"
     )
     Invoke-Native $VenvPython @(
         "-m", "kyven.cli", "models", "list", "--models-dir", $ModelsRoot

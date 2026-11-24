@@ -1,7 +1,6 @@
 """Native Nuke Generative Fill Group; inference belongs to the Kyven worker."""
 from __future__ import annotations
 
-import subprocess
 import threading
 import time
 from typing import Any
@@ -149,23 +148,8 @@ def reset_system_prompt() -> None:
 
 
 def install_runtime() -> None:
-    from kyven_nuke.runtime import ensure_model_runtime
-    node = _nuke().thisNode()
-    name = str(node.fullName())
-    if not _begin_node_operation(node):
-        return
-
-    def work() -> None:
-        try:
-            ensure_model_runtime("generative-fill", progress_callback=lambda message:
-                _nuke().executeInMainThread(_set_status, args=(name, message)))
-            _nuke().executeInMainThread(_set_status, args=(name, "Generative Fill runtime is ready."))
-        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
-            _nuke().executeInMainThread(_set_status, args=(name, f"Runtime setup failed: {exc}"))
-        finally:
-            _nuke().executeInMainThread(_set_busy, args=(name, False))
-
-    threading.Thread(target=work, name="kyven-fill-install", daemon=True).start()
+    from kyven_nuke.model_manager import install_required_runtime
+    install_required_runtime(PROVIDER_ID)
 
 
 def knob_changed() -> None:

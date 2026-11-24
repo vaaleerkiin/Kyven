@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import os
+import queue
 import signal
 import subprocess
+import sys
 import threading
 import time
+from collections import deque
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -17,6 +20,7 @@ PORT = 18788
 REQUIRED_API_VERSION = 41
 LEGACY_PORTS = (8765, 8766, 8767, 8768, 8769, 18768, 18769, 18770, 18771, 18772, 18773, 18774, 18775, 18776, 18777, 18778, 18779, 18780, 18781, 18782, 18783, 18784, 18785, 18786, 18787)
 _server_start_lock = threading.Lock()
+_runtime_install_lock = threading.RLock()
 _startup_cancel: threading.Event | None = None
 _stop_generation = 0
 _server_state_lock = threading.RLock()
@@ -42,6 +46,11 @@ class ServerStartCancelled(RuntimeError):
 
 
 def _runtime_probe(runtime_id: str) -> str:
+    if runtime_id == "core":
+        return ("from kyven.server.bootstrap import reset_inherited_dll_directory; "
+                "reset_inherited_dll_directory(); import torch, onnxruntime, timm; "
+                "from transformers import VitMatteForImageMatting; "
+                "from sam2.build_sam import build_sam2, build_sam2_hq_video_predictor")
     if runtime_id == "generative-fill":
         executable = config.root() / ".runtime/generative-fill/venv" / (
             "Scripts/python.exe" if os.name == "nt" else "bin/python")
@@ -60,6 +69,15 @@ def _runtime_probe(runtime_id: str) -> str:
 
 
 def _runtime_install_command(runtime_id: str, executable: Path) -> list[str]:
+    if runtime_id == "core":
+        if os.name != "nt":
+            raise RuntimeError("Automatic base runtime installation currently supports Windows only.")
+        managed = config.root() / ".venv/Scripts/python.exe"
+        if executable.resolve() != managed.resolve():
+            raise RuntimeError("Automatic setup manages the repository .venv. Remove the KYVEN_PYTHON_EXECUTABLE override before installing it.")
+        shell = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+        return [str(shell), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                str(config.root() / "install.ps1"), "-Model", "none"]
     if runtime_id == "generative-fill":
         return [str(executable), str(config.root() / "scripts/setup_generative_fill.py")]
     if runtime_id == "dlss":
@@ -79,59 +97,143 @@ def _runtime_install_command(runtime_id: str, executable: Path) -> list[str]:
     ]
 
 
+def _probe_runtime(executable: Path, runtime_id: str) -> bool:
+    if not executable.is_file():
+        return False
+    result = subprocess.run(
+        [str(executable), "-I", "-c", _runtime_probe(runtime_id)],
+        env=_server_environment(executable_dir=executable.parent),
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), check=False)
+    return result.returncode == 0
+
+
+def _cancel_install(cancel_requested) -> None:
+    if cancel_requested is not None and cancel_requested():
+        raise RuntimeInstallCancelled("Runtime installation was cancelled.")
+
+
+def _wait_for_install_idle(progress_callback, cancel_requested) -> bool:
+    while True:
+        _cancel_install(cancel_requested)
+        try:
+            health = client(timeout_seconds=1.0).health()
+        except (OSError, NukeKyvenClientError):
+            return False
+        jobs = health.get("jobs", {})
+        counts = jobs.get("counts", {})
+        if not jobs.get("active_job_id") and not counts.get("running") and not counts.get("queued"):
+            return True
+        _report_progress(progress_callback, "Waiting for active Kyven processing before installing components...")
+        time.sleep(0.2)
+
+
+def _terminate_installer(process) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        killer = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32/taskkill.exe"
+        subprocess.run([str(killer), "/PID", str(process.pid), "/T", "/F"], check=False,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    else:
+        os.killpg(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
+def _run_runtime_installer(command, progress_callback=None, cancel_requested=None) -> None:
+    environment = _server_environment(executable_dir=config.python_executable().parent)
+    if Path(command[0]).name.lower() in {"powershell.exe", "pwsh.exe"}:
+        # A first install must find the user's Python/py launcher. The inference
+        # server's minimal PATH intentionally hides those locations.
+        host = Path(sys.executable)
+        nuke_dir = str(host.parent).replace("\\", "/").rstrip("/").lower()
+        entries = []
+        for entry in os.environ.get("PATH", "").split(os.pathsep):
+            normalized = entry.replace("\\", "/").rstrip("/").lower()
+            if entry and not (host.name.lower().startswith("nuke") and
+                             (normalized == nuke_dir or normalized.startswith(nuke_dir + "/"))):
+                entries.append(entry)
+        environment["PATH"] = os.pathsep.join(entries + [environment["PATH"]])
+    environment.update(PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+    process = subprocess.Popen(command, cwd=str(config.root()), env=environment,
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace",
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        start_new_session=os.name != "nt")
+    messages = queue.Queue()
+    output = deque(maxlen=100)
+
+    def read():
+        try:
+            for line in process.stdout:
+                messages.put(line.rstrip())
+        finally:
+            messages.put(None)
+
+    reader = threading.Thread(target=read, name="kyven-runtime-log", daemon=True)
+    reader.start()
+    last_update = 0.0
+    try:
+        while True:
+            _cancel_install(cancel_requested)
+            try:
+                line = messages.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if line is None:
+                break
+            if line:
+                output.append(line)
+                if time.monotonic() - last_update > 0.15:
+                    _report_progress(progress_callback, line[-240:])
+                    last_update = time.monotonic()
+        process.wait()
+        _cancel_install(cancel_requested)
+        if process.returncode:
+            raise RuntimeError("Runtime installation failed:\n" + "\n".join(output)[-4000:])
+    finally:
+        _terminate_installer(process)
+        reader.join(timeout=2)
+        process.stdout.close()
+
+
+def ensure_core_runtime(progress_callback=None, cancel_requested=None) -> bool:
+    return ensure_model_runtime("core", progress_callback, cancel_requested)
+
+
 def ensure_model_runtime(runtime_id: str, progress_callback=None, cancel_requested=None) -> bool:
-    """Install a catalog-declared runtime into Kyven's private environment when missing."""
+    """Install all required components from the manager without loading them in Nuke."""
     if not runtime_id:
         return False
-    executable = config.python_executable()
-    if not executable.is_file():
-        raise RuntimeError(f"Kyven Python executable was not found: {executable}")
-    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    probe = subprocess.run(
-        [str(executable), "-I", "-c", _runtime_probe(runtime_id)],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=creation_flags,
-        check=False,
-    )
-    if probe.returncode == 0:
-        return False
-    _report_progress(progress_callback, f"Installing required runtime: {runtime_id}...")
-    process = subprocess.Popen(
-        _runtime_install_command(runtime_id, executable),
-        cwd=str(config.root()),
-        env=_server_environment(executable_dir=executable.parent),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        errors="replace",
-        creationflags=creation_flags,
-    )
-    while True:
-        try:
-            output, _ = process.communicate(timeout=0.2)
-            break
-        except subprocess.TimeoutExpired:
-            if cancel_requested is not None and cancel_requested():
-                process.terminate()
-                output, _ = process.communicate()
-                raise RuntimeInstallCancelled("Model runtime installation was cancelled.")
-    if process.returncode != 0:
-        detail = (output or "pip returned no diagnostic output")[-4000:].strip()
-        raise RuntimeError(f"Could not install required runtime {runtime_id}: {detail}")
-    verification = subprocess.run(
-        [str(executable), "-I", "-c", _runtime_probe(runtime_id)],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=creation_flags,
-        check=False,
-    )
-    if verification.returncode != 0:
-        raise RuntimeError(f"Runtime {runtime_id} was installed but failed its import check.")
-    return True
+    while not _runtime_install_lock.acquire(timeout=0.2):
+        _cancel_install(cancel_requested)
+        _report_progress(progress_callback, "Waiting for another runtime installation...")
+    try:
+        _cancel_install(cancel_requested)
+        changed = False
+        if runtime_id in {"generative-fill", "hq-sam2"}:
+            changed = ensure_core_runtime(progress_callback, cancel_requested)
+        executable = config.python_executable()
+        ready = _probe_runtime(executable, runtime_id)
+        _cancel_install(cancel_requested)
+        if ready:
+            return changed
+        command = _runtime_install_command(runtime_id, executable)
+        if _wait_for_install_idle(progress_callback, cancel_requested):
+            stop_server()
+        _report_progress(progress_callback, f"Installing required runtime: {runtime_id}...")
+        _run_runtime_installer(command, progress_callback, cancel_requested)
+        if not _probe_runtime(config.python_executable(), runtime_id):
+            raise RuntimeError(f"Runtime {runtime_id} was installed but failed its verification.")
+        _cancel_install(cancel_requested)
+        return True
+    finally:
+        _runtime_install_lock.release()
 
 
 def server_state() -> dict[str, object]:
