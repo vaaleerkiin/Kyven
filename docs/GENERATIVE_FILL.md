@@ -19,6 +19,11 @@ succeed; inspect the generated patch before accepting it.
 
 ## First use
 
+For a fresh checkout, run `install.cmd` and choose **12**, or run
+`powershell -ExecutionPolicy Bypass -File .\install.ps1 -Model flux2-klein-4b-q4-lanpaint`.
+This prepares the core environment, private worker dependencies and the complete
+verified model bundle. To add the feature to an existing installation:
+
 1. Click **Install Runtime** to prepare `.runtime/generative-fill/venv`. This
    does not change Nuke or the core model environment.
 2. In **Model Manager**, install **FLUX.2 Klein 4B Q4 + Qwen3-4B + VAE**. The bundle

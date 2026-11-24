@@ -47,6 +47,7 @@ selection are for the other Kyven tools.
    writable folder. For an existing checkout, run `git lfs install` and `git lfs pull`
    to obtain the embedded WAFT models.
 2. Run `install.cmd` and choose the recommended models.
+   For Generative Fill, choose **12** to install its optional runtime and models.
 3. Add the printed plugin path to the user's `.nuke/init.py`:
 
 ```python

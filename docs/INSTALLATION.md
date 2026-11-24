@@ -21,6 +21,7 @@ administrator access, registry changes, or a system-wide Python environment.
 | WAFT SmartVector | Gizmo, callbacks and both embedded models through Git LFS | Connect `hosts/nuke` and restart Nuke 16 |
 | DLSS | Worker, shim and pinned runtime metadata | Use **Model Manager > Kyven DLSS Runtime > Install Selected** |
 | Segment / Refine / Inpaint | Adapters, providers and model catalog | Choose and install the model versions you need |
+| Generative Fill | Native node and standalone worker code | Choose **12** in `install.cmd`, or install the model through Model Manager |
 
 For WAFT alone, skip the server environment installer and connect the Nuke plugin
 path described below. DLSS uses Windows/RTX and the server environment; its NVIDIA
@@ -67,6 +68,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 3. Choose one or more model numbers. Press Enter for the recommended 8 GB setup: SAM 2.1 Small and
    ViTMatte Small.
+   Choose **12** to install Generative Fill with its private runtime and verified
+   Klein/Qwen/VAE bundle (10.83 GB of model files; 8 GB GPU and 32 GB RAM recommended).
 4. Add the path printed by the installer to the user's existing `.nuke/init.py`:
 
 ```python
@@ -113,7 +116,7 @@ Nothing is added to the system `PATH`, and the installer intentionally does not 
 ## Update
 
 Pull or replace the repository files, then run `install.cmd` again. Existing verified checkpoints
-and downloads are reused. Restart Nuke so Python modules and API 36 are reloaded, then update older
+and downloads are reused. Restart Nuke so Python modules and the current server API are reloaded, then update older
 Groups from the Nodes menu:
 
 - `Kyven > Upgrade Selected Segment Node`;
@@ -138,8 +141,17 @@ A Windows virtual environment stores absolute paths. If the Kyven folder is move
 .\install.ps1 -Model vitmatte-base-distinctions-646
 .\install.ps1 -Model lama-2025jan-onnx
 .\install.ps1 -Model big-lama-native
+.\install.ps1 -Model flux2-klein-4b-q4-lanpaint
 .\install.ps1 -Model none
 ```
+
+The installer installs pinned PyTorch before building SAM/HQ-SAM. The optional
+SAM CUDA extension is disabled on Windows, so Visual Studio and the CUDA toolkit
+are not required for installation. PyTorch CUDA inference remains available.
+Generative Fill resolves its dependencies in a separate environment and reuses
+the core PyTorch installation without replacing core Transformers. Git is not
+required for its pinned source archives. Runtime verification checks the actual
+Klein/Qwen/GGUF adapter and the SciPy/OpenCV compositing dependencies.
 
 ## Install or remove models from Nuke
 

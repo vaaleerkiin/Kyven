@@ -46,7 +46,8 @@ def _runtime_probe(runtime_id: str) -> str:
         executable = config.root() / ".runtime/generative-fill/venv" / (
             "Scripts/python.exe" if os.name == "nt" else "bin/python")
         return ("import subprocess; subprocess.run([" + repr(str(executable)) +
-                ", '-I', '-c', 'import torch, diffusers, transformers, LanPaint, lanpaint_pipeline'], check=True)")
+                ", '-I', " + repr(str(config.root() / "scripts/setup_generative_fill.py")) +
+                ", '--check'], check=True)")
     if runtime_id == "dlss":
         return ("from kyven.server.bootstrap import reset_inherited_dll_directory; "
                 "reset_inherited_dll_directory(); import OpenEXR; assert hasattr(OpenEXR, 'File')")

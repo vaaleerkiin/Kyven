@@ -1,7 +1,4 @@
---extra-index-url https://download.pytorch.org/whl/cu128
-
-torch==2.10.0+cu128
-torchvision==0.25.0+cu128
+-r torch-cu128.txt
 HQ-SAM-2 @ https://github.com/SysCV/sam-hq/archive/e696978d60352dc9a26b12631cd91781502c6546.zip#subdirectory=sam-hq2
 transformers==4.53.2
 safetensors>=0.4.5,<1

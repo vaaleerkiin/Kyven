@@ -51,10 +51,12 @@ function Find-BootstrapPython {
     }
 
     $PyLauncher = Get-Command "py.exe" -ErrorAction SilentlyContinue
-    if ($PyLauncher -and (Test-Python $PyLauncher.Source @("-3.12"))) {
-        return [pscustomobject]@{
-            Executable = $PyLauncher.Source
-            Prefix = @("-3.12")
+    foreach ($Version in @("-3.12", "-3.13", "-3.11", "-3.10")) {
+        if ($PyLauncher -and (Test-Python $PyLauncher.Source @($Version))) {
+            return [pscustomobject]@{
+                Executable = $PyLauncher.Source
+                Prefix = @($Version)
+            }
         }
     }
 
@@ -87,6 +89,7 @@ function Select-Models {
         [pscustomobject]@{ Number = "8"; Id = "vitmatte-base-distinctions-646"; Label = "ViTMatte Base"; Guidance = "higher quality, 8 GB+, use tiling" },
         [pscustomobject]@{ Number = "9"; Id = "mematte-vits-aim500"; Label = "MEMatte ViT-S"; Guidance = "memory-efficient high-resolution refinement, 4 GB+" },
         [pscustomobject]@{ Number = "10"; Id = "mematte-vitb-composition-1k"; Label = "MEMatte ViT-B"; Guidance = "quality high-resolution refinement, 8 GB+" },
+        [pscustomobject]@{ Number = "12"; Id = "flux2-klein-4b-q4-lanpaint"; Label = "Generative Fill - Klein 4B Q4"; Guidance = "8 GB GPU / 32 GB RAM, optional runtime + 10.83 GB models" },
         [pscustomobject]@{ Number = "0"; Id = "none"; Label = "No model"; Guidance = "install runtime only" }
     )
 
@@ -108,7 +111,7 @@ function Select-Models {
         }
         $Match = $Choices | Where-Object Number -eq $Part
         if (-not $Match) {
-            throw "Unknown model choice '$Part'. Run the installer again and enter 0-11."
+            throw "Unknown model choice '$Part'. Run the installer again and enter 0-12."
         }
         if ($Match.Id -eq "none") {
             $AnswerParts = @($Answer -split "[,; ]+" | Where-Object { $_ })
@@ -136,13 +139,18 @@ function Resolve-RequestedModels([string[]]$RequestedModels) {
         "big-lama-native",
         "vitmatte-base-distinctions-646",
         "mematte-vits-aim500",
-        "mematte-vitb-composition-1k"
+        "mematte-vitb-composition-1k",
+        "flux2-klein-4b-q4-lanpaint"
     )
     if (-not $RequestedModels -or $RequestedModels.Count -eq 0) {
         return @(Select-Models)
     }
 
     $Resolved = @()
+    $RequestedParts = @($RequestedModels | ForEach-Object { $_ -split "[,; ]+" } | Where-Object { $_ })
+    if ($RequestedParts -contains "none" -and $RequestedParts.Count -gt 1) {
+        throw "Model 'none' cannot be combined with another model."
+    }
     foreach ($Requested in $RequestedModels) {
         foreach ($Item in ($Requested -split "[,; ]+")) {
             if ([string]::IsNullOrWhiteSpace($Item)) {
@@ -204,7 +212,10 @@ if (-not (Test-Path -LiteralPath $Requirements -PathType Leaf)) {
 New-Item -ItemType Directory -Force -Path $RuntimeRoot, $PipCache, $ModelsRoot | Out-Null
 $env:PIP_CACHE_DIR = $PipCache
 $env:PYTHONNOUSERSITE = "1"
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
 $env:PIP_DISABLE_PIP_VERSION_CHECK = "1"
+$env:SAM2_BUILD_CUDA = "0"
 
 if (-not (Test-Path -LiteralPath $VenvPython -PathType Leaf)) {
     Write-Step "Creating the private Python environment"
@@ -224,18 +235,24 @@ try {
     Stop-LocalKyvenLaunchers
 
     Write-Step "Updating packaging tools inside .venv"
-    Invoke-Native $VenvPython @("-m", "pip", "install", "--upgrade", "pip", "setuptools")
+    Invoke-Native $VenvPython @("-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel")
 
     Write-Step "Preparing the pinned SAM 2 / HQ-SAM 2 runtime"
     Invoke-Native $VenvPython @("-m", "pip", "uninstall", "--yes", "SAM-2", "HQ-SAM-2")
 
-    Write-Step "Installing PyTorch and SAM 2 / HQ-SAM 2 inside .venv"
-    Invoke-Native $VenvPython @("-m", "pip", "install", "-r", $Requirements)
+    Write-Step "Installing pinned PyTorch before building the model packages"
+    Invoke-Native $VenvPython @("-m", "pip", "install", "-r", (Join-Path $KyvenRoot "requirements\torch-cu128.txt"))
+    Write-Step "Installing SAM 2 / HQ-SAM 2 and the core model dependencies"
+    Invoke-Native $VenvPython @("-m", "pip", "install", "--no-build-isolation", "-r", $Requirements)
 
     Write-Step "Installing Kyven inside .venv"
     Invoke-Native $VenvPython @("-m", "pip", "install", "--upgrade", ".")
 
     foreach ($SelectedModel in $SelectedModels) {
+        if ($SelectedModel -eq "flux2-klein-4b-q4-lanpaint") {
+            Write-Step "Installing the private Generative Fill runtime"
+            Invoke-Native $VenvPython @("-I", (Join-Path $KyvenRoot "scripts\setup_generative_fill.py"))
+        }
         Write-Step "Downloading and verifying $SelectedModel"
         Invoke-Native $VenvPython @(
             "-m", "kyven.cli", "models", "download", $SelectedModel,
@@ -248,8 +265,8 @@ try {
 
     Write-Step "Checking the installed runtime"
     Invoke-Native $VenvPython @(
-        "-c",
-        "import torch; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"
+        "-I", "-c",
+        "import torch, onnxruntime, timm; from transformers import VitMatteForImageMatting; from sam2.build_sam import build_sam2, build_sam2_hq_video_predictor; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"
     )
     Invoke-Native $VenvPython @(
         "-m", "kyven.cli", "models", "list", "--models-dir", $ModelsRoot
