@@ -18,6 +18,12 @@ from kyven.cancellation import CancellationToken
 from kyven.dlss.models import DlssRequest
 from kyven.dlss.service import DlssService
 from kyven.errors import ErrorCode, KyvenError
+from kyven.generative_fill.models import (
+    PROVIDER_ID,
+    EnhancePromptRequest,
+    FillSettings,
+    GenerativeFillRequest,
+)
 from kyven.inpaint.models import InpaintRequest
 from kyven.inpaint.service import InpaintService
 from kyven.refine.models import RefineRequest
@@ -50,7 +56,7 @@ class JobStatus(str, Enum):
 @dataclass(slots=True)
 class JobRecord:
     job_id: str
-    request: SegmentRequest | VideoSegmentRequest | RefineRequest | InpaintRequest | DlssRequest
+    request: SegmentRequest | VideoSegmentRequest | RefineRequest | InpaintRequest | DlssRequest | EnhancePromptRequest
     cancellation: CancellationToken = field(default_factory=CancellationToken)
     status: JobStatus = JobStatus.QUEUED
     created_at: float = field(default_factory=time.time)
@@ -475,6 +481,69 @@ class JobManager:
         except (KeyError, TypeError, ValueError) as exc:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "The inpaint job payload is invalid.", technical_detail=str(exc)) from exc
         return self._enqueue("inpaint", payload, request, self._run_inpaint)
+
+    @staticmethod
+    def generative_fill_request_from_payload(payload: dict[str, Any]) -> GenerativeFillRequest:
+        try:
+            from dataclasses import fields
+            payload = {"context_padding": 256, **payload}
+            if payload.get("model_id") == "z-image-turbo-q4-lanpaint":
+                # Saved early-preview nodes keep working after the backend upgrade.
+                payload = dict(payload, model_id=PROVIDER_ID)
+                settings = dict(payload.get("fill", {}))
+                if settings.get("steps") == 9:
+                    settings["steps"] = 4
+                payload["fill"] = settings
+            base = JobManager.inpaint_request_from_payload(payload, PROVIDER_ID)
+            request = GenerativeFillRequest(
+                **{item.name: getattr(base, item.name) for item in fields(InpaintRequest)},
+                fill=FillSettings.from_payload(payload.get("fill", {})),
+            )
+            request.validate()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Invalid Generative Fill request.",
+                             technical_detail=str(exc)) from exc
+        return request
+
+    def submit_generative_fill(self, payload: dict[str, Any]) -> str:
+        request = self.generative_fill_request_from_payload(payload)
+        return self._enqueue("generative_fill", payload, request, self._run_inpaint)
+
+    def submit_prompt_enhance(self, payload: dict[str, Any]) -> str:
+        try:
+            request = EnhancePromptRequest(**payload)
+            request.validate()
+        except (TypeError, ValueError) as exc:
+            raise KyvenError(ErrorCode.INVALID_REQUEST, "Invalid prompt enhancement request.",
+                             technical_detail=str(exc)) from exc
+        return self._enqueue("prompt_enhance", payload, request, self._run_prompt_enhance)
+
+    def _run_prompt_enhance(self, record: JobRecord) -> None:
+        with self._lock:
+            if record.cancellation.is_cancelled:
+                record.status = JobStatus.CANCELLED
+                record.finished_at = time.time()
+                self._release_fingerprint(record)
+                return
+            record.status = JobStatus.RUNNING
+            record.started_at = time.time()
+        try:
+            if self._inpaint_service is None:
+                raise KyvenError(ErrorCode.PROVIDER_UNAVAILABLE, "Generative Fill service is unavailable.")
+            record.result = self._inpaint_service.enhance_prompt(record.request, record.cancellation)
+            record.cancellation.raise_if_cancelled()
+            record.status = JobStatus.SUCCEEDED
+        except KyvenError as exc:
+            record.status = JobStatus.CANCELLED if exc.code is ErrorCode.CANCELLED else JobStatus.FAILED
+            record.error = exc.to_dict()
+        except Exception as exc:  # noqa: BLE001 - prompt worker boundary
+            record.status = JobStatus.FAILED
+            record.error = KyvenError(ErrorCode.INFERENCE_FAILED, "Prompt improvement failed.",
+                                      technical_detail=str(exc), recoverable=True).to_dict()
+        finally:
+            with self._lock:
+                record.finished_at = time.time()
+                self._release_fingerprint(record)
 
     def submit_dlss(self, payload: dict[str, Any]) -> str:
         if self._dlss_service is None:

@@ -27,7 +27,7 @@ from kyven.segment.providers.registry import ProviderRegistry
 from kyven.server.jobs import JobManager
 
 MAX_REQUEST_BYTES = 1024 * 1024
-SERVER_API_VERSION = 40
+SERVER_API_VERSION = 41
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +167,13 @@ def _handler_type(
             path = urlparse(self.path).path
             try:
                 payload = self._json_body()
+                if path in {"/v1/jobs/generative-fill", "/v1/jobs/prompt-enhance"}:
+                    job_id = (manager.submit_generative_fill(payload)
+                              if path.endswith("generative-fill")
+                              else manager.submit_prompt_enhance(payload))
+                    self._send(HTTPStatus.ACCEPTED,
+                               {"job_id": job_id, "status": manager.get(job_id)["status"]})
+                    return
                 if path == "/v1/jobs/dlss":
                     job_id = manager.submit_dlss(payload)
                     self._send(HTTPStatus.ACCEPTED,

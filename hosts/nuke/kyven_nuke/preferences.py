@@ -13,6 +13,7 @@ _FALLBACKS = {
     "segment": "sam2.1-small",
     "refine": "vitmatte-small-composition-1k",
     "inpaint": "big-lama-native",
+    "generative_fill": "flux2-klein-4b-q4-lanpaint",
 }
 
 

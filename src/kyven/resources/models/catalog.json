@@ -198,6 +198,26 @@
       "license_url": "https://github.com/linyiheng123/MEMatte",
       "commercial_use": true,
       "redistribution": true
+    },
+    {
+      "model_id": "flux2-klein-4b-q4-lanpaint",
+      "task": "generative_fill",
+      "display_name": "FLUX.2 Klein 4B Q4 + Qwen3-4B + VAE",
+      "provider": "flux2-klein-lanpaint-worker",
+      "config": "generative_fill/models.json",
+      "filename": "flux2-klein-4b-q4-lanpaint",
+      "source": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B",
+      "sha256": "b5f65bc5ade43c73c5cecd28d197b7a7eb4e903319c53dc165df409f1623e821",
+      "size_bytes": 10833331132,
+      "parameters_millions": 8000,
+      "recommended_vram_mb": 8192,
+      "supports_cpu": true,
+      "license": "Apache-2.0 (weights); optional worker GPL-3.0",
+      "license_url": "https://github.com/scraed/LanPaint/blob/2d7912f9a5efe5ece8de334c7ca18317b8288c39/LICENSE",
+      "commercial_use": true,
+      "redistribution": true,
+      "download_type": "verified_bundle",
+      "runtime": "generative-fill"
     }
   ]
 }

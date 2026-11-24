@@ -59,6 +59,9 @@ class ModelSpec:
             if self.download_type == "huggingface_snapshot"
             else path.is_file()
         )
+        if self.download_type == "verified_bundle":
+            from kyven.generative_fill.assets import bundle_ready
+            installed = bundle_ready(path)
         return {
             "model_id": self.model_id,
             "task": self.task,
@@ -187,6 +190,9 @@ class ModelCatalog:
         from kyven.dlss.provider import ExternalDlssProvider
 
         registry.register("dlss-external", lambda: ExternalDlssProvider(device=device))
+        from kyven.generative_fill.models import PROVIDER_ID
+        from kyven.generative_fill.provider import KleinLanPaintProvider
+        registry.register(PROVIDER_ID, lambda: KleinLanPaintProvider(models_dir, device=device))
         return registry
 
     def download(
@@ -200,6 +206,9 @@ class ModelCatalog:
         models_dir.mkdir(parents=True, exist_ok=True)
         target = spec.path(models_dir)
         target.parent.mkdir(parents=True, exist_ok=True)
+        if spec.download_type == "verified_bundle":
+            from kyven.generative_fill.assets import download_bundle
+            return download_bundle(target, progress, cancelled)
         if spec.download_type == "huggingface_snapshot":
             return self._download_snapshot(spec, models_dir, target, progress, cancelled)
         if target.is_file() and self._sha256(target) == spec.sha256:

@@ -32,6 +32,21 @@ def test_real_nuke_nodes_guidance_upgrades_and_reopen(tmp_path):
         np.testing.assert_array_equal(actual, export['expected'])
 
 
+def test_real_nuke_generative_fill_mask_cache_and_reopen(tmp_path):
+    executable = os.environ.get('KYVEN_NUKE_EXECUTABLE')
+    if not executable:
+        pytest.skip('Set KYVEN_NUKE_EXECUTABLE for licensed Nuke integration checks')
+    report = tmp_path / 'fill-graph.json'
+    script = Path(__file__).parent / 'nuke/generative_fill.py'
+    result = subprocess.run([executable, '--nukex', '-i', '-t', str(script)],
+        env={**os.environ, 'KYVEN_FILL_REPORT': str(report)},
+        capture_output=True, text=True, timeout=90, check=False,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+    assert report.is_file(), result.stdout + result.stderr
+    payload = json.loads(report.read_text())
+    assert payload.get('ok'), json.dumps(payload, indent=2) + result.stderr
+
+
 def test_real_nuke_refine_optional_integration_does_not_run_model_or_change_cache(tmp_path):
     executable = os.environ.get('KYVEN_NUKE_EXECUTABLE')
     if not executable:

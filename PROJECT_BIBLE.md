@@ -37,3 +37,9 @@ should occupy accelerator memory.
 
 Detailed behavior lives in `docs/SEGMENT.md`, `docs/REFINE.md`, `docs/INPAINT.md`,
 `docs/DLSS.md`, `docs/NUKE.md`, and `docs/SERVER.md`.
+
+Owner-requested optional Generative Fill is authorized by
+[ADR 0009](docs/adr/0009-generative-fill.md). Its native Nuke node uses a separate
+local FLUX.2 Klein 4B Q4/LanPaint worker with shared Qwen3-4B prompt improvement.
+It retains the existing lower-memory tools and has no ComfyUI dependency. See
+[Generative Fill](docs/GENERATIVE_FILL.md).

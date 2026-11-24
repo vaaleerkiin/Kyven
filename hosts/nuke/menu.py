@@ -26,6 +26,7 @@ menu.addSeparator()
 menu.addCommand("Segment", kyven_nuke.create_segment_node, icon=LOGO_ICON)
 menu.addCommand("Refine", kyven_nuke.create_refine_node, icon=LOGO_ICON)
 menu.addCommand("Inpaint", kyven_nuke.create_inpaint_node, icon=LOGO_ICON)
+menu.addCommand("Generative Fill", kyven_nuke.create_generative_fill_node, icon=LOGO_ICON)
 menu.addCommand("DLSS (Optional RTX)", kyven_nuke.create_dlss_node, icon=LOGO_ICON)
 if (KYVEN_ROOT / "plugins" / "Cattery" / "WAFT" / "WAFT.gizmo").is_file():
     menu.addCommand("WAFT SmartVector", 'nuke.createNode("WAFT")', icon=LOGO_ICON)

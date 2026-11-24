@@ -2,7 +2,7 @@
 
 **Local AI tools for Foundry Nuke: roto, alpha refinement, inpaint, WAFT SmartVector optical flow, and optional RTX neural reconstruction.**
 
-Kyven's Segment, Refine, Inpaint and DLSS nodes keep model loading and long inference outside Nuke. These nodes communicate
+Kyven's Segment, Refine, Inpaint, Generative Fill and DLSS nodes keep model loading and long inference outside Nuke. These nodes communicate
 with a local authenticated server and return ordinary image sequences, so rendered work remains
 readable even when Kyven or its models are not running.
 
@@ -12,7 +12,8 @@ Nuke Inference nodes, with embedded models and no Kyven server. See [WAFT](docs/
 > **Status:** active pre-alpha, currently developed for Nuke on Windows.
 >
 > **Privacy and licensing:** inference stays on the workstation. Kyven code is Apache-2.0; shipped
-> model entries are pinned, checksum-verified, and commercially permissive. Review
+> model entries are pinned, checksum-verified, and commercially permissive. The optional
+> Generative Fill worker is separately GPL-3.0-licensed. Review
 > [third-party notices](THIRD_PARTY_NOTICES.md) before production distribution.
 
 ## Start here
@@ -75,6 +76,7 @@ See [standalone plugins](plugins/README.md) for packaging and portability.
 | **Kyven Segment** | Source + Viewer points | Single-frame roto and SAM 2 video tracking | SAM 2.1 Small |
 | **Kyven Refine** | Source + coarse mask/trimap | Soft alpha and difficult boundaries | ViTMatte Small |
 | **Kyven Inpaint** | Source + removal mask | Paint-out and background reconstruction | LaMa ONNX Fast |
+| **Kyven Generative Fill (optional)** | Source + mask + prompt | Generate replacements; auto crop and shared Qwen prompt improvement | FLUX.2 Klein 4B Q4 + LanPaint |
 | **Kyven DLSS (optional RTX)** | Source + optional motion, depth and control mask | Neural reconstruction with temporal history | Kyven worker + separately licensed NVIDIA NR component |
 | **WAFT SmartVector (standalone)** | Source image sequence | Motion Vectors or Smart Vectors | Embedded WAFT-a1 FP16 / FP32 |
 
@@ -93,7 +95,7 @@ original Source and a removal mask directly to Kyven Inpaint.
 
 ## Cache contract
 
-The four server-backed nodes use the same artist-facing Folder / Name / Version layout. Segment, Refine and Inpaint write PNG results; optional DLSS writes float EXR results. Standalone WAFT uses ordinary Nuke Write rendering:
+The five server-backed nodes use the same artist-facing Folder / Name / Version layout. Segment, Refine, Inpaint and Generative Fill write PNG results; optional DLSS writes float EXR results. Standalone WAFT uses ordinary Nuke Write rendering:
 
 ```text
 <Cache Folder>/
@@ -143,6 +145,7 @@ Most-used guides:
 - [Segment](docs/SEGMENT.md)
 - [Refine](docs/REFINE.md)
 - [Inpaint](docs/INPAINT.md)
+- [Generative Fill](docs/GENERATIVE_FILL.md)
 - [DLSS (optional RTX)](docs/DLSS.md)
 - [WAFT SmartVector](docs/WAFT.md)
 - [WAFT development recovery](development/waft/README.md)

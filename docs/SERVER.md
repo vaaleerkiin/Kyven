@@ -39,6 +39,8 @@ it must not be committed or logged.
 | `POST` | `/v1/jobs/segment-video` | Queue SAM 2 temporal mask propagation |
 | `POST` | `/v1/jobs/refine` | Queue ViTMatte alpha refinement |
 | `POST` | `/v1/jobs/inpaint` | Queue LaMa Source + Mask object removal |
+| `POST` | `/v1/jobs/generative-fill` | Queue local Z-Image Q4 + LanPaint masked generation |
+| `POST` | `/v1/jobs/prompt-enhance` | Improve a prompt with the shared Qwen3-4B weights |
 | `POST` | `/v1/jobs/dlss` | Queue optional local DLSS reconstruction with external motion/control guides |
 | `POST` | `/v1/preview/trimap` | Build trimap on CPU without ViTMatte |
 | `POST` | `/v1/preview/refine-tiles` | Draw exact Refine RUN/SKIP tile plan on CPU; no model loading |
@@ -60,6 +62,13 @@ temporary file and activate atomically only after byte-size and SHA-256 verifica
 a managed cold start, Nuke reports the current startup phase and elapsed/timeout seconds in the node
 Status. On Windows the launcher scans listening ports once and contacts only detected older Kyven
 servers, avoiding a long sequential timeout across every historical port.
+
+### Generative Fill
+
+Generative Fill and prompt-enhancement payloads are documented in
+[Generative Fill](GENERATIVE_FILL.md#cli-and-api). Both use the same single-job
+scheduler and cancellation endpoints as the core providers. They require the
+optional private runtime; inference remains outside Nuke and does not use ComfyUI.
 
 ### Segment payload fields
 

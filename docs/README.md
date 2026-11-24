@@ -58,6 +58,7 @@ Move to heavier models only when the shot demonstrates a quality limitation.
 | [Segment](SEGMENT.md) | Roto artist / developer | Prompts, tracking, Seamless Key Frame, logits, CLI |
 | [Refine](REFINE.md) | Roto artist | Trimaps, ViTMatte/MEMatte, tiling, outputs |
 | [Inpaint](INPAINT.md) | Paint artist | Models, ROI, masks, blending, quality modes |
+| [Generative Fill](GENERATIVE_FILL.md) | Artist / TD | Z-Image Q4, LanPaint, strict mask crop, Qwen prompt improvement |
 | [DLSS (optional RTX)](DLSS.md) | Artist / TD | Local runtime, external vectors, alpha guides, live and temporal behavior |
 | [WAFT SmartVector](WAFT.md) | Artist / TD | Embedded optical-flow models, motion/smart outputs, portable Cattery folder |
 | [WAFT development recovery](../development/waft/README.md) | Developer | Recreate dependencies, checkpoints and model builds from lightweight sources |

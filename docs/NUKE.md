@@ -8,7 +8,7 @@ This guide covers behavior shared by the four Kyven Nuke nodes. Each node also h
 **WAFT SmartVector** is an additional standalone Cattery plugin. Its native Nuke
 Inference graph, embedded models and output controls are covered in [WAFT](WAFT.md).
 The server, Process/Cache buttons and shared cache contract below apply to the
-four server-backed nodes; render WAFT with ordinary Nuke Write nodes.
+five server-backed nodes; render WAFT with ordinary Nuke Write nodes.
 
 The owner-requested [optional DLSS node](DLSS.md) adds local RTX reconstruction with external
 motion and alpha guides. Its live/temporal and EXR-cache behavior is documented separately.
@@ -121,7 +121,7 @@ internals mean performance and VRAM do not always scale directly with crop area.
 
 ## Artist cache
 
-All four nodes use the same Folder / Name / Version layout. Segment, Refine and Inpaint write PNG sequences; DLSS writes float EXR sequences:
+All five nodes use the same Folder / Name / Version layout. Segment, Refine, Inpaint and Generative Fill write PNG sequences; DLSS writes float EXR sequences:
 
 ```text
 <Cache Folder>/

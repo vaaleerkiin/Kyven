@@ -14,7 +14,7 @@ from kyven_nuke import config
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 
 PORT = 18788
-REQUIRED_API_VERSION = 40
+REQUIRED_API_VERSION = 41
 LEGACY_PORTS = (8765, 8766, 8767, 8768, 8769, 18768, 18769, 18770, 18771, 18772, 18773, 18774, 18775, 18776, 18777, 18778, 18779, 18780, 18781, 18782, 18783, 18784, 18785, 18786, 18787)
 _server_start_lock = threading.Lock()
 _startup_cancel: threading.Event | None = None
@@ -42,6 +42,11 @@ class ServerStartCancelled(RuntimeError):
 
 
 def _runtime_probe(runtime_id: str) -> str:
+    if runtime_id == "generative-fill":
+        executable = config.root() / ".runtime/generative-fill/venv" / (
+            "Scripts/python.exe" if os.name == "nt" else "bin/python")
+        return ("import subprocess; subprocess.run([" + repr(str(executable)) +
+                ", '-I', '-c', 'import torch, diffusers, transformers, LanPaint, lanpaint_pipeline'], check=True)")
     if runtime_id == "dlss":
         return ("from kyven.server.bootstrap import reset_inherited_dll_directory; "
                 "reset_inherited_dll_directory(); import OpenEXR; assert hasattr(OpenEXR, 'File')")
@@ -54,6 +59,8 @@ def _runtime_probe(runtime_id: str) -> str:
 
 
 def _runtime_install_command(runtime_id: str, executable: Path) -> list[str]:
+    if runtime_id == "generative-fill":
+        return [str(executable), str(config.root() / "scripts/setup_generative_fill.py")]
     if runtime_id == "dlss":
         return [str(executable), "-m", "pip", "install", "--disable-pip-version-check", "OpenEXR==3.4.14"]
     if runtime_id != "hq-sam2":

@@ -70,6 +70,12 @@ class KyvenClient:
     def submit_dlss(self, payload: dict[str, Any]) -> str:
         return str(self._request("POST", "/v1/jobs/dlss", payload)["job_id"])
 
+    def submit_generative_fill(self, payload: dict[str, Any]) -> str:
+        return str(self._request("POST", "/v1/jobs/generative-fill", payload)["job_id"])
+
+    def submit_prompt_enhance(self, payload: dict[str, Any]) -> str:
+        return str(self._request("POST", "/v1/jobs/prompt-enhance", payload)["job_id"])
+
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/v1/health")
 

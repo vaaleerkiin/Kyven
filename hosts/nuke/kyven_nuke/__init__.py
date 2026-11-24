@@ -1,6 +1,7 @@
 """Thin Nuke adapter for the host-independent Kyven engine."""
 
 from kyven_nuke.dlss_node import create_dlss_node, repair_dlss_nodes, upgrade_selected_dlss_node
+from kyven_nuke.generative_fill_node import create_generative_fill_node
 from kyven_nuke.inpaint_node import create_inpaint_node, upgrade_selected_inpaint_node
 from kyven_nuke.live import update_live_nodes
 from kyven_nuke.model_manager import show_model_manager
@@ -15,6 +16,7 @@ from kyven_nuke.refine_node import create_refine_node, upgrade_selected_refine_n
 
 __all__ = [
     "create_dlss_node",
+    "create_generative_fill_node",
     "create_inpaint_node",
     "create_refine_node",
     "create_segment_node",

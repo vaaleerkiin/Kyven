@@ -96,6 +96,12 @@ class NukeKyvenClient:
             )["job_id"]
         )
 
+    def submit_generative_fill(self, payload):
+        return str(self._request("POST", "/v1/jobs/generative-fill", payload)["job_id"])
+
+    def submit_prompt_enhance(self, payload):
+        return str(self._request("POST", "/v1/jobs/prompt-enhance", payload)["job_id"])
+
     def preview_trimap(self, payload):
         return self._request("POST", "/v1/preview/trimap", payload, timeout_seconds=60.0)
 

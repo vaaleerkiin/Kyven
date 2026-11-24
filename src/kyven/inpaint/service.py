@@ -6,6 +6,7 @@ import os
 import tempfile
 from dataclasses import replace
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -19,6 +20,9 @@ from kyven.inpaint.models import InpaintRequest, InpaintResult
 from kyven.segment.output import write_mask_png_atomic
 from kyven.segment.providers.registry import ProviderRegistry
 from kyven.segment.roi import ResolvedRegion, resolve_region
+
+if TYPE_CHECKING:
+    from kyven.generative_fill.models import EnhancePromptRequest
 
 
 def _write_rgb_atomic(path: Path, pixels: np.ndarray) -> None:
@@ -122,6 +126,13 @@ class InpaintService:
     def __init__(self, registry: ProviderRegistry) -> None:
         self._registry = registry
 
+    def enhance_prompt(self, request: EnhancePromptRequest,
+                       cancellation: CancellationToken) -> dict[str, Any]:
+        """Use the same scheduled provider as Generative Fill, without loading it in the host."""
+        from kyven.generative_fill.models import PROVIDER_ID
+        cancellation.raise_if_cancelled()
+        return self._registry.activate(PROVIDER_ID).enhance(request, cancellation)
+
     def run(self, request: InpaintRequest, cancellation: CancellationToken | None = None) -> InpaintResult:
         request.validate()
         token = cancellation or CancellationToken()
@@ -137,6 +148,7 @@ class InpaintService:
             raise KyvenError(ErrorCode.INVALID_REQUEST, "Source and inpaint mask dimensions must match.")
         source_pixels = np.asarray(source, dtype=np.uint8)
         mask_pixels = np.asarray(mask, dtype=np.uint8)
+        strict_mask = bool(getattr(request, "preserve_input_mask", False))
         if request.model_mask is not None:
             with Image.open(request.model_mask) as model_mask_file:
                 model_mask = model_mask_file.convert("L")
@@ -165,6 +177,19 @@ class InpaintService:
             )
             if request.preprocess_mask:
                 merge_full = inference_full.copy()
+        if strict_mask:
+            # Generative Fill may grow the inference mask to improve context,
+            # but the artist's mask remains the only permission to change RGB.
+            interpreted = 255 - mask_pixels if request.invert_mask else mask_pixels.copy()
+            cutoff = round(request.mask_threshold * 255.0)
+            merge_full = np.where(interpreted >= max(1, cutoff), interpreted, 0).astype(np.uint8)
+            inference_full = np.maximum(
+                inference_full, np.where(merge_full > 0, 255, 0).astype(np.uint8))
+            if request.fill.mask_overlap:
+                # Generate beyond the permission edge so the model's transition
+                # and VAE fringe do not land on the final compositing boundary.
+                inference_full = np.asarray(Image.fromarray(inference_full).filter(
+                    ImageFilter.MaxFilter(2 * request.fill.mask_overlap + 1))).copy()
         if not np.any(inference_full):
             _write_rgb_atomic(request.output, source_pixels)
             if request.patch_output is not None:
@@ -190,7 +215,7 @@ class InpaintService:
             assert region is not None
         crop_box = (region.x0, region.y0, region.x1, region.y1)
         source_crop = source.crop(crop_box)
-        if request.model_mask is not None:
+        if request.model_mask is not None or strict_mask:
             inference_mask = inference_full[region.y0 : region.y1, region.x0 : region.x1]
             merge_crop_pixels = merge_full[region.y0 : region.y1, region.x0 : region.x1]
         else:
@@ -249,6 +274,7 @@ class InpaintService:
                 token,
             )
         predicted = np.asarray(prediction.rgb)
+        token.raise_if_cancelled()
         expected = (region.height, region.width, 3)
         if predicted.shape != expected:
             raise KyvenError(ErrorCode.INFERENCE_FAILED, "The inpaint provider returned an invalid image size.", technical_detail=f"Expected {expected}, received {predicted.shape}.")
@@ -258,14 +284,37 @@ class InpaintService:
         predicted = np.clip(predicted, 0, 255).astype(np.uint8)
 
         original_crop = source_pixels[region.y0 : region.y1, region.x0 : region.x1]
+        color_matching = {}
+        seamless = {"applied": False}
+        if strict_mask:
+            from kyven.generative_fill.color_match import match_context
+            mode = request.fill.color_match_mode
+            strength = request.fill.color_match if mode != "off" else 0.0
+            background = (mode == "background" or (mode == "auto" and
+                          prediction.metadata.get("edit_operation") == "remove"))
+            predicted, color_matching = match_context(
+                predicted, original_crop, inference_mask,
+                strength=strength, background=background)
+            color_matching.update(mode=mode, strength=strength)
+            blend_mode = request.fill.seamless_blend
+            if (blend_mode == "on" or (blend_mode == "auto" and
+                    prediction.metadata.get("edit_operation") == "remove")) and hasattr(provider, "stitch"):
+                token.report_progress(0.92, "Matching the patch to the original boundary")
+                predicted, seamless = provider.stitch(predicted, original_crop,
+                    np.where(merge_crop_pixels > 0, 255, 0).astype(np.uint8), token)
         predicted, color_offset = _match_patch_color(
             predicted,
             original_crop,
             inference_mask,
-            request.edge_color_match,
-            match_boundary=True,
+            request.edge_color_match if not strict_mask else 0.0,
+            match_boundary=not strict_mask,
         )
-        if not request.preprocess_mask:
+        if strict_mask:
+            support = np.where(merge_crop_pixels > 0, 255, 0).astype(np.uint8)
+            alpha = ((merge_crop_pixels.astype(np.float32) / 255.0)[..., None]
+                     * (1.0 if seamless.get("applied") else
+                        _inward_feather_alpha(support, request.edge_softness)))
+        elif not request.preprocess_mask:
             alpha = (merge_crop_pixels.astype(np.float32) / 255.0)[..., None]
         else:
             alpha = _inward_feather_alpha(merge_crop_pixels, request.edge_softness)
@@ -280,7 +329,7 @@ class InpaintService:
         # pixels into the full-format patch.
         full_patch = source_pixels.copy()
         patch_crop = full_patch[region.y0 : region.y1, region.x0 : region.x1]
-        generated_pixels = inference_mask >= 128
+        generated_pixels = merge_crop_pixels > 0 if strict_mask else inference_mask >= 128
         patch_crop[generated_pixels] = predicted[generated_pixels]
         if request.patch_output is not None:
             _write_rgb_atomic(request.patch_output, full_patch)
@@ -291,6 +340,9 @@ class InpaintService:
         _write_rgb_atomic(request.output, output)
         token.report_progress(1.0, "Inpaint complete")
         metadata = dict(prediction.metadata)
+        if strict_mask:
+            metadata["color_matching"] = color_matching
+            metadata["seamless_blend"] = seamless
         metadata.update({
             "processing_roi": region.metadata(),
             "crop_mode": request.crop_mode,

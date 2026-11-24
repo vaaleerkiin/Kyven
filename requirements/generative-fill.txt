@@ -1,0 +1,12 @@
+# Private optional runtime; do not install into Nuke or the core environment.
+diffusers==0.37.1
+transformers==4.57.6
+accelerate==1.12.0
+gguf==0.19.0
+safetensors==0.7.0
+numpy>=1.26,<3
+Pillow>=10,<13
+scipy>=1.15,<2
+opencv-python-headless==4.14.0.94
+LanPaint @ https://github.com/scraed/LanPaint/archive/2d7912f9a5efe5ece8de334c7ca18317b8288c39.zip
+lanpaint-pipeline @ https://github.com/charrywhite/LanPaint-diffusers/archive/a2f6483acb678ecb0b6268a311d55d6d51f37c4f.zip

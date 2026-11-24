@@ -46,5 +46,26 @@ policy. Permission for Kyven to redistribute that NVIDIA binary has not been ver
 included in the owner-requested preview ZIP/wheel, with its source, exact size and SHA-256 recorded.
 The package does not install the upstream worker, ReShade or RenoDX.
 
+## Optional Generative Fill
+
+FLUX.2 Klein 4B and its VAE, plus the shared Qwen3-4B checkpoint distributed
+by Tongyi-MAI, are Apache-2.0. Their selected files
+and the Unsloth Q4_K_M derivative are pinned by revision, size and SHA-256 in
+`src/kyven/resources/generative_fill/models.json`; weights are not committed.
+
+LanPaint at `2d7912f9a5efe5ece8de334c7ca18317b8288c39` and LanPaint-Diffusers
+at `a2f6483acb678ecb0b6268a311d55d6d51f37c4f` are GPL-3.0:
+[LanPaint](https://github.com/scraed/LanPaint),
+[LanPaint-Diffusers](https://github.com/charrywhite/LanPaint-diffusers).
+The optional worker `src/kyven/resources/generative_fill/worker.py` is explicitly
+GPL-3.0-only and its complete source and license ship together. This exception
+does not relicense the Apache-2.0 transport or Nuke adapter. Redistribution of
+the worker/dependencies must include their required licenses and corresponding
+source. Diffusers, Transformers and Accelerate use Apache-2.0; GGUF uses MIT.
+
 Every future provider must record separate code and model-weight licensing metadata before it
 can be enabled in the default distribution.
+
+Generative Fill seamless compositing uses opencv-python-headless 4.14.0.94 in its
+private worker. Preserve the OpenCV package license and bundled third-party
+notices when redistributing the runtime.

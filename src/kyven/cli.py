@@ -115,6 +115,14 @@ def build_parser() -> argparse.ArgumentParser:
     inpaint.add_argument("--processed-mask-output", type=Path)
     inpaint.add_argument("--processing-size", default=0, type=int)
 
+    fill = subparsers.add_parser("generative-fill", help="FLUX.2 Klein 4B Q4 masked generation")
+    fill.add_argument("--request", required=True, type=Path)
+    _add_runtime_options(fill)
+    enhance = subparsers.add_parser("prompt-enhance", help="Improve text with shared Qwen3-4B weights")
+    enhance.add_argument("--prompt", required=True)
+    enhance.add_argument("--system-prompt", type=Path)
+    _add_runtime_options(enhance)
+
     dlss = subparsers.add_parser("dlss", help="Run optional local DLSS using a JSON request")
     dlss.add_argument("--request", required=True, type=Path)
     dlss.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
@@ -294,6 +302,30 @@ def main(argv: list[str] | None = None) -> int:
                 processing_size=args.processing_size,
             ))
             print(json.dumps({"output": str(result.output), "mask_output": str(result.mask_output) if result.mask_output else None, "cache_key": result.cache_key, "metadata": result.metadata}, indent=2))
+            return 0
+        if args.command == "generative-fill":
+            from kyven.server.jobs import JobManager
+            registry = catalog.registry(args.models_dir, args.device)
+            request = JobManager.generative_fill_request_from_payload(
+                json.loads(args.request.read_text(encoding="utf-8")))
+            try:
+                result = InpaintService(registry).run(request)
+                print(json.dumps({"output": str(result.output), "cache_key": result.cache_key,
+                                  "metadata": result.metadata}, indent=2))
+            finally:
+                registry.unload_all()
+            return 0
+        if args.command == "prompt-enhance":
+            from kyven.cancellation import CancellationToken
+            from kyven.generative_fill.models import DEFAULT_SYSTEM_PROMPT, EnhancePromptRequest
+            registry = catalog.registry(args.models_dir, args.device)
+            request = EnhancePromptRequest(prompt=args.prompt, system_prompt=(
+                args.system_prompt.read_text(encoding="utf-8") if args.system_prompt else DEFAULT_SYSTEM_PROMPT))
+            try:
+                print(json.dumps(InpaintService(registry).enhance_prompt(
+                    request, CancellationToken()), indent=2))
+            finally:
+                registry.unload_all()
             return 0
         if args.command == "models" and args.model_command == "list":
             print(

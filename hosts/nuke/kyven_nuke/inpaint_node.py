@@ -370,17 +370,18 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
 
     nuke = _nuke()
     _ensure_input_order(node)
+    generative_fill = "qwen_system_prompt" in node.knobs()
     if "output_mode" in node.knobs():
         previous = str(node["output_mode"].value())
         node["output_mode"].setValues(list(INPAINT_OUTPUT_MODES))
-        previous = {
+        previous = ({} if generative_fill else {
             "Result": "Result + Mask Alpha",
             "Result + Source Alpha": "Result + Mask Alpha",
             "Patch": "Generated Patch",
             "Model Mask Preview": "Result + Mask Alpha",
             "Processed Mask": "Result + Mask Alpha",
             "Blend Mask": "Result + Mask Alpha",
-        }.get(previous, previous)
+        }).get(previous, previous)
         if previous in INPAINT_OUTPUT_MODES:
             node["output_mode"].setValue(INPAINT_OUTPUT_MODES.index(previous))
     node.begin()
@@ -555,6 +556,9 @@ def _ensure_inpaint_preview_graph(node: Any) -> None:
             output_switch["which"].setExpression(selector)
     finally:
         node.end()
+    if generative_fill:
+        from kyven_nuke.generative_fill_node import _ensure_fill_graph
+        _ensure_fill_graph(node)
 
 
 def _apply(
@@ -579,8 +583,19 @@ def _apply(
         _set_processed_mask(node, processed_mask)
         _set_patch(node, patch)
     metadata = (job.get("result") or {}).get("metadata", {})
+    if (metadata.get("auto_translated") and "prompt" in node.knobs()
+            and str(node["prompt"].value()) == metadata.get("original_prompt")):
+        node["original_prompt"].setValue(metadata["original_prompt"])
+        node["prompt"].setValue(metadata["effective_prompt"])
     roi = metadata.get("processing_roi")
     suffix = f" | crop {roi['width']}x{roi['height']}" if roi else ""
+    working = metadata.get("working_size")
+    if working:
+        suffix += f" | working {working[0]}x{working[1]}"
+    if metadata.get("oom_retried"):
+        suffix += " | reduced after VRAM limit"
+    if metadata.get("auto_translated"):
+        suffix += " | translated to English"
     if metadata.get("cache_hit"):
         suffix += " | cache hit"
     suffix += _job_timing_text(job)
@@ -1364,6 +1379,11 @@ def upgrade_selected_inpaint_node() -> None:
         nuke.message("Select one Kyven Inpaint Group node first.")
         return
     node = selected[0]
+    if "qwen_system_prompt" in node.knobs():
+        from kyven_nuke.generative_fill_node import _ensure_fill_graph
+        _ensure_fill_graph(node)
+        node["kyven_status"].setValue("Generative Fill graph refreshed; settings preserved.")
+        return
     has_inpaint_graph = _inside(node, "KyvenInpaintSourceWrite") is not None
     if not has_inpaint_graph:
         nuke.message("The selected Group is not a Kyven Inpaint node.")

@@ -43,7 +43,7 @@ kyven = "kyven.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-kyven = ["resources/**/*.json", "resources/**/*.yaml", "resources/dlss/**/*"]
+kyven = ["resources/**/*.json", "resources/**/*.yaml", "resources/dlss/**/*", "resources/generative_fill/*"]
 
 [tool.ruff]
 line-length = 100
