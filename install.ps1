@@ -15,6 +15,7 @@ $Requirements = Join-Path $KyvenRoot "requirements\runtime-cu128.txt"
 $ModelsRoot = Join-Path $KyvenRoot "models"
 $RuntimeRoot = Join-Path $KyvenRoot ".runtime"
 $PipCache = Join-Path $RuntimeRoot "pip-cache"
+. (Join-Path $KyvenRoot "scripts\bootstrap_python.ps1")
 
 function Write-Step([string]$Message) {
     Write-Host ""
@@ -30,7 +31,7 @@ function Invoke-Native([string]$Executable, [string[]]$Arguments) {
 
 function Test-Python([string]$Executable, [string[]]$PrefixArguments) {
     try {
-        & $Executable @PrefixArguments -c "import sys; raise SystemExit(0 if (3, 10) <= sys.version_info[:2] < (3, 14) else 1)" 2>$null
+        & $Executable @PrefixArguments -I -c "import sys, struct, venv, ensurepip; raise SystemExit(0 if (3, 10) <= sys.version_info[:2] < (3, 14) and struct.calcsize('P') == 8 else 1)" 2>$null
         return $LASTEXITCODE -eq 0
     }
     catch {
@@ -42,7 +43,7 @@ function Find-BootstrapPython {
     if ($PythonExe) {
         $ResolvedPython = (Resolve-Path -LiteralPath $PythonExe).Path
         if (-not (Test-Python $ResolvedPython @())) {
-            throw "PythonExe must point to Python 3.10-3.13: $ResolvedPython"
+            throw "PythonExe must point to 64-bit Python 3.10-3.13 with venv support: $ResolvedPython"
         }
         return [pscustomobject]@{
             Executable = $ResolvedPython
@@ -50,7 +51,14 @@ function Find-BootstrapPython {
         }
     }
 
+    $ManagedPython = Get-KyvenManagedPythonPath $KyvenRoot
+    if (Test-KyvenManagedPython $ManagedPython) {
+        return [pscustomobject]@{ Executable = $ManagedPython; Prefix = @() }
+    }
+
     $PyLauncher = Get-Command "py.exe" -ErrorAction SilentlyContinue
+    # Windows Store aliases can launch UI or an unrelated system-wide installer.
+    if ($PyLauncher -and $PyLauncher.Source -match '\\Microsoft\\WindowsApps\\') { $PyLauncher = $null }
     foreach ($Version in @("-3.12", "-3.13", "-3.11", "-3.10")) {
         if ($PyLauncher -and (Test-Python $PyLauncher.Source @($Version))) {
             return [pscustomobject]@{
@@ -61,19 +69,17 @@ function Find-BootstrapPython {
     }
 
     $PythonCommand = Get-Command "python.exe" -ErrorAction SilentlyContinue
-    if ($PythonCommand -and (Test-Python $PythonCommand.Source @())) {
+    if ($PythonCommand -and $PythonCommand.Source -notmatch '\\Microsoft\\WindowsApps\\' -and (Test-Python $PythonCommand.Source @())) {
         return [pscustomobject]@{
             Executable = $PythonCommand.Source
             Prefix = @()
         }
     }
 
-    throw @"
-Python 3.10-3.13 was not found.
-Install Python 3.12 from python.org, enable the Python launcher, and run this script again.
-You can also pass an explicit interpreter:
-  .\install.ps1 -PythonExe "C:\Path\To\python.exe"
-"@
+    return [pscustomobject]@{
+        Executable = (Install-KyvenManagedPython $KyvenRoot)
+        Prefix = @()
+    }
 }
 
 function Select-Models {

@@ -25,6 +25,8 @@ validation, inference, cancellation, and atomic output writes. Backend modules m
 Model Manager can read the trusted local catalog before the backend is installed.
 It launches the existing portable base installer and optional component installers
 as external processes; installation and verification must never import Torch into Nuke.
+If no compatible interpreter is available, the base installer downloads a pinned,
+SHA-256-verified standalone Python into `.runtime/python`, without system registration.
 
 Models are selected through a trusted catalog with pinned sources, expected sizes, SHA-256 hashes,
 license metadata, and hardware guidance. Optional runtimes load lazily, and only the active model

@@ -31,7 +31,8 @@ succeed; inspect the generated patch before accepting it.
 
 **Install Required Components** in the manager prepares dependencies without
 weights. The node's **Install Runtime** button uses this same manager installation
-path. Python 3.10–3.13 is required; Python 3.12 is recommended.
+path. A private Python 3.12 is downloaded automatically if no compatible interpreter
+is available; no separate Python installation is needed.
 
 The equivalent optional command-line setup is
 `.venv/Scripts/python.exe scripts/setup_generative_fill.py --download-models`.

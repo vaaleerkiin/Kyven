@@ -9,7 +9,7 @@ administrator access, registry changes, or a system-wide Python environment.
 ## Requirements
 
 - Windows 10 or 11;
-- Python 3.10-3.13 (Python 3.12 preferred);
+- no separate Python installation is needed; a private Python 3.12 is downloaded if necessary;
 - a compatible NVIDIA GPU and driver for practical GPU inference (Segment, Refine and Inpaint support CPU fallback; optional DLSS requires Windows and an NVIDIA RTX GPU);
 - internet access for the first dependency and model download;
 - Foundry Nuke for the current host adapter.
@@ -59,8 +59,8 @@ binaries. A `.cat` file should be about 124 or 244 MiB, not a small text pointer
 
 ### Configure Nuke and install through Model Manager
 
-1. Clone or extract Kyven into its final writable folder. Install Python 3.12
-   (or another supported Python 3.10–3.13 interpreter).
+1. Clone or extract Kyven into its final writable folder. No separate Python
+   installation is required.
 2. Add the plugin path to your `.nuke/init.py`:
 
 ```python
@@ -78,7 +78,11 @@ nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 **Kyven Base Runtime** installs/verifies the common environment. After setup, the
 manager reopens with the full server catalog, including DLSS. **Install Required
 Components** sets up only dependencies for a selected model without downloading
-its weights. Generative Fill installs its separate environment, Klein, Qwen and
+its weights. If no compatible Python is found, setup downloads a pinned standalone
+Python 3.12, verifies its size and SHA-256, and extracts it into `.runtime/python`.
+It does not register Python or modify system PATH. Existing Python 3.10-3.13
+interpreters remain supported, including an explicit `-PythonExe` override.
+Generative Fill installs its separate environment, Klein, Qwen and
 VAE through the same manager; no separate node setup or console command is required.
 
 Replace `D:/Kyven` with the actual repository location. Kyven discovers its root
@@ -113,6 +117,7 @@ For deployment, ship the complete plugin folder with its models and license;
 
 | Path | Contents |
 | --- | --- |
+| `.runtime/python/` | Automatically downloaded private Python, verified archive and bundled licenses |
 | `.venv/` | Private Python, PyTorch, SAM 2, ViTMatte, and ONNX Runtime |
 | `models/` | Selected checkpoints verified by size and SHA-256 |
 | `.runtime/pip-cache/` | Reusable installer download cache |

@@ -56,9 +56,9 @@ nuke.pluginAddPath("D:/Kyven/hosts/nuke")
 
 3. Restart Nuke and open **Nodes > Kyven > Model Manager**.
 4. Select a model and **Install Selected**. The manager installs the base runtime,
-   required components and model weights automatically. Python 3.10–3.13 must be
-   available; Python 3.12 is recommended. **Install Required Components** installs
-   just the dependencies without downloading weights.
+   required components and model weights automatically. If no compatible Python
+   is available, it downloads a private Python 3.12 into the Kyven folder.
+   **Install Required Components** installs just the dependencies without downloading weights.
 5. Create a node, choose **Cache Folder**, enter its **Name** and **Version**, then process.
 
 `install.cmd` remains available for installation outside Nuke; choice **12** sets

@@ -103,7 +103,7 @@ def show_model_manager():
     panel.addNotepad(
         "Safety",
         ("Server setup is not complete. Installing a model also installs its required components. "
-         "Python 3.10-3.13 must be available. DLSS appears after base setup.\n\n" if not server_ready else "") +
+         "A private Python is downloaded automatically if needed. DLSS appears after base setup.\n\n" if not server_ready else "") +
         "Downloads come only from the trusted Kyven catalog. Single-file models are verified "
         "by exact size and SHA-256; repository models are pinned to an audited revision. "
         "Required model runtimes are installed automatically into Kyven's private environment. "
