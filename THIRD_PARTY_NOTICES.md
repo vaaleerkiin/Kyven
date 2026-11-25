@@ -1,5 +1,12 @@
 # Third-party notices
 
+The optional native Z-Image Inpaint backend uses Apache-2.0 Z-Image Base,
+Unsloth's Apache-2.0 Q4 GGUF conversion, and Alibaba-PAI's Apache-2.0
+Z-Image Fun ControlNet Union 2.1 Lite. It loads the compatible 16-channel Z-Image
+VAE and Qwen3-4B from pinned upstream artifacts. Inference uses the Apache-2.0
+Diffusers library in an isolated process; Kyven's optional worker remains
+separately GPL-3.0. See [sources and verification](docs/ZIMAGE_INPAINT.md).
+
 Kyven's server model weights are downloaded separately. The standalone WAFT
 Cattery models are included in the repository through Git LFS.
 

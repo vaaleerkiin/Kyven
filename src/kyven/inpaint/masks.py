@@ -24,6 +24,24 @@ def grow_mask(mask: NDArray[np.uint8], radius: int) -> NDArray[np.uint8]:
     return np.asarray(filtered, dtype=np.uint8)
 
 
+def expand_binary_mask(mask: NDArray[np.uint8], radius: int) -> NDArray[np.uint8]:
+    """Square dilation in linear time, without a large quadratic Pillow filter."""
+    selected = np.asarray(mask) > 0
+    if radius <= 0:
+        return selected.astype(np.uint8) * 255
+    width = 2 * radius + 1
+    for axis in (1, 0):
+        padding = [(0, 0), (0, 0)]
+        padding[axis] = (radius, radius)
+        counts = np.cumsum(np.pad(selected, padding), axis=axis, dtype=np.int32)
+        padding[axis] = (1, 0)
+        counts = np.pad(counts, padding)
+        lower, upper = [slice(None)] * 2, [slice(None)] * 2
+        lower[axis], upper[axis] = slice(None, -width), slice(width, None)
+        selected = counts[tuple(upper)] > counts[tuple(lower)]
+    return selected.astype(np.uint8) * 255
+
+
 def prepare_inpaint_masks(
     mask: NDArray[np.uint8],
     *,

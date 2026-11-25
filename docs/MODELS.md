@@ -47,11 +47,12 @@ checkpoint. No separate installer step is required.
 
 ## Commands
 
-Experimental [MOSS Generative Fill](MOSS_FILL.md) is also available in the trusted
-catalog as `moss-sft-int8-edit-lanpaint`, alongside the default Klein bundle.
-Its complete ready-quantized bundle is 13.32 GB. The base is Apache-2.0; commercial
-permission for the separate Edit weights is unconfirmed and the entry is opt-in.
-Both runtime components and weights install through Model Manager.
+[Native Z-Image Inpaint](ZIMAGE_INPAINT.md) is an optional preview in the trusted
+catalog as `z-image-base-q4-control-inpaint`. Its complete pinned bundle is
+14.10 GB, with Apache-2.0 model weights. Both runtime and weights install through
+Model Manager. Visual integration remains inconsistent; Klein stays the default.
+The old MOSS entry remains for managing legacy installations; its separate Edit
+weights still have unconfirmed commercial permission.
 
 ```text
 kyven models list --models-dir models

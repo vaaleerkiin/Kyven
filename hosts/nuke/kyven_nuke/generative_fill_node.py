@@ -20,28 +20,54 @@ from kyven_nuke.node import (
 from kyven_nuke.runtime import ensure_server
 
 PROVIDER_ID = "flux2-klein-4b-q4-lanpaint"
-MODEL_IDS = (PROVIDER_ID, "moss-sft-int8-edit-lanpaint")
-MODEL_LABELS = ("FLUX.2 Klein 4B Q4 + LanPaint", "MOSS SFT INT8 + Edit + LanPaint (Experimental)")
+MODEL_IDS = (PROVIDER_ID, "z-image-base-q4-control-inpaint")
+MODEL_LABELS = ("FLUX.2 Klein 4B Q4 + LanPaint", "Z-Image Base Q4 + Native ControlNet Inpaint (Preview)")
 
 
 def _model_id(node: Any) -> str:
-    return MODEL_IDS[1] if str(node["model"].value()) == MODEL_LABELS[1] else PROVIDER_ID
+    selected = str(node["model"].value())
+    return MODEL_IDS[1] if selected.startswith("Z-Image Base") or "MOSS" in selected else PROVIDER_ID
+
+
+def _sync_model_controls(node: Any) -> None:
+    native = _model_id(node) != PROVIDER_ID
+    for name in ("thinking_steps", "lanpaint_early_stop", "lanpaint_step_size", "lanpaint_friction", "lanpaint_strength", "lanpaint_beta", "vae_tile_size"):
+        if name in node.knobs():
+            node[name].setEnabled(not native)
+    for name in ("zimage_guidance", "zimage_control_scale", "zimage_negative_prompt"):
+        if name in node.knobs():
+            node[name].setEnabled(native)
+    if "model_help" in node.knobs():
+        node["model_help"].setValue(
+            "Preview: visual integration is inconsistent. Trained image/mask conditioning at every diffusion step. Qwen prepares English target captions. Start at 768 / 28 steps; inference overlap 64."
+            if native else "Qwen3-4B encodes and improves text in RAM. Generation uses the GPU in separate stages.")
 
 
 def _ensure_model_control(node: Any) -> None:
     if "model" not in node.knobs():
         return
-    if "moss_guidance" not in node.knobs():
-        knob = _nuke().Double_Knob("moss_guidance", "MOSS Guidance")
-        knob.setRange(1, 10)
-        knob.setValue(4.0)
-        node.addKnob(knob)
+    if "moss_guidance" in node.knobs():
+        node["moss_guidance"].setVisible(False)
+    for name, label, default, low, high in (
+        ("zimage_guidance", "Native Inpaint Guidance", 3.0, 1.0, 10.0),
+        ("zimage_control_scale", "Inpaint Context Strength", 0.9, 0.0, 2.0),
+    ):
+        if name not in node.knobs():
+            knob = _nuke().Double_Knob(name, label)
+            knob.setRange(low, high)
+            knob.setValue(default)
+            node.addKnob(knob)
+            if "steps" in node.knobs():
+                _place_knob_after(node, name, "steps")
+    if "zimage_negative_prompt" not in node.knobs():
+        node.addKnob(_nuke().String_Knob("zimage_negative_prompt", "Native Negative Prompt"))
         if "steps" in node.knobs():
-            _place_knob_after(node, "moss_guidance", "steps")
+            _place_knob_after(node, "zimage_negative_prompt", "steps")
     selected = str(node["model"].value())
     try:
         if tuple(node["model"].values()) == MODEL_LABELS:
             node["model"].setEnabled(True)
+            _sync_model_controls(node)
             return
     except (AttributeError, TypeError):
         pass
@@ -51,11 +77,17 @@ def _ensure_model_control(node: Any) -> None:
         if callback is not None:
             callback.setValue("")
         node["model"].setValues(list(MODEL_LABELS))
-        node["model"].setValue(1 if selected == MODEL_LABELS[1] else 0)
+        retired = "MOSS" in selected
+        node["model"].setValue(1 if selected.startswith("Z-Image Base") or retired else 0)
         node["model"].setEnabled(True)
+        if retired:
+            node["steps"].setValue(28)
+            node["working_size"].setValue(768)
+            node["fill_mask_overlap"].setValue(64)
     finally:
         if callback is not None:
             callback.setValue(script)
+    _sync_model_controls(node)
 
 
 def _payload(node: Any, *args: Any) -> dict[str, Any]:
@@ -80,6 +112,9 @@ def _payload(node: Any, *args: Any) -> dict[str, Any]:
         "mask_overlap": int(node["fill_mask_overlap"].value()) if "fill_mask_overlap" in node.knobs() else 32,
         "seamless_blend": str(node["fill_seamless_blend"].value()).lower() if "fill_seamless_blend" in node.knobs() else "auto",
         "moss_guidance": float(node["moss_guidance"].value()) if "moss_guidance" in node.knobs() else 4.0,
+        "zimage_guidance": float(node["zimage_guidance"].value()) if "zimage_guidance" in node.knobs() else 3.0,
+        "zimage_control_scale": float(node["zimage_control_scale"].value()) if "zimage_control_scale" in node.knobs() else 0.9,
+        "zimage_negative_prompt": str(node["zimage_negative_prompt"].value()) if "zimage_negative_prompt" in node.knobs() else "",
     }
     return payload
 
@@ -195,11 +230,12 @@ def knob_changed() -> None:
     node = nuke.thisNode()
     knob = nuke.thisKnob().name()
     if knob == "model":
-        moss = _model_id(node) != PROVIDER_ID
-        node["steps"].setValue(20 if moss else 4)
-        node["model_help"].setValue(
-            "Experimental MOSS Edit: latent-mask sampling; removal seams are not production-qualified. Edit weights license unresolved. Qwen3.5 W4A8 runs in RAM."
-            if moss else "Qwen3-4B encodes and improves text in RAM. Generation uses the GPU in separate stages.")
+        native = _model_id(node) != PROVIDER_ID
+        node["steps"].setValue(28 if native else 4)
+        if native:
+            node["working_size"].setValue(768)
+        node["fill_mask_overlap"].setValue(64 if native else 32)
+        _sync_model_controls(node)
     if knob in {"inputChange", "crop_mode", "processing_roi"}:
         from kyven_nuke.node import _clamp_bbox_knob
         _clamp_bbox_knob(node, "processing_roi", inpaint_node.SOURCE_INPUT)
@@ -268,7 +304,7 @@ def create_generative_fill_node() -> Any:
     node["knobChanged"].setValue("")
     node.setName("KyvenGenerativeFill")
     node["kyven"].setLabel("Generative Fill")
-    node["kyven_title"].setValue('<font size="5"><b>KYVEN / GENERATIVE FILL</b></font><br>FLUX.2 Klein / MOSS Edit + LanPaint')
+    node["kyven_title"].setValue('<font size="5"><b>KYVEN / GENERATIVE FILL</b></font><br>FLUX.2 Klein / Z-Image Native Inpaint')
     node["model"].setValues(list(MODEL_LABELS))
     node["model"].setValue(0)
     node["model"].setEnabled(True)
@@ -317,7 +353,7 @@ def create_generative_fill_node() -> Any:
     for name, label, default, low, high, tip in (
         ("working_size", "Working Size", 768, 256, 1024, "Maximum crop side before grid padding. Start at 768 on 8 GB; 512 uses less memory."),
         ("fill_mask_overlap", "Generation Overlap", 32, 0, 128, "Source pixels generated beyond the artist mask to keep model transitions away from the compositing boundary. Output remains limited to the original mask."),
-        ("steps", "Diffusion Steps", 4, 2, 30, "Klein distilled normally uses 4 scheduler steps. More steps cost time."),
+        ("steps", "Diffusion Steps", 4, 2, 50, "Klein normally uses 4 steps; Z-Image Base starts at 28. More steps cost time."),
         ("thinking_steps", "LanPaint Thinking Steps", 2, 1, 8, "Extra conditional sampling iterations. More improves some edits but increases generation time."),
         ("lanpaint_early_stop", "Early Stop", 1, 0, 29, "Skip thinking iterations during this many final diffusion steps. Must be smaller than Diffusion Steps."),
         ("vae_tile_size", "VAE Tile Size", 256, 128, 512, "Smaller decode tiles reduce temporary GPU memory."),
@@ -333,7 +369,8 @@ def create_generative_fill_node() -> Any:
     retry.setTooltip("Retry once with a smaller working crop. The original output mask stays unchanged.")
     _add_knob(nuke, node, retry)
     for name, label, default, low, high in (
-        ("moss_guidance", "MOSS Guidance", 4.0, 1.0, 10.0),
+        ("zimage_guidance", "Native Inpaint Guidance", 3.0, 1.0, 10.0),
+        ("zimage_control_scale", "Inpaint Context Strength", 0.9, 0.0, 2.0),
         ("lanpaint_step_size", "Langevin Step Size", 0.2, 0.001, 1),
         ("lanpaint_friction", "Friction", 15, 0.1, 50),
         ("lanpaint_strength", "Constraint Strength", 8, 0.1, 32),
@@ -342,8 +379,12 @@ def create_generative_fill_node() -> Any:
         knob = nuke.Double_Knob(name, label)
         knob.setRange(low, high)
         knob.setValue(default)
-        knob.setTooltip("Advanced LanPaint solver parameter. Restore defaults if the result becomes unstable.")
+        knob.setTooltip("Guidance/conditioning for native Inpaint." if name.startswith("zimage_") else
+                        "Advanced LanPaint solver parameter. Restore defaults if the result becomes unstable.")
         _add_knob(nuke, node, knob)
+    negative = nuke.String_Knob("zimage_negative_prompt", "Native Negative Prompt")
+    negative.setTooltip("Extra content to avoid in native Inpaint. Non-English text is translated automatically.")
+    _add_knob(nuke, node, negative)
     for name in ("profile", "mask_threshold", "mask_grow", "edge_softness", "edge_color_match"):
         knob = node[name]
         node.removeKnob(knob)
@@ -363,7 +404,7 @@ def create_generative_fill_node() -> Any:
     strength.setValue(1)
     _add_knob(nuke, node, strength)
     stitch = nuke.Enumeration_Knob("fill_seamless_blend", "Seamless Blend", ["Auto", "On", "Off"])
-    stitch.setTooltip("Auto solves color and gradient continuity for removals. On also applies it to additions/replacements and may change their colors. Off keeps standard masked compositing.")
+    stitch.setTooltip("Auto matches removal patches and all Native Inpaint edits to the boundary. On also applies this to Klein additions/replacements and may change their colors. Off keeps standard masked compositing.")
     _add_knob(nuke, node, stitch)
     _add_section(nuke, node, "qwen_section", "QWEN PROMPT IMPROVEMENT")
     system = nuke.Multiline_Eval_String_Knob("qwen_system_prompt", "System Prompt")

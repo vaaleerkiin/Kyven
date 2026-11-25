@@ -4,10 +4,12 @@
 inputs, local FLUX.2 Klein 4B Q4_K_M generation and LanPaint. It has no ComfyUI
 dependency and uses no remote inference service.
 
-The same node also offers **MOSS SFT INT8 + Edit + LanPaint (Experimental)**.
-Select it in **Model**, then install its bundle through **Model Manager**.
-Klein remains the default and retains its own environment. See
-[experimental MOSS setup and limitations](MOSS_FILL.md).
+The same node also offers **Z-Image Base Q4 + Native ControlNet Inpaint (Preview)**.
+Install its bundle through **Model Manager**. Its trained mask condition participates
+in diffusion. Visual qualification still shows texture, silhouette and integration
+artifacts; Klein remains the default. See [native Inpaint setup and measured
+limitations](ZIMAGE_INPAINT.md). MOSS is retired from the node selector; existing
+files remain manageable in the catalog.
 
 ## Model choice and edit instructions
 

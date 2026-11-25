@@ -49,3 +49,22 @@ attention; LanPaint constrains known source latents during denoising, and the
 existing composite separately enforces the final artist permission mask.
 The adapter's weights license is unspecified, so commercial permission is not
 claimed. This additive experiment is documented in [MOSS_FILL](../MOSS_FILL.md).
+
+## Native masked backend: Z-Image Base Q4, 2026-11-25
+
+After the MOSS experiment the owner requested trained inpainting with the mask
+participating in generation. Use the Apache-2.0 Z-Image Base 6B Q4 and Fun
+ControlNet Union 2.1 Lite. Its learned 33-channel condition contains a known mask
+and masked-source latents at every denoiser step. Follow the native learned
+conditioning loop without the extra source-latent projection tested initially. This is distinct from a final
+RGB-only crop composite. The native Nuke permission graph remains unchanged.
+
+Use another isolated optional runtime to retain core/Klein dependency pins.
+Bound GPU block residency, stage VAE/text/image models, run CFG sequentially and
+keep one smaller OOM retry. Verified identical files may be shared via immutable
+hard links. MOSS is retired from normal selection while its legacy catalog and
+files remain manageable. See [ZIMAGE_INPAINT](../ZIMAGE_INPAINT.md).
+
+Local visual qualification remains inconsistent (texture artifacts, silhouettes and
+unwanted addition backdrops), so the native backend is labeled Preview. Passing
+mask/pixel preservation and memory checks does not promote it over default Klein.

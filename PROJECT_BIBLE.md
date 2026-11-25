@@ -54,3 +54,8 @@ The owner also authorized an experimental MOSS SFT INT8 + Edit backend on
 2026-11-25. It has a separate pinned runtime and quantized model bundle, keeps
 Klein available, and constrains known latents throughout LanPaint sampling.
 Its Edit adapter's commercial licensing remains unconfirmed. See [MOSS](docs/MOSS_FILL.md).
+
+The owner subsequently retired MOSS from normal node selection and authorized
+Z-Image Base Q4 with learned ControlNet Union 2.1 Lite inpainting. Its separate
+worker uses trained image/mask conditioning during sampling; strict original output alpha and Klein remain available. See
+[Native Inpaint](docs/ZIMAGE_INPAINT.md).

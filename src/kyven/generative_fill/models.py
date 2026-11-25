@@ -11,7 +11,8 @@ from kyven.inpaint.models import InpaintRequest
 
 PROVIDER_ID = "flux2-klein-4b-q4-lanpaint"
 MOSS_PROVIDER_ID = "moss-sft-int8-edit-lanpaint"
-FILL_PROVIDERS = (PROVIDER_ID, MOSS_PROVIDER_ID)
+ZIMAGE_PROVIDER_ID = "z-image-base-q4-control-inpaint"
+FILL_PROVIDERS = (PROVIDER_ID, MOSS_PROVIDER_ID, ZIMAGE_PROVIDER_ID)
 from kyven.generative_fill.prompts import DEFAULT_SYSTEM_PROMPT
 
 
@@ -39,13 +40,18 @@ class FillSettings:
     mask_overlap: int = 32
     seamless_blend: str = "auto"
     moss_guidance: float = 4.0
+    zimage_guidance: float = 3.0
+    zimage_control_scale: float = 0.9
+    zimage_negative_prompt: str = ""
 
     def validate(self) -> None:
         if not isinstance(self.prompt, str) or not self.prompt.strip() or len(self.prompt) > 16000:
             _invalid("Enter a prompt of 1 to 16000 characters.")
+        if not isinstance(self.zimage_negative_prompt, str) or len(self.zimage_negative_prompt) > 4000:
+            _invalid("Native Inpaint negative prompt must contain at most 4000 characters.")
         for name, low, high in (
             ("mask_overlap", 0, 128),
-            ("seed", 0, 2**32 - 1), ("steps", 2, 30), ("working_size", 256, 1024),
+            ("seed", 0, 2**32 - 1), ("steps", 2, 50), ("working_size", 256, 1024),
             ("thinking_steps", 1, 8), ("early_stop", 0, 30),
             ("vae_tile_size", 128, 512), ("timeout_seconds", 30, 7200),
         ):
@@ -54,6 +60,7 @@ class FillSettings:
                 _invalid(f"{name} must be an integer between {low} and {high}.")
         for name, low, high in (
             ("moss_guidance", 1.0, 10.0),
+            ("zimage_guidance", 1.0, 10.0), ("zimage_control_scale", 0.0, 2.0),
             ("color_match", 0.0, 1.0),
             ("step_size", 0.001, 1.0), ("friction", 0.1, 50.0),
             ("strength", 0.1, 32.0), ("beta", 0.01, 4.0),
@@ -104,6 +111,12 @@ class GenerativeFillRequest(InpaintRequest):
         settings = asdict(self.fill)
         if self.provider_id == PROVIDER_ID:
             settings.pop("moss_guidance")
+        if self.provider_id != ZIMAGE_PROVIDER_ID:
+            for name in ("zimage_guidance", "zimage_control_scale", "zimage_negative_prompt"):
+                settings.pop(name)
+        else:
+            for name in ("moss_guidance", "thinking_steps", "step_size", "friction", "strength", "beta", "early_stop", "vae_tile_size"):
+                settings.pop(name)
         return {**InpaintRequest.canonical(self), "fill": settings,
                 "preserve_input_mask": True}
 

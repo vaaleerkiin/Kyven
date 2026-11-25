@@ -1,5 +1,11 @@
 # Experimental MOSS Generative Fill
 
+**Retired from the Nuke selector.** The owner chose to stop developing this
+experiment after the same-frame quality comparison. Existing files and the legacy
+catalog entry remain available for managing old installations. Current Groups
+offer Klein and [Z-Image Native Inpaint](ZIMAGE_INPAINT.md); refreshing an old MOSS
+Group migrates it to native Z-Image. The measurements below are historical.
+
 MOSS is an additional backend in the existing native Nuke Generative Fill Group.
 FLUX.2 Klein remains available and remains the default for existing and new nodes.
 The MOSS backend uses a standalone worker; it requires no ComfyUI installation or

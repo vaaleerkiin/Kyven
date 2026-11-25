@@ -96,7 +96,7 @@ function Select-Models {
         [pscustomobject]@{ Number = "9"; Id = "mematte-vits-aim500"; Label = "MEMatte ViT-S"; Guidance = "memory-efficient high-resolution refinement, 4 GB+" },
         [pscustomobject]@{ Number = "10"; Id = "mematte-vitb-composition-1k"; Label = "MEMatte ViT-B"; Guidance = "quality high-resolution refinement, 8 GB+" },
         [pscustomobject]@{ Number = "12"; Id = "flux2-klein-4b-q4-lanpaint"; Label = "Generative Fill - Klein 4B Q4"; Guidance = "8 GB GPU / 32 GB RAM, optional runtime + 10.83 GB models" },
-        [pscustomobject]@{ Number = "13"; Id = "moss-sft-int8-edit-lanpaint"; Label = "Generative Fill - MOSS INT8 + Edit (Experimental)"; Guidance = "8 GB GPU / 32 GB RAM, 13.32 GB models; Edit weights license unresolved" },
+        [pscustomobject]@{ Number = "13"; Id = "z-image-base-q4-control-inpaint"; Label = "Generative Fill - Z-Image Base Q4 Native Inpaint (Preview)"; Guidance = "8 GB GPU target / 32 GB RAM, 14.10 GB bundle; shared weights are reused" },
         [pscustomobject]@{ Number = "0"; Id = "none"; Label = "No model"; Guidance = "install runtime only" }
     )
 
@@ -148,7 +148,8 @@ function Resolve-RequestedModels([string[]]$RequestedModels) {
         "mematte-vits-aim500",
         "mematte-vitb-composition-1k",
         "flux2-klein-4b-q4-lanpaint",
-        "moss-sft-int8-edit-lanpaint"
+        "moss-sft-int8-edit-lanpaint",
+        "z-image-base-q4-control-inpaint"
     )
     if (-not $RequestedModels -or $RequestedModels.Count -eq 0) {
         return @(Select-Models)
@@ -264,6 +265,10 @@ try {
         if ($SelectedModel -eq "moss-sft-int8-edit-lanpaint") {
             Write-Step "Installing the experimental private MOSS runtime (Edit weights license unresolved)"
             Invoke-Native $VenvPython @("-I", (Join-Path $KyvenRoot "scripts\setup_moss_fill.py"))
+        }
+        if ($SelectedModel -eq "z-image-base-q4-control-inpaint") {
+            Write-Step "Installing the private native Z-Image Inpaint runtime"
+            Invoke-Native $VenvPython @("-I", (Join-Path $KyvenRoot "scripts\setup_zimage_fill.py"))
         }
         Write-Step "Downloading and verifying $SelectedModel"
         Invoke-Native $VenvPython @(
