@@ -96,6 +96,7 @@ function Select-Models {
         [pscustomobject]@{ Number = "9"; Id = "mematte-vits-aim500"; Label = "MEMatte ViT-S"; Guidance = "memory-efficient high-resolution refinement, 4 GB+" },
         [pscustomobject]@{ Number = "10"; Id = "mematte-vitb-composition-1k"; Label = "MEMatte ViT-B"; Guidance = "quality high-resolution refinement, 8 GB+" },
         [pscustomobject]@{ Number = "12"; Id = "flux2-klein-4b-q4-lanpaint"; Label = "Generative Fill - Klein 4B Q4"; Guidance = "8 GB GPU / 32 GB RAM, optional runtime + 10.83 GB models" },
+        [pscustomobject]@{ Number = "13"; Id = "moss-sft-int8-edit-lanpaint"; Label = "Generative Fill - MOSS INT8 + Edit (Experimental)"; Guidance = "8 GB GPU / 32 GB RAM, 13.32 GB models; Edit weights license unresolved" },
         [pscustomobject]@{ Number = "0"; Id = "none"; Label = "No model"; Guidance = "install runtime only" }
     )
 
@@ -117,7 +118,7 @@ function Select-Models {
         }
         $Match = $Choices | Where-Object Number -eq $Part
         if (-not $Match) {
-            throw "Unknown model choice '$Part'. Run the installer again and enter 0-12."
+            throw "Unknown model choice '$Part'. Run the installer again and enter 0-13."
         }
         if ($Match.Id -eq "none") {
             $AnswerParts = @($Answer -split "[,; ]+" | Where-Object { $_ })
@@ -146,7 +147,8 @@ function Resolve-RequestedModels([string[]]$RequestedModels) {
         "vitmatte-base-distinctions-646",
         "mematte-vits-aim500",
         "mematte-vitb-composition-1k",
-        "flux2-klein-4b-q4-lanpaint"
+        "flux2-klein-4b-q4-lanpaint",
+        "moss-sft-int8-edit-lanpaint"
     )
     if (-not $RequestedModels -or $RequestedModels.Count -eq 0) {
         return @(Select-Models)
@@ -258,6 +260,10 @@ try {
         if ($SelectedModel -eq "flux2-klein-4b-q4-lanpaint") {
             Write-Step "Installing the private Generative Fill runtime"
             Invoke-Native $VenvPython @("-I", (Join-Path $KyvenRoot "scripts\setup_generative_fill.py"))
+        }
+        if ($SelectedModel -eq "moss-sft-int8-edit-lanpaint") {
+            Write-Step "Installing the experimental private MOSS runtime (Edit weights license unresolved)"
+            Invoke-Native $VenvPython @("-I", (Join-Path $KyvenRoot "scripts\setup_moss_fill.py"))
         }
         Write-Step "Downloading and verifying $SelectedModel"
         Invoke-Native $VenvPython @(

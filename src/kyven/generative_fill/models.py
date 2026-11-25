@@ -10,6 +10,8 @@ from kyven.errors import ErrorCode, KyvenError
 from kyven.inpaint.models import InpaintRequest
 
 PROVIDER_ID = "flux2-klein-4b-q4-lanpaint"
+MOSS_PROVIDER_ID = "moss-sft-int8-edit-lanpaint"
+FILL_PROVIDERS = (PROVIDER_ID, MOSS_PROVIDER_ID)
 from kyven.generative_fill.prompts import DEFAULT_SYSTEM_PROMPT
 
 
@@ -36,6 +38,7 @@ class FillSettings:
     color_match_mode: str = "auto"
     mask_overlap: int = 32
     seamless_blend: str = "auto"
+    moss_guidance: float = 4.0
 
     def validate(self) -> None:
         if not isinstance(self.prompt, str) or not self.prompt.strip() or len(self.prompt) > 16000:
@@ -50,6 +53,7 @@ class FillSettings:
             if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
                 _invalid(f"{name} must be an integer between {low} and {high}.")
         for name, low, high in (
+            ("moss_guidance", 1.0, 10.0),
             ("color_match", 0.0, 1.0),
             ("step_size", 0.001, 1.0), ("friction", 0.1, 50.0),
             ("strength", 0.1, 32.0), ("beta", 0.01, 4.0),
@@ -87,8 +91,8 @@ class GenerativeFillRequest(InpaintRequest):
     def validate(self) -> None:
         InpaintRequest.validate(self)
         self.fill.validate()
-        if self.provider_id != PROVIDER_ID or not self.preserve_input_mask:
-            _invalid("Generative Fill requires FLUX.2 Klein 4B Q4 and strict mask preservation.")
+        if self.provider_id not in FILL_PROVIDERS or not self.preserve_input_mask:
+            _invalid("Generative Fill requires a supported fill model and strict mask preservation.")
         if self.quality_mode != "standard":
             _invalid("LaMa refinement is not available for Generative Fill.")
         if self.mask_grow < 0:
@@ -97,7 +101,10 @@ class GenerativeFillRequest(InpaintRequest):
             _invalid("Generative Fill requires mask preprocessing; grow remains independent of compositing.")
 
     def canonical(self) -> dict[str, Any]:
-        return {**InpaintRequest.canonical(self), "fill": asdict(self.fill),
+        settings = asdict(self.fill)
+        if self.provider_id == PROVIDER_ID:
+            settings.pop("moss_guidance")
+        return {**InpaintRequest.canonical(self), "fill": settings,
                 "preserve_input_mask": True}
 
 
@@ -110,8 +117,11 @@ class EnhancePromptRequest:
     top_p: float = 0.9
     seed: int = 42
     timeout_seconds: int = 600
+    provider_id: str = PROVIDER_ID
 
     def validate(self) -> None:
+        if self.provider_id not in FILL_PROVIDERS:
+            _invalid("Choose a supported prompt enhancement model.")
         if not isinstance(self.prompt, str) or not self.prompt.strip() or len(self.prompt) > 16000:
             _invalid("Enter a prompt of 1 to 16000 characters.")
         if not isinstance(self.system_prompt, str) or len(self.system_prompt) > 16000:

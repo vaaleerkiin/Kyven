@@ -1,0 +1,167 @@
+{
+  "model_id": "moss-sft-int8-edit-lanpaint",
+  "version": 2,
+  "base_revision": "f972bd4b4b9e3852133cc5da954d87bc32cd8fb9",
+  "edit_revision": "3be9c40037e1b89b17aa85ff6f8ee805872aa558",
+  "runtime_revision": "d735569c936ebbfaf274bee5cbff4297c533d133",
+  "license": "Apache-2.0 base; Edit weights license unspecified; GPL-3.0 editing code",
+  "files": [
+    {
+      "path": "LICENSE",
+      "url": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT/resolve/f972bd4b4b9e3852133cc5da954d87bc32cd8fb9/LICENSE",
+      "size_bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "pipeline_moss_image.py",
+      "url": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT/resolve/f972bd4b4b9e3852133cc5da954d87bc32cd8fb9/pipeline_moss_image.py",
+      "size_bytes": 25060,
+      "sha256": "1dac1aca9feb1bfdfc727a401e4b67d61a505d3190706d1b7d2d784f88678b31"
+    },
+    {
+      "path": "scheduler/pipeline_moss_image.py",
+      "url": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT/resolve/f972bd4b4b9e3852133cc5da954d87bc32cd8fb9/scheduler/pipeline_moss_image.py",
+      "size_bytes": 25060,
+      "sha256": "1dac1aca9feb1bfdfc727a401e4b67d61a505d3190706d1b7d2d784f88678b31"
+    },
+    {
+      "path": "scheduler/scheduler_config.json",
+      "url": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT/resolve/f972bd4b4b9e3852133cc5da954d87bc32cd8fb9/scheduler/scheduler_config.json",
+      "size_bytes": 494,
+      "sha256": "707322832cc507dfb8c51c0e0cd04d44ee2d30a9b036b6f3c47d6c17aa71adf0"
+    },
+    {
+      "path": "text_encoder/config.json",
+      "url": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT/resolve/f972bd4b4b9e3852133cc5da954d87bc32cd8fb9/text_encoder/config.json",
+      "size_bytes": 2813,
+      "sha256": "b31ee18a242bcfcccbe740f825f6b1d3ae231b0655eeecb5de3e98d504b7d68c"
+    },
+    {
+      "path": "tokenizer/chat_template.jinja",
+      "url": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT/resolve/f972bd4b4b9e3852133cc5da954d87bc32cd8fb9/tokenizer/chat_template.jinja",
+      "size_bytes": 7756,
+      "sha256": "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715"
+    },
+    {
+      "path": "tokenizer/tokenizer.json",
+      "url": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT/resolve/f972bd4b4b9e3852133cc5da954d87bc32cd8fb9/tokenizer/tokenizer.json",
+      "size_bytes": 19989325,
+      "sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523"
+    },
+    {
+      "path": "tokenizer/tokenizer_config.json",
+      "url": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT/resolve/f972bd4b4b9e3852133cc5da954d87bc32cd8fb9/tokenizer/tokenizer_config.json",
+      "size_bytes": 1123,
+      "sha256": "bee8eba30f0eb4af73c0fe2cd06d0f89b657d7819941c438157ec42f7c80ea87"
+    },
+    {
+      "path": "transformer/config.json",
+      "url": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT/resolve/f972bd4b4b9e3852133cc5da954d87bc32cd8fb9/transformer/config.json",
+      "size_bytes": 240,
+      "sha256": "3291c3a1c7adc22b8182a0de25ca8ec97474d72715ce84adbab09cc0be24f666"
+    },
+    {
+      "path": "transformer/pipeline_moss_image.py",
+      "url": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT/resolve/f972bd4b4b9e3852133cc5da954d87bc32cd8fb9/transformer/pipeline_moss_image.py",
+      "size_bytes": 25060,
+      "sha256": "1dac1aca9feb1bfdfc727a401e4b67d61a505d3190706d1b7d2d784f88678b31"
+    },
+    {
+      "path": "vae/config.json",
+      "url": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT/resolve/f972bd4b4b9e3852133cc5da954d87bc32cd8fb9/vae/config.json",
+      "size_bytes": 838,
+      "sha256": "cc77f3f0ce0357039c71018dc19edaa4fcceb0c2f7488fdc2b9c0580d6baafa1"
+    },
+    {
+      "path": "vae/diffusion_pytorch_model.safetensors",
+      "url": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT/resolve/f972bd4b4b9e3852133cc5da954d87bc32cd8fb9/vae/diffusion_pytorch_model.safetensors",
+      "size_bytes": 249521372,
+      "sha256": "c3bdf94dc67ec69b30ea9fe1fa8340085679cae64d019f7c7e4a9921f1a7f17a"
+    },
+    {
+      "path": "edit/README.md",
+      "url": "https://huggingface.co/chinoll/Moss-Image-Edit/resolve/3be9c40037e1b89b17aa85ff6f8ee805872aa558/README.md",
+      "size_bytes": 3408,
+      "sha256": "7a5e7cce4cb4f04e9a8e4bd7bea0da8491fbd874f016c20536f4544ee2bc2633"
+    },
+    {
+      "path": "edit/adapter_config.json",
+      "url": "https://huggingface.co/chinoll/Moss-Image-Edit/resolve/3be9c40037e1b89b17aa85ff6f8ee805872aa558/adapter_config.json",
+      "size_bytes": 53712,
+      "sha256": "b6b471cf7bc77b0874af03be618f8a06b6997d92b35de12c47a06b292ade2669"
+    },
+    {
+      "path": "edit/adapter_model.safetensors",
+      "url": "https://huggingface.co/chinoll/Moss-Image-Edit/resolve/3be9c40037e1b89b17aa85ff6f8ee805872aa558/adapter_model.safetensors",
+      "size_bytes": 297382216,
+      "sha256": "17a48b8c605dcffdedb92a2b887d18cf316505be90802717669fb6556098dcdf"
+    },
+    {
+      "path": "edit_runtime/infer.py",
+      "url": "https://raw.githubusercontent.com/Chenkin-x/Moss-Image-Edit/d735569c936ebbfaf274bee5cbff4297c533d133/infer.py",
+      "size_bytes": 11534,
+      "sha256": "18e2a8cc10991d8c4f9f9f3b4329d6367d9620ed969326bcd0974d219f3a8658"
+    },
+    {
+      "path": "edit_runtime/LICENSE",
+      "url": "https://raw.githubusercontent.com/Chenkin-x/Moss-Image-Edit/d735569c936ebbfaf274bee5cbff4297c533d133/LICENSE",
+      "size_bytes": 35149,
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "path": "edit_runtime/moss_edit/__init__.py",
+      "url": "https://raw.githubusercontent.com/Chenkin-x/Moss-Image-Edit/d735569c936ebbfaf274bee5cbff4297c533d133/moss_edit/__init__.py",
+      "size_bytes": 71,
+      "sha256": "068267279f207d5db756d04d318b2e8fad3c56882304035e69ac2dee2034acbe"
+    },
+    {
+      "path": "edit_runtime/moss_edit/model.py",
+      "url": "https://raw.githubusercontent.com/Chenkin-x/Moss-Image-Edit/d735569c936ebbfaf274bee5cbff4297c533d133/moss_edit/model.py",
+      "size_bytes": 14545,
+      "sha256": "edbbe6209e5c750634fa8f7a185834fefbc85a34468b36110251fca90c62ba59"
+    },
+    {
+      "path": "edit_runtime/moss_edit/components.py",
+      "url": "https://raw.githubusercontent.com/Chenkin-x/Moss-Image-Edit/d735569c936ebbfaf274bee5cbff4297c533d133/moss_edit/components.py",
+      "size_bytes": 11069,
+      "sha256": "8e8d59ccc4255de2d1e8fca6c5813b715d504c6e2478df29cc19d83728d3dfd2"
+    },
+    {
+      "path": "edit_runtime/moss_edit/processing.py",
+      "url": "https://raw.githubusercontent.com/Chenkin-x/Moss-Image-Edit/d735569c936ebbfaf274bee5cbff4297c533d133/moss_edit/processing.py",
+      "size_bytes": 16529,
+      "sha256": "a656fe29fbf53b51793c4b561b01b79c4b27f802341f3d2ed520ec6f830683b5"
+    },
+    {
+      "path": "edit_runtime/moss_edit/sampling.py",
+      "url": "https://raw.githubusercontent.com/Chenkin-x/Moss-Image-Edit/d735569c936ebbfaf274bee5cbff4297c533d133/moss_edit/sampling.py",
+      "size_bytes": 3086,
+      "sha256": "9440b286cc23b0d4721957e515f65ef177d71a6b3d82ebc2eecf7e3bbf69edeb"
+    },
+    {
+      "path": "edit_runtime/moss_edit/lora.py",
+      "url": "https://raw.githubusercontent.com/Chenkin-x/Moss-Image-Edit/d735569c936ebbfaf274bee5cbff4297c533d133/moss_edit/lora.py",
+      "size_bytes": 12373,
+      "sha256": "7654113da047ba15fd9ea7995814b89f072eb40473ece00150fa09133558a464"
+    },
+    {
+      "path": "edit_runtime/moss_edit/quantization.py",
+      "url": "https://raw.githubusercontent.com/Chenkin-x/Moss-Image-Edit/d735569c936ebbfaf274bee5cbff4297c533d133/moss_edit/quantization.py",
+      "size_bytes": 1421,
+      "sha256": "0b9b7504665e3daf8df3b8bda4ddd88cfe2178ee70e08094b1d9fab60baf9bc9"
+    },
+    {
+      "path": "transformer/moss_sft_int8.safetensors",
+      "url": "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/2929efe3cdd506c0a430bcfca70a9a8d805cc095/diffusion_models/moss_image_sft_int8_convrot.safetensors",
+      "size_bytes": 5413698958,
+      "sha256": "b4d1475bc7eeffd7b809e82ea13a1fba1fb85c4e18365af3813722faa5c0fe4f"
+    },
+    {
+      "path": "text_encoder/qwen3.5_w4a8.safetensors",
+      "url": "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/2929efe3cdd506c0a430bcfca70a9a8d805cc095/text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
+      "size_bytes": 7343591088,
+      "sha256": "4cc6a1543ad2061806da46f35f90cadb4801dcba246c44782cf42ec0feb6407c"
+    }
+  ],
+  "quantized_revision": "2929efe3cdd506c0a430bcfca70a9a8d805cc095"
+}

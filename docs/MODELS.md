@@ -47,6 +47,12 @@ checkpoint. No separate installer step is required.
 
 ## Commands
 
+Experimental [MOSS Generative Fill](MOSS_FILL.md) is also available in the trusted
+catalog as `moss-sft-int8-edit-lanpaint`, alongside the default Klein bundle.
+Its complete ready-quantized bundle is 13.32 GB. The base is Apache-2.0; commercial
+permission for the separate Edit weights is unconfirmed and the entry is opt-in.
+Both runtime components and weights install through Model Manager.
+
 ```text
 kyven models list --models-dir models
 kyven models download sam2.1-small --models-dir models

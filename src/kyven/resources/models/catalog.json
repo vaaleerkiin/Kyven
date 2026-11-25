@@ -227,6 +227,27 @@
       "redistribution": true,
       "download_type": "verified_bundle",
       "runtime": "generative-fill"
+    },
+    {
+      "model_id": "moss-sft-int8-edit-lanpaint",
+      "task": "generative_fill",
+      "display_name": "MOSS SFT INT8 + Edit + LanPaint (Experimental)",
+      "provider": "moss-edit-lanpaint-worker",
+      "config": "generative_fill/moss_models.json",
+      "filename": "moss-sft-int8-edit-lanpaint",
+      "source": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT",
+      "sha256": "4563c749d8fef22f90cf82c899f8f72b8cbfb8db2ecab0eba214829e8aea5415",
+      "size_bytes": 13324445658,
+      "parameters_millions": 14000,
+      "recommended_vram_mb": 8192,
+      "supports_cpu": true,
+      "license": "Apache-2.0 base; Edit weights license unspecified; GPL-3.0 editing code",
+      "license_url": "https://huggingface.co/chinoll/Moss-Image-Edit",
+      "commercial_use": false,
+      "redistribution": false,
+      "download_type": "verified_bundle",
+      "runtime": "moss-fill",
+      "license_acceptance_required": true
     }
   ]
 }

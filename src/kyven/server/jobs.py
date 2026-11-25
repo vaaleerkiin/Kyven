@@ -495,9 +495,13 @@ class JobManager:
                     settings["steps"] = 4
                 payload["fill"] = settings
             base = JobManager.inpaint_request_from_payload(payload, PROVIDER_ID)
+            from kyven.generative_fill.models import MOSS_PROVIDER_ID
+            fill_payload = payload.get("fill", {})
+            if base.provider_id == MOSS_PROVIDER_ID:
+                fill_payload = {"steps": 20, **fill_payload}
             request = GenerativeFillRequest(
                 **{item.name: getattr(base, item.name) for item in fields(InpaintRequest)},
-                fill=FillSettings.from_payload(payload.get("fill", {})),
+                fill=FillSettings.from_payload(fill_payload),
             )
             request.validate()
         except (KeyError, TypeError, ValueError) as exc:

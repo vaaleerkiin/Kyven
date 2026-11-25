@@ -49,3 +49,8 @@ Owner-requested optional Generative Fill is authorized by
 local FLUX.2 Klein 4B Q4/LanPaint worker with shared Qwen3-4B prompt improvement.
 It retains the existing lower-memory tools and has no ComfyUI dependency. See
 [Generative Fill](docs/GENERATIVE_FILL.md).
+
+The owner also authorized an experimental MOSS SFT INT8 + Edit backend on
+2026-11-25. It has a separate pinned runtime and quantized model bundle, keeps
+Klein available, and constrains known latents throughout LanPaint sampling.
+Its Edit adapter's commercial licensing remains unconfirmed. See [MOSS](docs/MOSS_FILL.md).

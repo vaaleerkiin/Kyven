@@ -61,7 +61,7 @@ class ModelSpec:
         )
         if self.download_type == "verified_bundle":
             from kyven.generative_fill.assets import bundle_ready
-            installed = bundle_ready(path)
+            installed = bundle_ready(path, model_id=self.model_id)
         return {
             "model_id": self.model_id,
             "task": self.task,
@@ -193,6 +193,9 @@ class ModelCatalog:
         from kyven.generative_fill.models import PROVIDER_ID
         from kyven.generative_fill.provider import KleinLanPaintProvider
         registry.register(PROVIDER_ID, lambda: KleinLanPaintProvider(models_dir, device=device))
+        from kyven.generative_fill.models import MOSS_PROVIDER_ID
+        from kyven.generative_fill.moss_provider import MossLanPaintProvider
+        registry.register(MOSS_PROVIDER_ID, lambda: MossLanPaintProvider(models_dir, device=device))
         return registry
 
     def download(
@@ -208,7 +211,7 @@ class ModelCatalog:
         target.parent.mkdir(parents=True, exist_ok=True)
         if spec.download_type == "verified_bundle":
             from kyven.generative_fill.assets import download_bundle
-            return download_bundle(target, progress, cancelled)
+            return download_bundle(target, progress, cancelled, model_id=spec.model_id)
         if spec.download_type == "huggingface_snapshot":
             return self._download_snapshot(spec, models_dir, target, progress, cancelled)
         if target.is_file() and self._sha256(target) == spec.sha256:

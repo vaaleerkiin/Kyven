@@ -69,3 +69,19 @@ can be enabled in the default distribution.
 Generative Fill seamless compositing uses opencv-python-headless 4.14.0.94 in its
 private worker. Preserve the OpenCV package license and bundled third-party
 notices when redistributing the runtime.
+
+### Experimental MOSS backend
+
+MOSS-Image-SFT from OpenMOSS and its published quantized conversions are pinned
+in `src/kyven/resources/generative_fill/moss_models.json`. The base is Apache-2.0.
+The separately downloaded `chinoll/Moss-Image-Edit` adapter does not state an
+explicit weights license; commercial use and redistribution are not confirmed.
+Its author-provided editing code is GPL-3.0 and its pinned complete inference
+sources and license are downloaded with the adapter. Kyven's separate MOSS worker
+and tensor-format loader are GPL-3.0-only, beside the worker license.
+
+The standalone `comfy-kitchen` 0.2.41 tensor-kernel library is Apache-2.0:
+https://github.com/Comfy-Org/comfy-kitchen. This backend does not require the
+ComfyUI application, graph execution or server. Preserve all dependency notices
+when distributing a prepared runtime. Experimental model metadata must not be
+interpreted as a commercial license grant for the Edit adapter.

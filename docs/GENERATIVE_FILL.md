@@ -4,6 +4,11 @@
 inputs, local FLUX.2 Klein 4B Q4_K_M generation and LanPaint. It has no ComfyUI
 dependency and uses no remote inference service.
 
+The same node also offers **MOSS SFT INT8 + Edit + LanPaint (Experimental)**.
+Select it in **Model**, then install its bundle through **Model Manager**.
+Klein remains the default and retains its own environment. See
+[experimental MOSS setup and limitations](MOSS_FILL.md).
+
 ## Model choice and edit instructions
 
 The backend uses the instruction-trained FLUX.2 Klein 4B model. Describe the edit

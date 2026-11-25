@@ -56,7 +56,8 @@ def main() -> None:
     # Python 3.10-3.12 may read .pth using the Windows ANSI code page. Keep the
     # file ASCII and escape the path so Cyrillic/non-ASCII folders still work.
     (private_site / "kyven_core_torch.pth").write_text(
-        "import sys; sys.path.append(" + ascii(str(core_site)) + ")\n", encoding="ascii")
+        "import sys; sys.path.append(" + ascii(str(core_site)) + "); sys.path.insert(0, " +
+        ascii(str(root / "src")) + ")\n", encoding="ascii")
     constraints = environment / "shared-torch-constraints.txt"
     constraints.write_text("\n".join(
         f"{name}=={importlib.metadata.version(name)}" for name in ("torch", "torchvision")

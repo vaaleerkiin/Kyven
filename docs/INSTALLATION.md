@@ -22,6 +22,7 @@ administrator access, registry changes, or a system-wide Python environment.
 | DLSS | Worker, shim and pinned runtime metadata | Use **Model Manager > Kyven DLSS Runtime > Install Selected** |
 | Segment / Refine / Inpaint | Adapters, providers and model catalog | Choose and install the model versions you need |
 | Generative Fill | Native node and standalone worker code | Select the Klein bundle in Model Manager; its components install automatically |
+| MOSS Generative Fill (Experimental) | Additional backend in the same node | Install MOSS SFT INT8 + Edit in Model Manager; separate 13.32 GB bundle and private runtime |
 
 For WAFT alone, skip the server environment installer and connect the Nuke plugin
 path described below. DLSS uses Windows/RTX and the server environment; its NVIDIA

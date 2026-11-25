@@ -38,3 +38,14 @@ Qwen3-4B weights. Klein consumes the full causal LM's hidden layers 9/18/27.
 Default diffusion steps become four. Removal, addition and replacement were
 checked on the real source; pixels outside the supplied masks remain exact.
 Old preview model IDs are migrated at request parsing without deleting caches.
+
+## Additional backend: MOSS SFT INT8 + Edit, 2026-11-25
+
+The owner requested an experimental MOSS backend in the same Nuke node, retaining
+Klein and installing through Model Manager. The MOSS environment is separate to
+protect Klein's pins. Published INT8 SFT and W4A8 Qwen checkpoints avoid downloading
+or constructing complete BF16 base weights. The Edit adapter supplies reference
+attention; LanPaint constrains known source latents during denoising, and the
+existing composite separately enforces the final artist permission mask.
+The adapter's weights license is unspecified, so commercial permission is not
+claimed. This additive experiment is documented in [MOSS_FILL](../MOSS_FILL.md).

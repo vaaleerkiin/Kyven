@@ -129,9 +129,8 @@ class InpaintService:
     def enhance_prompt(self, request: EnhancePromptRequest,
                        cancellation: CancellationToken) -> dict[str, Any]:
         """Use the same scheduled provider as Generative Fill, without loading it in the host."""
-        from kyven.generative_fill.models import PROVIDER_ID
         cancellation.raise_if_cancelled()
-        return self._registry.activate(PROVIDER_ID).enhance(request, cancellation)
+        return self._registry.activate(request.provider_id).enhance(request, cancellation)
 
     def run(self, request: InpaintRequest, cancellation: CancellationToken | None = None) -> InpaintResult:
         request.validate()

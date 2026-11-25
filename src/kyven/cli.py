@@ -115,10 +115,11 @@ def build_parser() -> argparse.ArgumentParser:
     inpaint.add_argument("--processed-mask-output", type=Path)
     inpaint.add_argument("--processing-size", default=0, type=int)
 
-    fill = subparsers.add_parser("generative-fill", help="FLUX.2 Klein 4B Q4 masked generation")
+    fill = subparsers.add_parser("generative-fill", help="Klein or experimental MOSS masked generation")
     fill.add_argument("--request", required=True, type=Path)
     _add_runtime_options(fill)
-    enhance = subparsers.add_parser("prompt-enhance", help="Improve text with shared Qwen3-4B weights")
+    enhance = subparsers.add_parser("prompt-enhance", help="Improve text with the selected fill model's Qwen weights")
+    enhance.add_argument("--model", default="flux2-klein-4b-q4-lanpaint", choices=_model_ids("generative_fill"))
     enhance.add_argument("--prompt", required=True)
     enhance.add_argument("--system-prompt", type=Path)
     _add_runtime_options(enhance)
@@ -319,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
             from kyven.cancellation import CancellationToken
             from kyven.generative_fill.models import DEFAULT_SYSTEM_PROMPT, EnhancePromptRequest
             registry = catalog.registry(args.models_dir, args.device)
-            request = EnhancePromptRequest(prompt=args.prompt, system_prompt=(
+            request = EnhancePromptRequest(prompt=args.prompt, provider_id=args.model, system_prompt=(
                 args.system_prompt.read_text(encoding="utf-8") if args.system_prompt else DEFAULT_SYSTEM_PROMPT))
             try:
                 print(json.dumps(InpaintService(registry).enhance_prompt(

@@ -173,8 +173,10 @@ def show_model_manager():
                 return
         elif model.get("license_acceptance_required") and not nuke.ask(
             f"Install {model['display_name']}?\n\n"
-            f"License: {model.get('license', 'See model card')}\n"
-            "Commercial use is conditional on following the model license and use restrictions.\n\n"
+            f"License: {model.get('license', 'See model card')}\n" +
+            ("Commercial permission for these weights is not confirmed. This is an experimental entry.\n\n"
+             if not model.get("commercial_use") else
+             "Commercial use is conditional on following the model license and use restrictions.\n\n") +
             f"Model card: {model.get('license_url', '')}\n\n"
             "Continue only if you reviewed and accept these terms."
         ):

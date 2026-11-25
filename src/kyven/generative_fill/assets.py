@@ -20,17 +20,24 @@ def manifest_path() -> Path:
     return Path(__file__).parents[1] / "resources/generative_fill/models.json"
 
 
-def manifest() -> dict:
-    return json.loads(manifest_path().read_text(encoding="utf-8"))
+def manifest(model_id: str = "") -> dict:
+    path = manifest_path()
+    if model_id == "moss-sft-int8-edit-lanpaint":
+        path = path.with_name("moss_models.json")
+    elif model_id and model_id != "flux2-klein-4b-q4-lanpaint":
+        raise ValueError(f"Unknown Generative Fill bundle: {model_id}")
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-def manifest_checksum() -> str:
-    canonical = json.dumps(manifest(), sort_keys=True, separators=(",", ":")).encode("utf-8")
+def manifest_checksum(model_id: str = "") -> str:
+    data = manifest(model_id) if model_id else manifest()
+    canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
 
 
-def bundle_ready(root: Path, *, verify: bool = False) -> bool:
-    for item in manifest()["files"]:
+def bundle_ready(root: Path, *, verify: bool = False, model_id: str = "") -> bool:
+    data = manifest(model_id) if model_id else manifest()
+    for item in data["files"]:
         path = root / item["path"]
         if not path.is_file() or path.stat().st_size != item["size_bytes"]:
             return False
@@ -40,9 +47,9 @@ def bundle_ready(root: Path, *, verify: bool = False) -> bool:
 
 
 def download_bundle(root: Path, progress: Callable | None = None,
-                    cancelled: Callable | None = None) -> Path:
+                    cancelled: Callable | None = None, *, model_id: str = "") -> Path:
     """Resume individual files and publish each only after size/SHA verification."""
-    files = manifest()["files"]
+    files = (manifest(model_id) if model_id else manifest())["files"]
     total = sum(item["size_bytes"] for item in files)
     received = {item["path"]: 0 for item in files}
     lock = threading.Lock()

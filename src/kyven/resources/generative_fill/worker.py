@@ -157,7 +157,7 @@ class Runtime:
         inputs = self.tokenizer(text, return_tensors="pt")
         if inputs.input_ids.shape[1] > 2048:
             raise ValueError("Prompt and system instruction exceed 2048 tokens. Shorten them and retry.")
-        emit("progress", progress=0.3, message="Qwen3-4B is processing the editing brief on CPU")
+        emit("progress", progress=0.3, message=f"{getattr(self, 'language_label', 'Qwen3-4B')} is processing the editing brief on CPU")
         torch.manual_seed(settings["seed"])
         temperature = settings["temperature"]
         kwargs = {"max_new_tokens": settings["max_new_tokens"], "do_sample": temperature > 0,
@@ -179,7 +179,7 @@ class Runtime:
             output = self.lm.generate(**inputs, **kwargs)
         result = self.tokenizer.decode(output[0, inputs.input_ids.shape[1]:], skip_special_tokens=True)
         result = re.sub(r"<think>.*?</think>", "", result, flags=re.DOTALL).strip().strip('"')
-        return {"prompt": result, "metadata": {"model": "Qwen3-4B", "device": "cpu",
+        return {"prompt": result, "metadata": {"model": getattr(self, "language_label", "Qwen3-4B"), "device": "cpu",
                                                 "shared_text_encoder_weights": True}}
 
     def pipeline(self) -> None:
@@ -209,7 +209,7 @@ class Runtime:
         translated = any(c.isalpha() and not c.isascii() for c in prompt)
         if not translated:
             return prompt, False
-        emit("progress", progress=0.13, message="Translating the prompt into English with Qwen3-4B")
+        emit("progress", progress=0.13, message=f"Translating the prompt into English with {getattr(self, 'language_label', 'Qwen3-4B')}")
         result = self.enhance({
             "prompt": prompt, "system_prompt":
             "Translate the user's image-editing brief into natural English. Preserve its "
@@ -222,13 +222,13 @@ class Runtime:
     def edit_operation(self, prompt: str) -> str:
         if prompt in self.operations:
             return self.operations[prompt]
-        result = self.enhance({"prompt": prompt, "system_prompt":
+        result = self.enhance({"prompt": prompt, "system_prompt": getattr(self, "operation_system_prompt",
             "Classify an image editing request. Output exactly one label: REMOVE, ADD, "
             "REPLACE or EDIT. REMOVE means an object disappears and the existing background "
             "is restored, including replacing a person with empty surroundings. ADD means "
             "a new object appears. REPLACE means an existing subject becomes a different "
             "subject. EDIT means other changes. Examples: replace the person with background "
-            "= REMOVE; replace the man with a woman = REPLACE; add a vase = ADD.",
+            "= REMOVE; replace the man with a woman = REPLACE; add a vase = ADD."),
             "seed": 0, "max_new_tokens": 8, "temperature": 0.0, "top_p": 0.9},
             output_contract="Return only REMOVE, ADD, REPLACE or EDIT. Do not rewrite the brief.")
         match = re.search(r"\b(REMOVE|ADD|REPLACE|EDIT)\b", result["prompt"].upper())

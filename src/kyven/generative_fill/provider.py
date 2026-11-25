@@ -61,10 +61,10 @@ class KleinLanPaintProvider(InpaintProvider):
                              "Install the Generative Fill runtime first.", recoverable=True,
                              suggested_action="Click Install Runtime on the Generative Fill node.")
         if not self._verified:
-            if not bundle_ready(self.models, verify=True):
+            if not self._bundle_ready():
                 raise KyvenError(ErrorCode.MODEL_NOT_FOUND,
                                  "Generative Fill model bundle is missing or failed verification.",
-                                 recoverable=True, suggested_action="Install FLUX.2 Klein 4B Q4 in Model Manager.")
+                                 recoverable=True, suggested_action="Install the selected Generative Fill model in Model Manager.")
             self._verified = True
         self.runtime.mkdir(parents=True, exist_ok=True)
         self._log = (self.runtime / "worker.log").open("a", encoding="utf-8")
@@ -100,6 +100,9 @@ class KleinLanPaintProvider(InpaintProvider):
         self._reader = threading.Thread(target=read, name="kyven-fill-worker", daemon=True)
         self._reader.start()
 
+    def _bundle_ready(self) -> bool:
+        return bundle_ready(self.models, verify=True)
+
     def _exchange(self, payload: dict, token: CancellationToken, timeout: int) -> dict:
         token.raise_if_cancelled()
         self._start()
@@ -128,7 +131,7 @@ class KleinLanPaintProvider(InpaintProvider):
                 elif event == "closed":
                     raise KyvenError(ErrorCode.INFERENCE_FAILED,
                                      "The Generative Fill worker stopped unexpectedly.",
-                                     recoverable=True, suggested_action="Check .runtime/generative-fill/worker.log.")
+                                     recoverable=True, suggested_action=f"Check {self.runtime / 'worker.log'}.")
             raise KyvenError(ErrorCode.INFERENCE_FAILED, "Generative Fill exceeded its time limit.",
                              recoverable=True, suggested_action="Reduce Working Size or increase Advanced timeout.")
         except (BrokenPipeError, OSError) as exc:

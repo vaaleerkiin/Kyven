@@ -20,11 +20,47 @@ from kyven_nuke.node import (
 from kyven_nuke.runtime import ensure_server
 
 PROVIDER_ID = "flux2-klein-4b-q4-lanpaint"
+MODEL_IDS = (PROVIDER_ID, "moss-sft-int8-edit-lanpaint")
+MODEL_LABELS = ("FLUX.2 Klein 4B Q4 + LanPaint", "MOSS SFT INT8 + Edit + LanPaint (Experimental)")
+
+
+def _model_id(node: Any) -> str:
+    return MODEL_IDS[1] if str(node["model"].value()) == MODEL_LABELS[1] else PROVIDER_ID
+
+
+def _ensure_model_control(node: Any) -> None:
+    if "model" not in node.knobs():
+        return
+    if "moss_guidance" not in node.knobs():
+        knob = _nuke().Double_Knob("moss_guidance", "MOSS Guidance")
+        knob.setRange(1, 10)
+        knob.setValue(4.0)
+        node.addKnob(knob)
+        if "steps" in node.knobs():
+            _place_knob_after(node, "moss_guidance", "steps")
+    selected = str(node["model"].value())
+    try:
+        if tuple(node["model"].values()) == MODEL_LABELS:
+            node["model"].setEnabled(True)
+            return
+    except (AttributeError, TypeError):
+        pass
+    callback = node["knobChanged"] if "knobChanged" in node.knobs() else None
+    script = callback.value() if callback is not None else ""
+    try:
+        if callback is not None:
+            callback.setValue("")
+        node["model"].setValues(list(MODEL_LABELS))
+        node["model"].setValue(1 if selected == MODEL_LABELS[1] else 0)
+        node["model"].setEnabled(True)
+    finally:
+        if callback is not None:
+            callback.setValue(script)
 
 
 def _payload(node: Any, *args: Any) -> dict[str, Any]:
     payload = inpaint_node._payload(node, *args)
-    payload["model_id"] = PROVIDER_ID
+    payload["model_id"] = _model_id(node)
     payload["processing_size"] = 0
     payload["quality_mode"] = "standard"
     payload["fill"] = {
@@ -43,6 +79,7 @@ def _payload(node: Any, *args: Any) -> dict[str, Any]:
         "color_match_mode": str(node["fill_color_mode"].value()).lower() if "fill_color_mode" in node.knobs() else "auto",
         "mask_overlap": int(node["fill_mask_overlap"].value()) if "fill_mask_overlap" in node.knobs() else 32,
         "seamless_blend": str(node["fill_seamless_blend"].value()).lower() if "fill_seamless_blend" in node.knobs() else "auto",
+        "moss_guidance": float(node["moss_guidance"].value()) if "moss_guidance" in node.knobs() else 4.0,
     }
     return payload
 
@@ -101,13 +138,14 @@ def improve_prompt() -> None:
     with inpaint_node._export_cancel_lock:
         inpaint_node._export_cancellations.discard(name)
     settings = {
+        "provider_id": _model_id(node),
         "prompt": original, "system_prompt": str(node["qwen_system_prompt"].value()),
         "max_new_tokens": int(node["qwen_max_tokens"].value()),
         "temperature": float(node["qwen_temperature"].value()),
         "top_p": float(node["qwen_top_p"].value()), "seed": int(node["seed"].value()),
         "timeout_seconds": int(node["qwen_timeout"].value()),
     }
-    _set_status(name, "Improving prompt with Qwen3-4B...")
+    _set_status(name, "Improving prompt with the selected model's Qwen encoder...")
 
     def work() -> None:
         try:
@@ -149,13 +187,19 @@ def reset_system_prompt() -> None:
 
 def install_runtime() -> None:
     from kyven_nuke.model_manager import install_required_runtime
-    install_required_runtime(PROVIDER_ID)
+    install_required_runtime(_model_id(_nuke().thisNode()))
 
 
 def knob_changed() -> None:
     nuke = _nuke()
     node = nuke.thisNode()
     knob = nuke.thisKnob().name()
+    if knob == "model":
+        moss = _model_id(node) != PROVIDER_ID
+        node["steps"].setValue(20 if moss else 4)
+        node["model_help"].setValue(
+            "Experimental MOSS Edit: latent-mask sampling; removal seams are not production-qualified. Edit weights license unresolved. Qwen3.5 W4A8 runs in RAM."
+            if moss else "Qwen3-4B encodes and improves text in RAM. Generation uses the GPU in separate stages.")
     if knob in {"inputChange", "crop_mode", "processing_roi"}:
         from kyven_nuke.node import _clamp_bbox_knob
         _clamp_bbox_knob(node, "processing_roi", inpaint_node.SOURCE_INPUT)
@@ -170,6 +214,7 @@ def knob_changed() -> None:
 def _ensure_fill_graph(node: Any) -> None:
     """Keep original float Source and alpha outside the artist mask in Nuke."""
     nuke = _nuke()
+    _ensure_model_control(node)
     node.begin()
     try:
         source = nuke.toNode("Source")
@@ -223,10 +268,10 @@ def create_generative_fill_node() -> Any:
     node["knobChanged"].setValue("")
     node.setName("KyvenGenerativeFill")
     node["kyven"].setLabel("Generative Fill")
-    node["kyven_title"].setValue('<font size="5"><b>KYVEN / GENERATIVE FILL</b></font><br>FLUX.2 Klein 4B Q4 + LanPaint')
-    node["model"].setValues(["FLUX.2 Klein 4B Q4 + LanPaint"])
+    node["kyven_title"].setValue('<font size="5"><b>KYVEN / GENERATIVE FILL</b></font><br>FLUX.2 Klein / MOSS Edit + LanPaint')
+    node["model"].setValues(list(MODEL_LABELS))
     node["model"].setValue(0)
-    node["model"].setEnabled(False)
+    node["model"].setEnabled(True)
     node["model_help"].setValue("Qwen3-4B encodes and improves text in RAM. Generation uses the GPU in separate stages.")
     node["mask_help"].setValue("White alpha selects edits. Model Grow affects generation only; the original mask limits the result.")
     node["output_help"].setValue("Result keeps Source alpha and channels. RGB outside the input mask comes from the original Nuke Source.")
@@ -288,6 +333,7 @@ def create_generative_fill_node() -> Any:
     retry.setTooltip("Retry once with a smaller working crop. The original output mask stays unchanged.")
     _add_knob(nuke, node, retry)
     for name, label, default, low, high in (
+        ("moss_guidance", "MOSS Guidance", 4.0, 1.0, 10.0),
         ("lanpaint_step_size", "Langevin Step Size", 0.2, 0.001, 1),
         ("lanpaint_friction", "Friction", 15, 0.1, 50),
         ("lanpaint_strength", "Constraint Strength", 8, 0.1, 32),
