@@ -115,7 +115,7 @@ def build_parser() -> argparse.ArgumentParser:
     inpaint.add_argument("--processed-mask-output", type=Path)
     inpaint.add_argument("--processing-size", default=0, type=int)
 
-    fill = subparsers.add_parser("generative-fill", help="Klein or native Z-Image masked generation")
+    fill = subparsers.add_parser("generative-fill", help="Klein or experimental MOSS masked generation")
     fill.add_argument("--request", required=True, type=Path)
     _add_runtime_options(fill)
     enhance = subparsers.add_parser("prompt-enhance", help="Improve text with the selected fill model's Qwen weights")

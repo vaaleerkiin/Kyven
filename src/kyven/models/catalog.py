@@ -196,9 +196,6 @@ class ModelCatalog:
         from kyven.generative_fill.models import MOSS_PROVIDER_ID
         from kyven.generative_fill.moss_provider import MossLanPaintProvider
         registry.register(MOSS_PROVIDER_ID, lambda: MossLanPaintProvider(models_dir, device=device))
-        from kyven.generative_fill.models import ZIMAGE_PROVIDER_ID
-        from kyven.generative_fill.zimage_provider import ZImageInpaintProvider
-        registry.register(ZIMAGE_PROVIDER_ID, lambda: ZImageInpaintProvider(models_dir, device=device))
         return registry
 
     def download(

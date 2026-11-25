@@ -17,7 +17,7 @@ from kyven_nuke import config
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 
 PORT = 18788
-REQUIRED_API_VERSION = 43
+REQUIRED_API_VERSION = 42
 LEGACY_PORTS = (8765, 8766, 8767, 8768, 8769, 18768, 18769, 18770, 18771, 18772, 18773, 18774, 18775, 18776, 18777, 18778, 18779, 18780, 18781, 18782, 18783, 18784, 18785, 18786, 18787)
 _server_start_lock = threading.Lock()
 _runtime_install_lock = threading.RLock()
@@ -46,12 +46,6 @@ class ServerStartCancelled(RuntimeError):
 
 
 def _runtime_probe(runtime_id: str) -> str:
-    if runtime_id == "zimage-fill":
-        executable = config.root() / ".runtime/zimage-fill/venv" / (
-            "Scripts/python.exe" if os.name == "nt" else "bin/python")
-        return ("import subprocess; subprocess.run([" + repr(str(executable)) +
-                ", '-I', " + repr(str(config.root() / "scripts/setup_zimage_fill.py")) +
-                ", '--check'], check=True)")
     if runtime_id == "moss-fill":
         executable = config.root() / ".runtime/moss-fill/venv" / (
             "Scripts/python.exe" if os.name == "nt" else "bin/python")
@@ -81,8 +75,6 @@ def _runtime_probe(runtime_id: str) -> str:
 
 
 def _runtime_install_command(runtime_id: str, executable: Path) -> list[str]:
-    if runtime_id == "zimage-fill":
-        return [str(executable), str(config.root() / "scripts/setup_zimage_fill.py")]
     if runtime_id == "moss-fill":
         return [str(executable), str(config.root() / "scripts/setup_moss_fill.py")]
     if runtime_id == "core":
@@ -232,7 +224,7 @@ def ensure_model_runtime(runtime_id: str, progress_callback=None, cancel_request
     try:
         _cancel_install(cancel_requested)
         changed = False
-        if runtime_id in {"generative-fill", "hq-sam2", "moss-fill", "zimage-fill"}:
+        if runtime_id in {"generative-fill", "hq-sam2", "moss-fill"}:
             changed = ensure_core_runtime(progress_callback, cancel_requested)
         executable = config.python_executable()
         ready = _probe_runtime(executable, runtime_id)

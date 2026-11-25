@@ -248,26 +248,6 @@
       "download_type": "verified_bundle",
       "runtime": "moss-fill",
       "license_acceptance_required": true
-    },
-    {
-      "model_id": "z-image-base-q4-control-inpaint",
-      "task": "generative_fill",
-      "display_name": "Z-Image Base Q4 + Native ControlNet Inpaint (Preview)",
-      "provider": "zimage-control-inpaint-worker",
-      "config": "generative_fill/zimage_models.json",
-      "filename": "z-image-base-q4-control-inpaint",
-      "source": "https://huggingface.co/Tongyi-MAI/Z-Image",
-      "sha256": "0fc7e70edec244c1f871124830ccdc071d5aea5851a175e22b280f610ddc843e",
-      "size_bytes": 14095308342,
-      "parameters_millions": 11000,
-      "recommended_vram_mb": 8192,
-      "supports_cpu": true,
-      "license": "Apache-2.0 weights; GPL-3.0 worker",
-      "license_url": "https://huggingface.co/alibaba-pai/Z-Image-Fun-Controlnet-Union-2.1",
-      "commercial_use": true,
-      "redistribution": true,
-      "download_type": "verified_bundle",
-      "runtime": "zimage-fill"
     }
   ]
 }

@@ -47,12 +47,8 @@ checkpoint. No separate installer step is required.
 
 ## Commands
 
-[Native Z-Image Inpaint](ZIMAGE_INPAINT.md) is an optional preview in the trusted
-catalog as `z-image-base-q4-control-inpaint`. Its complete pinned bundle is
-14.10 GB, with Apache-2.0 model weights. Both runtime and weights install through
-Model Manager. Visual integration remains inconsistent; Klein stays the default.
-The old MOSS entry remains for managing legacy installations; its separate Edit
-weights still have unconfirmed commercial permission.
+The legacy MOSS catalog entry remains available for managing existing installations.
+Its Edit weights have unconfirmed commercial permission and it is retired from the node selector.
 
 ```text
 kyven models list --models-dir models

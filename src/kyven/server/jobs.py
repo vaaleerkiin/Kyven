@@ -495,12 +495,10 @@ class JobManager:
                     settings["steps"] = 4
                 payload["fill"] = settings
             base = JobManager.inpaint_request_from_payload(payload, PROVIDER_ID)
-            from kyven.generative_fill.models import MOSS_PROVIDER_ID, ZIMAGE_PROVIDER_ID
+            from kyven.generative_fill.models import MOSS_PROVIDER_ID
             fill_payload = payload.get("fill", {})
             if base.provider_id == MOSS_PROVIDER_ID:
                 fill_payload = {"steps": 20, **fill_payload}
-            elif base.provider_id == ZIMAGE_PROVIDER_ID:
-                fill_payload = {"steps": 28, "working_size": 768, "mask_overlap": 64, **fill_payload}
             request = GenerativeFillRequest(
                 **{item.name: getattr(base, item.name) for item in fields(InpaintRequest)},
                 fill=FillSettings.from_payload(fill_payload),

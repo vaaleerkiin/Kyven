@@ -13,7 +13,7 @@ Nuke Inference nodes, with embedded models and no Kyven server. See [WAFT](docs/
 >
 > **Privacy and licensing:** inference stays on the workstation. Kyven code is Apache-2.0; shipped
 > model entries are pinned and checksum-verified. Production defaults have commercially
-> permissive licenses; legacy MOSS Edit weights have unconfirmed commercial terms. The optional
+> permissive licenses; experimental MOSS Edit weights have unconfirmed commercial terms. The optional
 > Generative Fill worker is separately GPL-3.0-licensed. Review
 > [third-party notices](THIRD_PARTY_NOTICES.md) before production distribution.
 
@@ -24,7 +24,7 @@ Nuke Inference nodes, with embedded models and no Kyven server. See [WAFT](docs/
 | WAFT SmartVector | Complete Cattery folder and two Git LFS models | Clone with Git LFS, connect the Nuke plugin path; no server or Model Manager |
 | DLSS | Kyven worker, shim and runtime metadata | Install **Kyven DLSS Runtime** in Model Manager; a plain Git clone downloads the NVIDIA component during that setup |
 | Segment, Refine, Inpaint | Node code and selectable model catalogs | Install the desired model variants through the installer or Model Manager |
-| Generative Fill | FLUX.2 Klein and optional Z-Image Base native Inpaint preview | Select a backend and install its bundle in Model Manager; see [Native Inpaint](docs/ZIMAGE_INPAINT.md) |
+| Generative Fill | FLUX.2 Klein and optional experimental MOSS Edit in one node | Select a backend and install its bundle in Model Manager; see [MOSS](docs/MOSS_FILL.md) |
 
 Full preview ZIP/wheel bundles can include the NVIDIA DLSS component locally.
 They still use the managed runtime setup. WAFT remains an independent native

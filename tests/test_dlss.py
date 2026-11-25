@@ -600,7 +600,7 @@ def test_authenticated_dlss_endpoint_uses_existing_job_queue_and_durable_cache(s
     payload = {"source": str(request.source), "output": str(request.output),
                "worker": str(request.worker), "mask_source": "source_alpha"}
     try:
-        assert client.health()["api_version"] == 43
+        assert client.health()["api_version"] == 42
         with pytest.raises(KyvenClientError):
             KyvenClient(client.base_url, "y" * 32).submit_dlss(payload)
         with pytest.raises(KyvenClientError):

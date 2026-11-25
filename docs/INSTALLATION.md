@@ -22,7 +22,6 @@ administrator access, registry changes, or a system-wide Python environment.
 | DLSS | Worker, shim and pinned runtime metadata | Use **Model Manager > Kyven DLSS Runtime > Install Selected** |
 | Segment / Refine / Inpaint | Adapters, providers and model catalog | Choose and install the model versions you need |
 | Generative Fill | Native node and standalone worker code | Select the Klein bundle in Model Manager; its components install automatically |
-| Native Z-Image Inpaint (Preview) | Optional backend in the same node | Install Z-Image Base Q4 + Native ControlNet Inpaint in Model Manager; separate 14.10 GB bundle and private runtime |
 
 For WAFT alone, skip the server environment installer and connect the Nuke plugin
 path described below. DLSS uses Windows/RTX and the server environment; its NVIDIA

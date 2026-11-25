@@ -24,8 +24,6 @@ def manifest(model_id: str = "") -> dict:
     path = manifest_path()
     if model_id == "moss-sft-int8-edit-lanpaint":
         path = path.with_name("moss_models.json")
-    elif model_id == "z-image-base-q4-control-inpaint":
-        path = path.with_name("zimage_models.json")
     elif model_id and model_id != "flux2-klein-4b-q4-lanpaint":
         raise ValueError(f"Unknown Generative Fill bundle: {model_id}")
     return json.loads(path.read_text(encoding="utf-8"))
@@ -73,21 +71,6 @@ def download_bundle(root: Path, progress: Callable | None = None,
         path.parent.mkdir(parents=True, exist_ok=True)
         if (path.is_file() and path.stat().st_size == item["size_bytes"]
                 and cached_file_sha256(path) == item["sha256"]):
-            report(item, item["size_bytes"])
-            return
-        # Bundles can share the same immutable Qwen/VAE files. Publish a verified
-        # hard link on the same volume instead of downloading/storing them twice.
-        for sibling in root.parent.iterdir():
-            check_cancelled()
-            source = sibling / item["path"]
-            if sibling == root or not source.is_file() or source.stat().st_size != item["size_bytes"]:
-                continue
-            if cached_file_sha256(source) != item["sha256"]:
-                continue
-            try:
-                os.link(source, path)
-            except OSError:
-                continue  # Different volume/filesystem: use the regular verified download.
             report(item, item["size_bytes"])
             return
         partial = path.with_name(path.name + ".download")

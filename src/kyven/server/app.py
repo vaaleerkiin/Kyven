@@ -27,7 +27,7 @@ from kyven.segment.providers.registry import ProviderRegistry
 from kyven.server.jobs import JobManager
 
 MAX_REQUEST_BYTES = 1024 * 1024
-SERVER_API_VERSION = 43
+SERVER_API_VERSION = 42
 
 
 @dataclass(frozen=True, slots=True)
