@@ -110,6 +110,7 @@ class Runtime:
         self.torch = torch
         torch.set_num_threads(max(1, min(8, torch.get_num_threads())))
         self.root = models
+        self.is_base = models.name == "flux2-klein-base-4b-q4-lanpaint"
         self.device = ("cuda" if torch.cuda.is_available() else "cpu") if device == "auto" else device
         if self.device == "cuda" and not torch.cuda.is_available():
             raise RuntimeError("CUDA is unavailable. Select CPU or install the CUDA runtime.")
@@ -138,6 +139,14 @@ class Runtime:
 
     def enhance(self, settings: dict, *, output_contract: str | None = None) -> dict:
         torch = self.torch
+        # Repeated requests with the same seed and settings have the same output.
+        # Keep a small process-local cache so retrying Improve Prompt is immediate.
+        key = (json.dumps(settings, sort_keys=True, ensure_ascii=False), output_contract)
+        cache = getattr(self, "_enhance_cache", None)
+        if cache is None:
+            cache = self._enhance_cache = {}
+        if key in cache:
+            return {"prompt": cache[key]["prompt"], "metadata": {**cache[key]["metadata"], "cache_hit": True}}
         # Make room in VRAM even if the preceding action was image generation.
         if self.pipe is not None:
             self.pipe.transformer.to("cpu")
@@ -179,8 +188,12 @@ class Runtime:
             output = self.lm.generate(**inputs, **kwargs)
         result = self.tokenizer.decode(output[0, inputs.input_ids.shape[1]:], skip_special_tokens=True)
         result = re.sub(r"<think>.*?</think>", "", result, flags=re.DOTALL).strip().strip('"')
-        return {"prompt": result, "metadata": {"model": getattr(self, "language_label", "Qwen3-4B"), "device": "cpu",
-                                                "shared_text_encoder_weights": True}}
+        answer = {"prompt": result, "metadata": {"model": getattr(self, "language_label", "Qwen3-4B"), "device": "cpu",
+                                                   "shared_text_encoder_weights": True, "cache_hit": False}}
+        if len(cache) >= 32:
+            cache.pop(next(iter(cache)))
+        cache[key] = answer
+        return answer
 
     def pipeline(self) -> None:
         if self.pipe is not None:
@@ -273,7 +286,11 @@ class Runtime:
                         prompt=prompt, device=torch.device("cpu"),
                         max_sequence_length=512,
                     )
-                self.set_conditioning(positive.to(device=device, dtype=runtime.dtype))
+                    negative = None
+                    if runtime.is_base:
+                        negative, _ = self.pipe.encode_prompt(prompt=negative_prompt or "", device=torch.device("cpu"), max_sequence_length=512)
+                self.set_conditioning(positive.to(device=device, dtype=runtime.dtype),
+                    negative.to(device=device, dtype=runtime.dtype) if negative is not None else None)
                 return self._prompt_bundle
 
             def encode_and_prepare(self, *args, **kwargs):
@@ -290,6 +307,20 @@ class Runtime:
                 emit("progress", progress=min(0.88, 0.3 + runtime.forwards * 0.55 /
                      max(1, settings["steps"] * (settings["thinking_steps"] + 1))),
                      message=f"Generating masked patch (model evaluation {runtime.forwards})")
+                # Both CFG results reduce to the conditional prediction at scale 1.
+                # Avoid a redundant full transformer pass in the distilled profile.
+                x, flow_t, guidance_scale, cfg_big = args[:4] if len(args) >= 4 else (
+                    kwargs["x"], kwargs["flow_t"], kwargs["guidance_scale"], kwargs["cfg_big"])
+                if guidance_scale == 1.0 and cfg_big == 1.0:
+                    latent_input = torch.cat([x, self._y_packed.to(x.device, x.dtype)], dim=1)
+                    img_ids = torch.cat([self._latent_ids, self._ref_image_ids], dim=1)
+                    timestep = torch.full((x.shape[0],), flow_t, device=x.device, dtype=self.dtype)
+                    with self.pipe.transformer.cache_context("cond"):
+                        velocity = self.pipe.transformer(hidden_states=latent_input.to(self.dtype),
+                            timestep=timestep, guidance=None, encoder_hidden_states=self._prompt_embeds,
+                            txt_ids=self._text_ids, img_ids=img_ids, return_dict=False)[0][:, :x.shape[1]]
+                    result = x.float() - flow_t * velocity.float()
+                    return result, result
                 return super().predict_x0(*args, **kwargs)
 
             def mask_to_latent_space(self, mask_pixel_keep):
@@ -349,7 +380,7 @@ class Runtime:
             try:
                 result = LanPaintInpaintPipeline(adapter, config)(
                     prompt=settings["prompt"], image=source, mask_image=mask,
-                    width=canvas[0], height=canvas[1], guidance_scale=1.0,
+                    width=canvas[0], height=canvas[1], guidance_scale=settings.get("moss_guidance", 4.0) if self.is_base else 1.0,
                     num_inference_steps=settings["steps"], seed=settings["seed"],
                 ).images[0]
                 result.crop((0, 0, *content)).resize(original.size, Image.Resampling.LANCZOS).save(payload["output"])
@@ -360,7 +391,8 @@ class Runtime:
                     "original_prompt": original_prompt, "effective_prompt": settings["prompt"],
                     "auto_translated": translated,
                     "edit_operation": operation,
-                    "text_encoder_device": "cpu", "quantization": "Q4_K_M"}}
+                    "text_encoder_device": "cpu", "quantization": "Q4_K_M",
+                    "base_model": self.is_base, "guidance": settings.get("moss_guidance", 4.0) if self.is_base else 1.0}}
             except torch.cuda.OutOfMemoryError:
                 self.pipe.transformer.to("cpu")
                 self.pipe.vae.to("cpu")

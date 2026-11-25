@@ -4,6 +4,20 @@
 inputs, local FLUX.2 Klein 4B Q4_K_M generation and LanPaint. It has no ComfyUI
 dependency and uses no remote inference service.
 
+The optional **FLUX.2 Klein 4B Base Q4 + LanPaint (Preview)** uses a separate
+verified model bundle, 20 steps and CFG 4 by default. It is undistilled and
+slower than the default 4-step Klein. Select it and install it via Model Manager.
+Both models share the private runtime; verified identical weights can be reused.
+On a local RTX 4070 Laptop 8 GB, a 512-pixel crop with 20 steps and CFG 4
+removed a person in 175.56 seconds (2.91 GiB peak Torch allocations), and added
+a vase in 128.84 seconds in a separate run (2.91 GiB peak). The final result
+kept source pixels outside the mask. The removal reconstructed the door and its
+text differently, so geometry and color matching remain shot-dependent.
+Processing Resolution sets the maximum crop side, not the output image size.
+Base auto blending also matches additions and replacements at the mask edge;
+set Seamless Blend to Off if its color shift is undesirable. The worker reuses
+identical Improve Prompt requests during its lifetime.
+
 MOSS is retired from normal node selection; its catalog entry remains available
 for managing existing installations.
 

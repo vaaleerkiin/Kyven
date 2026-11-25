@@ -49,3 +49,12 @@ attention; LanPaint constrains known source latents during denoising, and the
 existing composite separately enforces the final artist permission mask.
 The adapter's weights license is unspecified, so commercial permission is not
 claimed. This additive experiment is documented in [MOSS_FILL](../MOSS_FILL.md).
+
+## Klein Base preview, 2026-11-25
+
+The optional Base model uses a pinned Apache-2.0 Q4 bundle and 20-step, CFG 4
+initial profile. Mask-constrained LanPaint and strict final alpha stay in place.
+Base additions and replacements use automatic boundary blending. The condensed
+Klein path omits its mathematically redundant unconditional pass at guidance 1;
+Base retains both CFG passes. Shared files are hard-linked only after SHA-256
+verification and fall back to verified download if linking is unavailable.

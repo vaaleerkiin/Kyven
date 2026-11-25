@@ -248,6 +248,26 @@
       "download_type": "verified_bundle",
       "runtime": "moss-fill",
       "license_acceptance_required": true
+    },
+    {
+      "model_id": "flux2-klein-base-4b-q4-lanpaint",
+      "task": "generative_fill",
+      "display_name": "FLUX.2 Klein 4B Base Q4 + LanPaint (Preview)",
+      "provider": "flux2-klein-lanpaint-worker",
+      "config": "generative_fill/klein_base_models.json",
+      "filename": "flux2-klein-base-4b-q4-lanpaint",
+      "source": "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B",
+      "sha256": "88dbbd3cf37b934e6e43e39ea87ecd9a55446de3e9fc9db478a0a63f4f0ea3d5",
+      "size_bytes": 10651075482,
+      "parameters_millions": 8000,
+      "recommended_vram_mb": 8192,
+      "supports_cpu": true,
+      "license": "Apache-2.0 (weights); optional worker GPL-3.0",
+      "license_url": "https://github.com/scraed/LanPaint/blob/2d7912f9a5efe5ece8de334c7ca18317b8288c39/LICENSE",
+      "commercial_use": true,
+      "redistribution": true,
+      "download_type": "verified_bundle",
+      "runtime": "generative-fill"
     }
   ]
 }

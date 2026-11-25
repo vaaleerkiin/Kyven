@@ -20,12 +20,12 @@ from kyven_nuke.node import (
 from kyven_nuke.runtime import ensure_server
 
 PROVIDER_ID = "flux2-klein-4b-q4-lanpaint"
-MODEL_IDS = (PROVIDER_ID, "moss-sft-int8-edit-lanpaint")
-MODEL_LABELS = ("FLUX.2 Klein 4B Q4 + LanPaint",)
+MODEL_IDS = (PROVIDER_ID, "flux2-klein-base-4b-q4-lanpaint")
+MODEL_LABELS = ("FLUX.2 Klein 4B Q4 + LanPaint", "FLUX.2 Klein 4B Base Q4 + LanPaint (Preview)")
 
 
 def _model_id(node: Any) -> str:
-    return PROVIDER_ID
+    return MODEL_IDS[1] if str(node["model"].value()) == MODEL_LABELS[1] else PROVIDER_ID
 
 
 def _ensure_model_control(node: Any) -> None:
@@ -39,7 +39,9 @@ def _ensure_model_control(node: Any) -> None:
         if "steps" in node.knobs():
             _place_knob_after(node, "moss_guidance", "steps")
     if "moss_guidance" in node.knobs():
-        node["moss_guidance"].setVisible(False)
+        node["moss_guidance"].setLabel("Base Guidance")
+        node["moss_guidance"].setVisible(True)
+        node["moss_guidance"].setEnabled(_model_id(node) == MODEL_IDS[1])
     for name in ("zimage_guidance", "zimage_control_scale", "zimage_negative_prompt"):
         if name in node.knobs():
             node[name].setVisible(False)
@@ -56,8 +58,8 @@ def _ensure_model_control(node: Any) -> None:
         if callback is not None:
             callback.setValue("")
         node["model"].setValues(list(MODEL_LABELS))
-        node["model"].setValue(0)
-        if selected != MODEL_LABELS[0]:
+        node["model"].setValue(1 if selected == MODEL_LABELS[1] else 0)
+        if selected not in MODEL_LABELS:
             node["steps"].setValue(4)
             node["fill_mask_overlap"].setValue(32)
         node["model"].setEnabled(True)
@@ -205,8 +207,9 @@ def knob_changed() -> None:
     if knob == "model":
         moss = _model_id(node) != PROVIDER_ID
         node["steps"].setValue(20 if moss else 4)
+        node["moss_guidance"].setEnabled(moss)
         node["model_help"].setValue(
-            "Experimental MOSS Edit: latent-mask sampling; removal seams are not production-qualified. Edit weights license unresolved. Qwen3.5 W4A8 runs in RAM."
+            "Base preview: higher step count and CFG; performance and image quality require shot validation."
             if moss else "Qwen3-4B encodes and improves text in RAM. Generation uses the GPU in separate stages.")
     if knob in {"inputChange", "crop_mode", "processing_roi"}:
         from kyven_nuke.node import _clamp_bbox_knob
@@ -276,7 +279,7 @@ def create_generative_fill_node() -> Any:
     node["knobChanged"].setValue("")
     node.setName("KyvenGenerativeFill")
     node["kyven"].setLabel("Generative Fill")
-    node["kyven_title"].setValue('<font size="5"><b>KYVEN / GENERATIVE FILL</b></font><br>FLUX.2 Klein + LanPaint')
+    node["kyven_title"].setValue('<font size="5"><b>KYVEN / GENERATIVE FILL</b></font><br>FLUX.2 Klein / Klein Base + LanPaint')
     node["model"].setValues(list(MODEL_LABELS))
     node["model"].setValue(0)
     node["model"].setEnabled(True)
@@ -323,9 +326,9 @@ def create_generative_fill_node() -> Any:
     node.addKnob(nuke.Tab_Knob("advanced", "Advanced"))
     _add_section(nuke, node, "fill_generation_section", "GENERATION / 8 GB MEMORY")
     for name, label, default, low, high, tip in (
-        ("working_size", "Working Size", 768, 256, 1024, "Maximum crop side before grid padding. Start at 768 on 8 GB; 512 uses less memory."),
+        ("working_size", "Processing Resolution", 768, 256, 1024, "Maximum side of the cropped region in pixels; the output retains Source resolution. Lower values are faster and use less VRAM."),
         ("fill_mask_overlap", "Generation Overlap", 32, 0, 128, "Source pixels generated beyond the artist mask to keep model transitions away from the compositing boundary. Output remains limited to the original mask."),
-        ("steps", "Diffusion Steps", 4, 2, 30, "Klein distilled normally uses 4 scheduler steps. More steps cost time."),
+        ("steps", "Diffusion Steps", 4, 2, 50, "Klein distilled normally uses 4 scheduler steps. More steps cost time."),
         ("thinking_steps", "LanPaint Thinking Steps", 2, 1, 8, "Extra conditional sampling iterations. More improves some edits but increases generation time."),
         ("lanpaint_early_stop", "Early Stop", 1, 0, 29, "Skip thinking iterations during this many final diffusion steps. Must be smaller than Diffusion Steps."),
         ("vae_tile_size", "VAE Tile Size", 256, 128, 512, "Smaller decode tiles reduce temporary GPU memory."),
@@ -371,7 +374,7 @@ def create_generative_fill_node() -> Any:
     strength.setValue(1)
     _add_knob(nuke, node, strength)
     stitch = nuke.Enumeration_Knob("fill_seamless_blend", "Seamless Blend", ["Auto", "On", "Off"])
-    stitch.setTooltip("Auto solves color and gradient continuity for removals. On also applies it to additions/replacements and may change their colors. Off keeps standard masked compositing.")
+    stitch.setTooltip("Auto matches boundaries for removals and all Base edits. On also applies it to other additions/replacements and may change their colors. Off keeps standard masked compositing.")
     _add_knob(nuke, node, stitch)
     _add_section(nuke, node, "qwen_section", "QWEN PROMPT IMPROVEMENT")
     system = nuke.Multiline_Eval_String_Knob("qwen_system_prompt", "System Prompt")

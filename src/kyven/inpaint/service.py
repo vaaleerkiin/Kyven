@@ -15,7 +15,7 @@ from kyven.atomic_io import replace_with_retry
 from kyven.cache_manifest import read_valid_manifest, write_manifest_atomic
 from kyven.cancellation import CancellationToken
 from kyven.errors import ErrorCode, KyvenError
-from kyven.inpaint.masks import mask_filter_size, prepare_inpaint_masks
+from kyven.inpaint.masks import expand_binary_mask, mask_filter_size, prepare_inpaint_masks
 from kyven.inpaint.models import InpaintRequest, InpaintResult
 from kyven.segment.output import write_mask_png_atomic
 from kyven.segment.providers.registry import ProviderRegistry
@@ -187,8 +187,7 @@ class InpaintService:
             if request.fill.mask_overlap:
                 # Generate beyond the permission edge so the model's transition
                 # and VAE fringe do not land on the final compositing boundary.
-                inference_full = np.asarray(Image.fromarray(inference_full).filter(
-                    ImageFilter.MaxFilter(2 * request.fill.mask_overlap + 1))).copy()
+                inference_full = expand_binary_mask(inference_full, request.fill.mask_overlap)
         if not np.any(inference_full):
             _write_rgb_atomic(request.output, source_pixels)
             if request.patch_output is not None:
@@ -297,7 +296,8 @@ class InpaintService:
             color_matching.update(mode=mode, strength=strength)
             blend_mode = request.fill.seamless_blend
             if (blend_mode == "on" or (blend_mode == "auto" and
-                    prediction.metadata.get("edit_operation") == "remove")) and hasattr(provider, "stitch"):
+                    (prediction.metadata.get("edit_operation") == "remove"
+                     or getattr(provider, "auto_stitch_all_edits", False)))) and hasattr(provider, "stitch"):
                 token.report_progress(0.92, "Matching the patch to the original boundary")
                 predicted, seamless = provider.stitch(predicted, original_crop,
                     np.where(merge_crop_pixels > 0, 255, 0).astype(np.uint8), token)

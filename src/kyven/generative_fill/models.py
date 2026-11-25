@@ -11,7 +11,8 @@ from kyven.inpaint.models import InpaintRequest
 
 PROVIDER_ID = "flux2-klein-4b-q4-lanpaint"
 MOSS_PROVIDER_ID = "moss-sft-int8-edit-lanpaint"
-FILL_PROVIDERS = (PROVIDER_ID, MOSS_PROVIDER_ID)
+BASE_PROVIDER_ID = "flux2-klein-base-4b-q4-lanpaint"
+FILL_PROVIDERS = (PROVIDER_ID, MOSS_PROVIDER_ID, BASE_PROVIDER_ID)
 from kyven.generative_fill.prompts import DEFAULT_SYSTEM_PROMPT
 
 
@@ -45,7 +46,7 @@ class FillSettings:
             _invalid("Enter a prompt of 1 to 16000 characters.")
         for name, low, high in (
             ("mask_overlap", 0, 128),
-            ("seed", 0, 2**32 - 1), ("steps", 2, 30), ("working_size", 256, 1024),
+            ("seed", 0, 2**32 - 1), ("steps", 2, 50), ("working_size", 256, 1024),
             ("thinking_steps", 1, 8), ("early_stop", 0, 30),
             ("vae_tile_size", 128, 512), ("timeout_seconds", 30, 7200),
         ):

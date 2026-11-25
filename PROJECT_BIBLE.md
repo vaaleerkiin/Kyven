@@ -54,3 +54,7 @@ The owner also authorized an experimental MOSS SFT INT8 + Edit backend on
 2026-11-25. It has a separate pinned runtime and quantized model bundle, keeps
 Klein available, and constrains known latents throughout LanPaint sampling.
 Its Edit adapter's commercial licensing remains unconfirmed. See [MOSS](docs/MOSS_FILL.md).
+
+The owner requested optional FLUX.2 Klein 4B Base Q4 + LanPaint as a
+commercial-use alternative. It shares the managed Generative Fill runtime and
+uses native classifier-free guidance. The distilled Klein remains the default.
