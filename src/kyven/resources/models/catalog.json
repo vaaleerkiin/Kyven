@@ -268,6 +268,26 @@
       "redistribution": true,
       "download_type": "verified_bundle",
       "runtime": "generative-fill"
+    },
+    {
+      "model_id": "mage-flow-edit-turbo-q6",
+      "task": "generative_fill",
+      "display_name": "Mage-Flow Edit Turbo Q6",
+      "provider": "mage-flow-worker",
+      "config": "generative_fill/mage_models.json",
+      "filename": "mage-flow-edit-turbo-q6",
+      "source": "https://huggingface.co/johnsor/Mage-Flow-Edit-Turbo-GGUF",
+      "sha256": "2ab683437dae89137373748deef15d70037de0de6428e7b7e03f6f7fc3c2d398",
+      "size_bytes": 7688489404,
+      "parameters_millions": 8000,
+      "recommended_vram_mb": 8192,
+      "supports_cpu": true,
+      "license": "MIT weights/runtime; Apache-2.0 encoder; NVIDIA CUDA redistributables",
+      "license_url": "https://github.com/microsoft/Mage/blob/main/LICENSE",
+      "commercial_use": true,
+      "redistribution": true,
+      "download_type": "verified_bundle",
+      "runtime": "mage-fill"
     }
   ]
 }

@@ -32,6 +32,22 @@ def test_real_nuke_nodes_guidance_upgrades_and_reopen(tmp_path):
         np.testing.assert_array_equal(actual, export['expected'])
 
 
+def test_real_nuke_shared_contract_is_consistent_across_node_families(tmp_path):
+    executable = os.environ.get('KYVEN_NUKE_EXECUTABLE')
+    if not executable:
+        pytest.skip('Set KYVEN_NUKE_EXECUTABLE for licensed Nuke integration checks')
+    report = tmp_path / 'node-consistency.json'
+    script = Path(__file__).parent / 'nuke/node_consistency.py'
+    result = subprocess.run([executable, '--nukex', '-i', '-t', str(script)],
+        env={**os.environ, 'KYVEN_NODE_CONSISTENCY_REPORT': str(report)},
+        capture_output=True, text=True, timeout=90, check=False,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+    assert result.returncode == 0 and report.is_file(), result.stdout + result.stderr
+    payload = json.loads(report.read_text())
+    assert payload['ok'] and len(payload['nodes']) == 5
+    assert all(item['source_exact'] and item['reopened'] for item in payload['nodes'])
+
+
 def test_real_nuke_generative_fill_mask_cache_and_reopen(tmp_path):
     executable = os.environ.get('KYVEN_NUKE_EXECUTABLE')
     if not executable:
@@ -45,6 +61,32 @@ def test_real_nuke_generative_fill_mask_cache_and_reopen(tmp_path):
     assert report.is_file(), result.stdout + result.stderr
     payload = json.loads(report.read_text())
     assert payload.get('ok'), json.dumps(payload, indent=2) + result.stderr
+
+
+def test_real_nuke_fill_identity_has_no_pixel_shift_or_bbox_offset(tmp_path):
+    executable = os.environ.get('KYVEN_NUKE_EXECUTABLE')
+    if not executable:
+        pytest.skip('Set KYVEN_NUKE_EXECUTABLE for licensed Nuke integration checks')
+    import numpy as np
+    from PIL import Image
+
+    report = tmp_path / 'alignment.json'
+    script = Path(__file__).parent / 'nuke/generative_fill_alignment.py'
+    result = subprocess.run([executable, '--nukex', '-i', '-t', str(script)],
+        env={**os.environ, 'KYVEN_FILL_ALIGNMENT_REPORT': str(report)},
+        capture_output=True, text=True, timeout=90, check=False,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+    assert result.returncode == 0 and report.is_file(), result.stdout + result.stderr
+    for case in json.loads(report.read_text()):
+        assert case['outside_exact'] and case['source_alpha_exact']
+        prefix = case['case']
+        source = np.array(Image.open(tmp_path / f'{prefix}-source.png').convert('RGB')).astype(float)
+        actual = np.array(Image.open(tmp_path / f'{prefix}-result.png').convert('RGB')).astype(float)
+        assert np.max(abs(source-actual)) <= 2  # two 8-bit image encodings
+        a, b = source.mean(axis=2), actual.mean(axis=2)
+        spectrum = np.fft.fft2(a) * np.conj(np.fft.fft2(b))
+        correlation = np.fft.ifft2(spectrum / np.maximum(abs(spectrum), 1e-10)).real
+        assert np.unravel_index(np.argmax(correlation), correlation.shape) == (0, 0)
 
 
 def test_real_nuke_refine_optional_integration_does_not_run_model_or_change_cache(tmp_path):

@@ -12,7 +12,8 @@ from kyven.inpaint.models import InpaintRequest
 PROVIDER_ID = "flux2-klein-4b-q4-lanpaint"
 MOSS_PROVIDER_ID = "moss-sft-int8-edit-lanpaint"
 BASE_PROVIDER_ID = "flux2-klein-base-4b-q4-lanpaint"
-FILL_PROVIDERS = (PROVIDER_ID, MOSS_PROVIDER_ID, BASE_PROVIDER_ID)
+MAGE_PROVIDER_ID = "mage-flow-edit-turbo-q6"
+FILL_PROVIDERS = (PROVIDER_ID, MOSS_PROVIDER_ID, BASE_PROVIDER_ID, MAGE_PROVIDER_ID)
 from kyven.generative_fill.prompts import DEFAULT_SYSTEM_PROMPT
 
 
@@ -37,8 +38,12 @@ class FillSettings:
     oom_retry: bool = True
     color_match: float = 1.0
     color_match_mode: str = "auto"
+    color_match_radius: int = 64
+    blend_margin: int = 0
     mask_overlap: int = 32
     seamless_blend: str = "auto"
+    seam_repair: str = "off"
+    seam_width: int = 24
     moss_guidance: float = 4.0
 
     def validate(self) -> None:
@@ -46,7 +51,10 @@ class FillSettings:
             _invalid("Enter a prompt of 1 to 16000 characters.")
         for name, low, high in (
             ("mask_overlap", 0, 128),
-            ("seed", 0, 2**32 - 1), ("steps", 2, 50), ("working_size", 256, 1024),
+            ("seam_width", 4, 64),
+            ("color_match_radius", 0, 256),
+            ("blend_margin", 0, 128),
+            ("seed", 0, 2**32 - 1), ("steps", 2, 50), ("working_size", 256, 2048),
             ("thinking_steps", 1, 8), ("early_stop", 0, 30),
             ("vae_tile_size", 128, 512), ("timeout_seconds", 30, 7200),
         ):
@@ -70,6 +78,8 @@ class FillSettings:
             _invalid("Color matching must be auto, context, background or off.")
         if self.seamless_blend not in {"auto", "on", "off"}:
             _invalid("Seamless blending must be auto, on or off.")
+        if self.seam_repair not in {"auto", "neural", "blend", "off"}:
+            _invalid("Boundary repair must be auto, neural, blend or off.")
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> FillSettings:
@@ -92,6 +102,8 @@ class GenerativeFillRequest(InpaintRequest):
     def validate(self) -> None:
         InpaintRequest.validate(self)
         self.fill.validate()
+        if self.provider_id != MAGE_PROVIDER_ID and self.fill.working_size > 1024:
+            _invalid("Processing resolutions above 1024 are currently supported only for Mage.")
         if self.provider_id not in FILL_PROVIDERS or not self.preserve_input_mask:
             _invalid("Generative Fill requires a supported fill model and strict mask preservation.")
         if self.quality_mode != "standard":

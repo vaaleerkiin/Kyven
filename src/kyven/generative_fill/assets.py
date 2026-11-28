@@ -26,6 +26,8 @@ def manifest(model_id: str = "") -> dict:
         path = path.with_name("moss_models.json")
     elif model_id == "flux2-klein-base-4b-q4-lanpaint":
         path = path.with_name("klein_base_models.json")
+    elif model_id == "mage-flow-edit-turbo-q6":
+        path = path.with_name("mage_models.json")
     elif model_id and model_id != "flux2-klein-4b-q4-lanpaint":
         raise ValueError(f"Unknown Generative Fill bundle: {model_id}")
     return json.loads(path.read_text(encoding="utf-8"))

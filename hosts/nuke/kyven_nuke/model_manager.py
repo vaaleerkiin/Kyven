@@ -60,6 +60,21 @@ def install_required_runtime(model_id):
     _start_operation("runtime", model)
 
 
+def install_model(model_id):
+    """One node button installs its complete trusted bundle and required runtime."""
+    catalog = config.root() / "src/kyven/resources/models/catalog.json"
+    try:
+        models = json.loads(catalog.read_text(encoding="utf-8"))["models"]
+        model = next(item for item in models if item["model_id"] == model_id)
+    except (OSError, ValueError, KeyError, StopIteration) as exc:
+        _nuke().message(f"Could not find the selected model in the trusted catalog:\n{exc}")
+        return
+    if model.get("license_acceptance_required"):
+        show_model_manager(model_id)
+        return
+    _start_operation("download", model)
+
+
 def _choice_label(model):
     if model.get("core_runtime"):
         return "Setup | Kyven Base Runtime | install or verify base components"
@@ -78,7 +93,7 @@ def _choice_label(model):
     )
 
 
-def show_model_manager():
+def show_model_manager(model_id=None):
     """Show one safe catalog action at a time in a native modal panel."""
 
     nuke = _nuke()
@@ -87,6 +102,8 @@ def show_model_manager():
     except Exception as exc:  # noqa: BLE001
         nuke.message(f"Could not open Kyven Model Manager:\n{exc}")
         return
+    if model_id:
+        models.sort(key=lambda model: model["model_id"] != model_id)
     labels = [_choice_label(model) for model in models]
     if not labels:
         nuke.message("The Kyven trusted model catalog is empty.")
@@ -224,7 +241,7 @@ def _start_operation(action, model, source=None):
             runtime_changed = False
             if action in {"download", "runtime"}:
                 if model.get("needs_core"):
-                    ensure_model_runtime("core", progress_callback=lambda message:
+                    ensure_model_runtime("base" if model.get("runtime") == "mage-fill" else "core", progress_callback=lambda message:
                         nuke.executeInMainThread(_update_task, args=(key, 2, message)),
                         cancel_requested=lambda: nuke.executeInMainThreadWithResult(_task_cancelled, args=(key,)))
                 runtime_changed = ensure_model_runtime(

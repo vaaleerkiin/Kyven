@@ -261,6 +261,7 @@ def inpaint_payload(
     refinement_steps: int = 15,
     refinement_strength: float = 1.0,
     refinement_scales: int = 3,
+    model_id: str | None = None,
 ) -> dict[str, Any]:
     return {
         "source": source,
@@ -269,7 +270,7 @@ def inpaint_payload(
         "output": output,
         "mask_output": mask_output,
         "patch_output": patch_output,
-        "model_id": INPAINT_MODEL_IDS[model_index],
+        "model_id": model_id if model_id is not None else INPAINT_MODEL_IDS[model_index],
         "profile": profile,
         "crop_mode": crop_mode,
         "roi": roi_box(roi, image_height, image_width) if crop_mode == "manual" else None,

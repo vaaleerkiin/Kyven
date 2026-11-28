@@ -199,6 +199,9 @@ class ModelCatalog:
         from kyven.generative_fill.base_provider import KleinBaseProvider
         from kyven.generative_fill.models import BASE_PROVIDER_ID
         registry.register(BASE_PROVIDER_ID, lambda: KleinBaseProvider(models_dir, device=device))
+        from kyven.generative_fill.mage_provider import MageProvider
+        from kyven.generative_fill.models import MAGE_PROVIDER_ID
+        registry.register(MAGE_PROVIDER_ID, lambda: MageProvider(models_dir, device=device))
         return registry
 
     def download(

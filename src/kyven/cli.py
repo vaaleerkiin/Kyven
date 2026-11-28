@@ -115,11 +115,11 @@ def build_parser() -> argparse.ArgumentParser:
     inpaint.add_argument("--processed-mask-output", type=Path)
     inpaint.add_argument("--processing-size", default=0, type=int)
 
-    fill = subparsers.add_parser("generative-fill", help="Klein or experimental MOSS masked generation")
+    fill = subparsers.add_parser("generative-fill", help="Mage, Klein or Base masked generation")
     fill.add_argument("--request", required=True, type=Path)
     _add_runtime_options(fill)
     enhance = subparsers.add_parser("prompt-enhance", help="Improve text with the selected fill model's Qwen weights")
-    enhance.add_argument("--model", default="flux2-klein-4b-q4-lanpaint", choices=_model_ids("generative_fill"))
+    enhance.add_argument("--model", default="mage-flow-edit-turbo-q6", choices=_model_ids("generative_fill"))
     enhance.add_argument("--prompt", required=True)
     enhance.add_argument("--system-prompt", type=Path)
     _add_runtime_options(enhance)

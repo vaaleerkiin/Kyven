@@ -24,7 +24,7 @@ Nuke Inference nodes, with embedded models and no Kyven server. See [WAFT](docs/
 | WAFT SmartVector | Complete Cattery folder and two Git LFS models | Clone with Git LFS, connect the Nuke plugin path; no server or Model Manager |
 | DLSS | Kyven worker, shim and runtime metadata | Install **Kyven DLSS Runtime** in Model Manager; a plain Git clone downloads the NVIDIA component during that setup |
 | Segment, Refine, Inpaint | Node code and selectable model catalogs | Install the desired model variants through the installer or Model Manager |
-| Generative Fill | FLUX.2 Klein and optional experimental MOSS Edit in one node | Select a backend and install its bundle in Model Manager; see [MOSS](docs/MOSS_FILL.md) |
+| Generative Fill | Mage-Flow Edit Turbo with Color Match, FLUX.2 Klein and Base | Mage is the default; Install / Repair Model prepares its complete setup; see [Mage](docs/MAGE_FILL.md) |
 
 Full preview ZIP/wheel bundles can include the NVIDIA DLSS component locally.
 They still use the managed runtime setup. WAFT remains an independent native
@@ -63,8 +63,9 @@ nuke.pluginAddPath("D:/Kyven/hosts/nuke")
    **Install Required Components** installs just the dependencies without downloading weights.
 5. Create a node, choose **Cache Folder**, enter its **Name** and **Version**, then process.
 
-`install.cmd` remains available for installation outside Nuke; choice **12** sets
-up Generative Fill. Both routes use the same pinned dependencies and model catalog.
+`install.cmd` remains available for installation outside Nuke; choice **14** sets
+up Mage Generative Fill without PyTorch or SAM. Choice **12** installs FLUX.
+Both routes use the same trusted model catalog.
 
 The installer is portable: it does not require administrator access, modify the registry, or install
 system-wide Python packages. Read the [installation guide](docs/INSTALLATION.md) for requirements,

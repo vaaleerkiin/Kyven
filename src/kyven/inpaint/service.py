@@ -182,6 +182,10 @@ class InpaintService:
             interpreted = 255 - mask_pixels if request.invert_mask else mask_pixels.copy()
             cutoff = round(request.mask_threshold * 255.0)
             merge_full = np.where(interpreted >= max(1, cutoff), interpreted, 0).astype(np.uint8)
+            if request.fill.blend_margin:
+                # Explicit opt-in: give a tight subject matte a clean transition
+                # zone outside its silhouette. Zero keeps exact artist alpha.
+                merge_full = expand_binary_mask(merge_full, request.fill.blend_margin)
             inference_full = np.maximum(
                 inference_full, np.where(merge_full > 0, 255, 0).astype(np.uint8))
             if request.fill.mask_overlap:
@@ -292,7 +296,9 @@ class InpaintService:
                           prediction.metadata.get("edit_operation") == "remove"))
             predicted, color_matching = match_context(
                 predicted, original_crop, inference_mask,
-                strength=strength, background=background)
+                strength=strength, background=background,
+                permission_mask=merge_crop_pixels,
+                local_radius=request.fill.color_match_radius)
             color_matching.update(mode=mode, strength=strength)
             blend_mode = request.fill.seamless_blend
             if (blend_mode == "on" or (blend_mode == "auto" and
@@ -311,7 +317,7 @@ class InpaintService:
         if strict_mask:
             support = np.where(merge_crop_pixels > 0, 255, 0).astype(np.uint8)
             alpha = ((merge_crop_pixels.astype(np.float32) / 255.0)[..., None]
-                     * (1.0 if seamless.get("applied") else
+                     * (1.0 if seamless.get("applied") and not seamless.get("preserve_edge_softness") else
                         _inward_feather_alpha(support, request.edge_softness)))
         elif not request.preprocess_mask:
             alpha = (merge_crop_pixels.astype(np.float32) / 255.0)[..., None]
@@ -342,6 +348,8 @@ class InpaintService:
         if strict_mask:
             metadata["color_matching"] = color_matching
             metadata["seamless_blend"] = seamless
+            metadata["blend_margin"] = request.fill.blend_margin
+            metadata["permission"] = "expanded" if request.fill.blend_margin else "artist_alpha"
         metadata.update({
             "processing_roi": region.metadata(),
             "crop_mode": request.crop_mode,

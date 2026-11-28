@@ -102,6 +102,20 @@ def test_default_generation_overlap_never_expands_output_permission(case):
                                   source[mask == 0])
 
 
+def test_explicit_blend_margin_allows_only_the_requested_extra_band(case):
+    from kyven.inpaint.masks import expand_binary_mask
+
+    source, mask, request, _, registry = case
+    request = replace(request, fill=replace(request.fill, blend_margin=6), edge_softness=2)
+    result = InpaintService(registry).run(request)
+    expanded = expand_binary_mask(mask, 6) > 0
+    output = np.array(Image.open(result.output))
+    np.testing.assert_array_equal(output[~expanded], source[~expanded])
+    assert np.any(output[(mask == 0) & expanded] != source[(mask == 0) & expanded])
+    assert result.metadata["permission"] == "expanded"
+    assert result.metadata["blend_margin"] == 6
+
+
 def test_cache_changes_with_prompt_seed_and_solver_and_reuses_identical_result(case):
     _, _, request, provider, registry = case
     service = InpaintService(registry)

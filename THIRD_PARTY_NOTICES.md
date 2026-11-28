@@ -85,3 +85,18 @@ https://github.com/Comfy-Org/comfy-kitchen. This backend does not require the
 ComfyUI application, graph execution or server. Preserve all dependency notices
 when distributing a prepared runtime. Experimental model metadata must not be
 interpreted as a commercial license grant for the Edit adapter.
+
+### Mage Generative Fill
+
+The optional Mage-Flow-Edit-Turbo Q6 bundle is pinned in
+`src/kyven/resources/generative_fill/mage_models.json`. Mage weights and code
+(Microsoft) and the johnsor Q6 conversion are MIT. Qwen3-VL-4B-Instruct and its
+vision projector are Apache-2.0. The separate stable-diffusion.cpp and llama.cpp
+runtimes are MIT; their license notices are downloaded with the bundle. The
+llama archive also includes LLVM OpenMP licensing. NVIDIA CUDA runtime/cuBLAS
+DLLs are downloaded as upstream redistributables and remain subject to NVIDIA's
+CUDA EULA (https://docs.nvidia.com/cuda/eula/); they are not MIT-licensed.
+These executables, DLLs and weights are optional verified downloads, not checked
+into or embedded in Kyven releases. Preserve all applicable notices and terms
+when redistributing a prepared environment. The Mage worker and boundary solver
+are separate from the GPL LanPaint worker and do not import it.

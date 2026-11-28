@@ -2,7 +2,10 @@
 param(
     [string[]]$Model = @(),
 
-    [string]$PythonExe = ""
+    [string]$PythonExe = "",
+
+    [ValidateSet("auto", "base", "full")]
+    [string]$RuntimeProfile = "auto"
 )
 
 $ErrorActionPreference = "Stop"
@@ -96,6 +99,7 @@ function Select-Models {
         [pscustomobject]@{ Number = "9"; Id = "mematte-vits-aim500"; Label = "MEMatte ViT-S"; Guidance = "memory-efficient high-resolution refinement, 4 GB+" },
         [pscustomobject]@{ Number = "10"; Id = "mematte-vitb-composition-1k"; Label = "MEMatte ViT-B"; Guidance = "quality high-resolution refinement, 8 GB+" },
         [pscustomobject]@{ Number = "12"; Id = "flux2-klein-4b-q4-lanpaint"; Label = "Generative Fill - Klein 4B Q4"; Guidance = "8 GB GPU / 32 GB RAM, optional runtime + 10.83 GB models" },
+        [pscustomobject]@{ Number = "14"; Id = "mage-flow-edit-turbo-q6"; Label = "Generative Fill - Mage Edit Turbo Q6"; Guidance = "8 GB GPU / 32 GB RAM, 7.69 GB verified models and runtime" },
         [pscustomobject]@{ Number = "13"; Id = "moss-sft-int8-edit-lanpaint"; Label = "Generative Fill - MOSS INT8 + Edit (Experimental)"; Guidance = "8 GB GPU / 32 GB RAM, 13.32 GB models; Edit weights license unresolved" },
         [pscustomobject]@{ Number = "0"; Id = "none"; Label = "No model"; Guidance = "install runtime only" }
     )
@@ -118,7 +122,7 @@ function Select-Models {
         }
         $Match = $Choices | Where-Object Number -eq $Part
         if (-not $Match) {
-            throw "Unknown model choice '$Part'. Run the installer again and enter 0-13."
+            throw "Unknown model choice '$Part'. Run the installer again and enter 0-14."
         }
         if ($Match.Id -eq "none") {
             $AnswerParts = @($Answer -split "[,; ]+" | Where-Object { $_ })
@@ -148,6 +152,7 @@ function Resolve-RequestedModels([string[]]$RequestedModels) {
         "mematte-vits-aim500",
         "mematte-vitb-composition-1k",
         "flux2-klein-4b-q4-lanpaint",
+        "mage-flow-edit-turbo-q6",
         "moss-sft-int8-edit-lanpaint"
     )
     if (-not $RequestedModels -or $RequestedModels.Count -eq 0) {
@@ -206,6 +211,10 @@ Write-Host "Nothing will be installed outside this repository."
 Write-Host "Nuke init.py will not be modified."
 
 $SelectedModels = @(Resolve-RequestedModels $Model)
+$Lightweight = $RuntimeProfile -eq "base" -or (
+    $RuntimeProfile -eq "auto" -and $SelectedModels.Count -gt 0 -and
+    @($SelectedModels | Where-Object { $_ -ne "mage-flow-edit-turbo-q6" }).Count -eq 0
+)
 if ($SelectedModels.Count -gt 0) {
     Write-Host "Models: $($SelectedModels -join ', ')"
 }
@@ -245,13 +254,18 @@ try {
     Write-Step "Updating packaging tools inside .venv"
     Invoke-Native $VenvPython @("-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel")
 
-    Write-Step "Preparing the pinned SAM 2 / HQ-SAM 2 runtime"
-    Invoke-Native $VenvPython @("-m", "pip", "uninstall", "--yes", "SAM-2", "HQ-SAM-2")
+    if (-not $Lightweight) {
+        Write-Step "Preparing the pinned SAM 2 / HQ-SAM 2 runtime"
+        Invoke-Native $VenvPython @("-m", "pip", "uninstall", "--yes", "SAM-2", "HQ-SAM-2")
 
-    Write-Step "Installing pinned PyTorch before building the model packages"
-    Invoke-Native $VenvPython @("-m", "pip", "install", "-r", (Join-Path $KyvenRoot "requirements\torch-cu128.txt"))
-    Write-Step "Installing SAM 2 / HQ-SAM 2 and the core model dependencies"
-    Invoke-Native $VenvPython @("-m", "pip", "install", "--no-build-isolation", "-r", $Requirements)
+        Write-Step "Installing pinned PyTorch before building the model packages"
+        Invoke-Native $VenvPython @("-m", "pip", "install", "-r", (Join-Path $KyvenRoot "requirements\torch-cu128.txt"))
+        Write-Step "Installing SAM 2 / HQ-SAM 2 and the core model dependencies"
+        Invoke-Native $VenvPython @("-m", "pip", "install", "--no-build-isolation", "-r", $Requirements)
+    }
+    else {
+        Write-Step "Installing the lightweight base for Mage (no PyTorch or SAM required)"
+    }
 
     Write-Step "Installing Kyven inside .venv"
     Invoke-Native $VenvPython @("-m", "pip", "install", "--upgrade", ".")
@@ -260,6 +274,10 @@ try {
         if ($SelectedModel -eq "flux2-klein-4b-q4-lanpaint") {
             Write-Step "Installing the private Generative Fill runtime"
             Invoke-Native $VenvPython @("-I", (Join-Path $KyvenRoot "scripts\setup_generative_fill.py"))
+        }
+        if ($SelectedModel -eq "mage-flow-edit-turbo-q6") {
+            Write-Step "Installing the private Mage runtime"
+            Invoke-Native $VenvPython @("-I", (Join-Path $KyvenRoot "scripts\setup_mage_fill.py"))
         }
         if ($SelectedModel -eq "moss-sft-int8-edit-lanpaint") {
             Write-Step "Installing the experimental private MOSS runtime (Edit weights license unresolved)"
@@ -276,10 +294,15 @@ try {
     }
 
     Write-Step "Checking the installed runtime"
-    Invoke-Native $VenvPython @(
+    if ($Lightweight) {
+        Invoke-Native $VenvPython @("-I", "-c", "import numpy, PIL, onnxruntime; import kyven.server.app; print('Kyven lightweight base ready')")
+    }
+    else {
+      Invoke-Native $VenvPython @(
         "-I", "-c",
         "from kyven.server.bootstrap import reset_inherited_dll_directory; reset_inherited_dll_directory(); import torch, onnxruntime, timm; from transformers import VitMatteForImageMatting; from sam2.build_sam import build_sam2, build_sam2_hq_video_predictor; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"
-    )
+      )
+    }
     Invoke-Native $VenvPython @(
         "-m", "kyven.cli", "models", "list", "--models-dir", $ModelsRoot
     )
@@ -300,6 +323,9 @@ Write-Host ""
 Write-Host "import nuke" -ForegroundColor White
 Write-Host "nuke.pluginAddPath(`"$PluginPath`")" -ForegroundColor White
 Write-Host ""
-Write-Host "Then restart Nuke and choose Kyven > Segment."
+if ($SelectedModels -contains "mage-flow-edit-turbo-q6") {
+    Write-Host "Then restart Nuke and choose Kyven > Generative Fill. Select Mage-Flow Edit Turbo Q6."
+}
+else { Write-Host "Then restart Nuke and choose the required node under Kyven." }
 Write-Host "To update later: pull the repository and run install.ps1 again."
 Write-Host "To install more models, rerun the script and select them from the menu."

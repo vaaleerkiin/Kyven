@@ -258,10 +258,10 @@ def _apply_inpaint_cache_fields(node_name: str) -> None:
     _load_inpaint_cache(node)
 
 
-def _payload(node: Any, source: Any, source_path: Path, mask_path: Path, model_mask_path: Path, output_path: Path, processed_mask_path: Path, patch_path: Path, mask_channel: str) -> dict[str, Any]:
+def _payload(node: Any, source: Any, source_path: Path, mask_path: Path, model_mask_path: Path, output_path: Path, processed_mask_path: Path, patch_path: Path, mask_channel: str, *, model_id: str | None = None) -> dict[str, Any]:
     return inpaint_payload(
         source=str(source_path.resolve()), mask=str(mask_path.resolve()), model_mask=str(model_mask_path.resolve()), output=str(output_path.resolve()), mask_output=str(processed_mask_path.resolve()), patch_output=str(patch_path.resolve()),
-        model_index=int(node["model"].getValue()), profile=str(node["profile"].value()),
+        model_index=int(node["model"].getValue()), model_id=model_id, profile=str(node["profile"].value()),
         image_width=int(source.width()), image_height=int(source.height()),
         crop_mode=str(node["crop_mode"].value()), roi=tuple(node["processing_roi"].value()),
         context_padding=int(node["context_padding"].value()), mask_grow=int(node["mask_grow"].value()),
@@ -594,10 +594,15 @@ def _apply(
         suffix += f" | working {working[0]}x{working[1]}"
     if metadata.get("oom_retried"):
         suffix += " | reduced after VRAM limit"
+    if metadata.get("blend_margin"):
+        suffix += f" | blend margin +{metadata['blend_margin']}px"
     if metadata.get("auto_translated"):
         suffix += " | translated to English"
     if metadata.get("cache_hit"):
         suffix += " | cache hit"
+    matching = metadata.get("color_matching", {})
+    if matching.get("mode") != "off" and matching.get("strength", 0) > 0 and not matching.get("applied"):
+        suffix += " | Color Match skipped: insufficient reliable context"
     suffix += _job_timing_text(job)
     _set_status(node_name, f"{display_name} complete{suffix}")
     _refresh_node_output(node)
@@ -615,8 +620,9 @@ def process_current_frame_for_node(
     _ensure_input_order(node)
     source, mask = node.input(SOURCE_INPUT), node.input(MASK_INPUT)
     if source is None or mask is None:
+        _set_status(node_name, "Connect Source and Mask before generating." if submit_method == "submit_generative_fill" else "Connect Source and Mask before processing.")
         if not live:
-            nuke.message("Kyven Inpaint needs Source and Mask inputs.")
+            nuke.message(f"Kyven {display_name} needs Source and Mask inputs.")
         return
     if _inside(node, "KyvenInpaintModelMaskWrite") is None:
         _ensure_inpaint_preview_graph(node)
@@ -642,7 +648,7 @@ def process_current_frame_for_node(
         _disable_live_for_manual_process(node)
     with _export_cancel_lock:
         _export_cancellations.discard(node_name)
-    _set_status(node.fullName(), "Exporting inpaint inputs...")
+    _set_status(node.fullName(), f"Exporting {display_name.lower()} inputs...")
     show_progress = not live
     if show_progress:
         _start_progress(node_name, f"Kyven {display_name}", f"Exporting frame {frame}")
@@ -666,12 +672,19 @@ def process_current_frame_for_node(
     except Exception as exc:  # noqa: BLE001
         if show_progress:
             _finish_progress(node_name)
-            nuke.message(f"Inpaint export failed: {exc}")
+            nuke.message(f"{display_name} export failed: {exc}")
         else:
             _set_status(node_name, f"Live inpaint export failed: {exc}")
         _set_busy(node_name, False)
         return
-    payload = payload_builder(node, source, source_path, mask_path, model_mask_path, output_path, processed_mask_path, patch_path, "alpha" if combined else "luminance")
+    try:
+        payload = payload_builder(node, source, source_path, mask_path, model_mask_path, output_path, processed_mask_path, patch_path, "alpha" if combined else "luminance")
+    except Exception as exc:  # noqa: BLE001 - restore UI when host settings cannot be exported
+        if show_progress:
+            _finish_progress(node_name)
+        _set_busy(node_name, False)
+        _set_status(node_name, f"Could not prepare {display_name.lower()} settings: {exc}")
+        return
     def work() -> None:
         try:
             client = ensure_server(progress_callback=_server_progress(node_name)); job_id = getattr(client, submit_method)(payload)

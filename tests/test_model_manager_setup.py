@@ -213,3 +213,23 @@ def test_refresh_repairs_fill_without_replacing_its_model_with_lama(monkeypatch)
     monkeypatch.setattr(generative_fill_node, "_ensure_fill_graph", repaired.append)
     manager._refresh_all_nodes()
     assert repaired == [node] and not overwritten
+
+
+def test_mage_node_install_uses_trusted_catalog_without_starting_server(monkeypatch):
+    calls = []
+    monkeypatch.setattr(manager, "ensure_server", lambda: pytest.fail("Node install must start asynchronously"))
+    monkeypatch.setattr(manager, "_start_operation", lambda action, model: calls.append((action, model)))
+    manager.install_model("mage-flow-edit-turbo-q6")
+    assert calls[0][0] == "download"
+    assert calls[0][1]["runtime"] == "mage-fill"
+
+
+def test_mage_runtime_bootstraps_lightweight_base_instead_of_sam(monkeypatch, tmp_path):
+    monkeypatch.setattr(runtime.config, "root", lambda: tmp_path)
+    monkeypatch.setattr(runtime.config, "python_executable", lambda: tmp_path / ".venv/Scripts/python.exe")
+    probes = []
+    monkeypatch.setattr(runtime, "_probe_runtime", lambda exe, name: probes.append(name) or True)
+    runtime.ensure_model_runtime("mage-fill")
+    assert probes == ["base", "mage-fill"]
+    command = runtime._runtime_install_command("base", runtime.config.python_executable())
+    assert command[-4:] == ["-Model", "none", "-RuntimeProfile", "base"]

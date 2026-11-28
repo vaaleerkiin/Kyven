@@ -1,5 +1,11 @@
 # Generative Fill
 
+New nodes default to Mage-Flow Edit Turbo Q6 with mask-aware generation and
+standard alpha feathering and Color Match. Mage supports a processing side up
+to 2048; its default is 512. Install / Repair Model prepares its complete setup.
+See [Mage setup, controls and measured qualification](MAGE_FILL.md). The FLUX
+backend described below remains selectable with its 1024 processing limit.
+
 **Nodes > Kyven > Generative Fill** is a native Nuke Group with Source and Mask
 inputs, local FLUX.2 Klein 4B Q4_K_M generation and LanPaint. It has no ComfyUI
 dependency and uses no remote inference service.

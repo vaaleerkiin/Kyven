@@ -19,6 +19,7 @@ class NukePreferencesTests(unittest.TestCase):
             mock.patch("kyven_nuke.preferences.config.runtime_dir", return_value=Path(directory)),
         ):
             self.assertEqual(load_defaults()["refine"], "vitmatte-small-composition-1k")
+            self.assertEqual(load_defaults()["generative_fill"], "mage-flow-edit-turbo-q6")
             (Path(directory) / "preferences.json").write_text("broken", encoding="utf-8")
             self.assertEqual(load_defaults()["segment"], "sam2.1-small")
 

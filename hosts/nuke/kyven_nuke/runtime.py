@@ -17,7 +17,7 @@ from kyven_nuke import config
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 
 PORT = 18788
-REQUIRED_API_VERSION = 43
+REQUIRED_API_VERSION = 48
 LEGACY_PORTS = (8765, 8766, 8767, 8768, 8769, 18768, 18769, 18770, 18771, 18772, 18773, 18774, 18775, 18776, 18777, 18778, 18779, 18780, 18781, 18782, 18783, 18784, 18785, 18786, 18787)
 _server_start_lock = threading.Lock()
 _runtime_install_lock = threading.RLock()
@@ -46,6 +46,13 @@ class ServerStartCancelled(RuntimeError):
 
 
 def _runtime_probe(runtime_id: str) -> str:
+    if runtime_id == "base":
+        return "import numpy, PIL, onnxruntime; import kyven.server.app"
+    if runtime_id == "mage-fill":
+        executable = config.root() / ".runtime/mage-fill/venv/Scripts/python.exe"
+        return ("import subprocess; subprocess.run([" + repr(str(executable)) +
+                ", '-I', " + repr(str(config.root() / "scripts/setup_mage_fill.py")) +
+                ", '--check'], check=True)")
     if runtime_id == "moss-fill":
         executable = config.root() / ".runtime/moss-fill/venv" / (
             "Scripts/python.exe" if os.name == "nt" else "bin/python")
@@ -75,17 +82,20 @@ def _runtime_probe(runtime_id: str) -> str:
 
 
 def _runtime_install_command(runtime_id: str, executable: Path) -> list[str]:
+    if runtime_id == "mage-fill":
+        return [str(executable), str(config.root() / "scripts/setup_mage_fill.py")]
     if runtime_id == "moss-fill":
         return [str(executable), str(config.root() / "scripts/setup_moss_fill.py")]
-    if runtime_id == "core":
+    if runtime_id in {"core", "base"}:
         if os.name != "nt":
             raise RuntimeError("Automatic base runtime installation currently supports Windows only.")
         managed = config.root() / ".venv/Scripts/python.exe"
         if executable.resolve() != managed.resolve():
             raise RuntimeError("Automatic setup manages the repository .venv. Remove the KYVEN_PYTHON_EXECUTABLE override before installing it.")
         shell = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
-        return [str(shell), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                str(config.root() / "install.ps1"), "-Model", "none"]
+        command = [str(shell), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                   str(config.root() / "install.ps1"), "-Model", "none"]
+        return command + (["-RuntimeProfile", "base"] if runtime_id == "base" else [])
     if runtime_id == "generative-fill":
         return [str(executable), str(config.root() / "scripts/setup_generative_fill.py")]
     if runtime_id == "dlss":
@@ -224,7 +234,9 @@ def ensure_model_runtime(runtime_id: str, progress_callback=None, cancel_request
     try:
         _cancel_install(cancel_requested)
         changed = False
-        if runtime_id in {"generative-fill", "hq-sam2", "moss-fill"}:
+        if runtime_id == "mage-fill":
+            changed = ensure_model_runtime("base", progress_callback, cancel_requested)
+        elif runtime_id in {"generative-fill", "hq-sam2", "moss-fill"}:
             changed = ensure_core_runtime(progress_callback, cancel_requested)
         executable = config.python_executable()
         ready = _probe_runtime(executable, runtime_id)
