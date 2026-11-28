@@ -50,6 +50,48 @@ def _ensure_model_control(node: Any) -> None:
         if name in node.knobs():
             node[name].setVisible(False)
     mage = _model_id(node) == MAGE_PROVIDER_ID
+    help_text = {
+        "model": (
+            "Selects Mage or FLUX for local masked image editing. Mage is the factory "
+            "default; FLUX uses LanPaint, and Base is a slower preview option. "
+            "Install / Repair Model prepares the selected backend."
+        ),
+        "invert_mask": "Invert the input alpha before interpreting the edit permission mask.",
+        "mask_threshold": (
+            "Ignore alpha below this cutoff. Retained fractional alpha controls the "
+            "final blend; the model's sampling mask is binary."
+        ),
+        "preview_model_mask": (
+            "Preview the sampling region, including model growth, Generation Overlap "
+            "and any explicit Result Mask Grow. This can exceed the final edit permission."
+        ),
+        "mask_grow": (
+            "Grow the inference region only. This does not expand the result permission; "
+            "Mage's separate Result Mask Grow explicitly allows edits in an extra band."
+        ),
+        "edge_softness": (
+            "Feather the generated patch inward within the result permission mask. "
+            "Mage's Result Mask Grow can explicitly expand that mask."
+        ),
+        "output_mode": (
+            "Result keeps Source alpha and auxiliary channels. Result + Mask Alpha "
+            "uses the result permission alpha; Result Premult also premultiplies RGB. "
+            "Generated Patch exposes replacement RGB with permission alpha. Difference "
+            "shows the RGB change; Source bypasses generation."
+        ),
+        "fill_mask_overlap": (
+            "Generate extra source pixels beyond the sampling region to move model "
+            "transitions away from the composite edge. This does not expand result permission."
+        ),
+    }
+    help_text["fill_smooth_removal"] = (
+        "Prepare a wider removal transition: Auto crop, padding 384, processing "
+        "resolution 1024, Result Mask Grow 32, softness 24, overlap 0 and Auto "
+        "Color Match. This explicitly permits extra RGB edits. Generate again to apply."
+    )
+    for name, tip in help_text.items():
+        if name in node.knobs():
+            node[name].setTooltip(tip)
     if "fill_blend_margin" not in node.knobs() and "edge_softness" in node.knobs():
         margin = _nuke().Int_Knob("fill_blend_margin", "Result Mask Grow (px)")
         margin.setRange(0, 128)
@@ -61,6 +103,7 @@ def _ensure_model_control(node: Any) -> None:
                                      "kyven_nuke.generative_fill_node.smooth_removal_edges()")
         node.addKnob(preset)
         _place_knob_after(node, "fill_smooth_removal", "fill_blend_margin")
+        node["fill_smooth_removal"].setTooltip(help_text["fill_smooth_removal"])
     for name in ("fill_blend_margin", "fill_smooth_removal"):
         if name in node.knobs():
             node[name].setVisible(mage)

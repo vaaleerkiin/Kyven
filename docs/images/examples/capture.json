@@ -1,0 +1,423 @@
+{
+  "source": {
+    "size": [
+      1024,
+      540
+    ],
+    "sha256": "b5878ac6e550d3cb1b95b40f7cea4770a74e6a77f90c40ffcaf5f4eba49a431b",
+    "origin": "Existing local street qualification plate"
+  },
+  "segment": {
+    "seconds": 0.14,
+    "request": {
+      "source": "<Kyven>\\.runtime\\documentation-real\\source.png",
+      "output": "<Kyven>\\.runtime\\documentation-real\\segment.png",
+      "points": [
+        {
+          "x": 595,
+          "y": 200,
+          "label": "positive"
+        },
+        {
+          "x": 605,
+          "y": 325,
+          "label": "positive"
+        },
+        {
+          "x": 605,
+          "y": 495,
+          "label": "positive"
+        },
+        {
+          "x": 526,
+          "y": 395,
+          "label": "positive"
+        },
+        {
+          "x": 686,
+          "y": 391,
+          "label": "positive"
+        }
+      ],
+      "box": null,
+      "roi": null,
+      "provider_id": "sam2.1-small",
+      "profile": "balanced",
+      "multimask_output": true,
+      "fill_holes": false,
+      "max_hole_area": 2048,
+      "raw_output": null,
+      "logits_output": null,
+      "trimap_output": "<Kyven>\\.runtime\\documentation-real\\edge-guide.png",
+      "confidence_width": 1.0
+    },
+    "metadata": {
+      "cache_hit": true,
+      "device": "cuda",
+      "model_config": "configs/sam2.1/sam2.1_hiera_s.yaml",
+      "profile": "balanced",
+      "provider": "sam2.1-small"
+    }
+  },
+  "refine": {
+    "seconds": 5.297,
+    "request": {
+      "source": "<Kyven>\\.runtime\\documentation-real\\source.png",
+      "mask": "<Kyven>\\.runtime\\documentation-real\\segment.png",
+      "output": "<Kyven>\\.runtime\\documentation-real\\refine.png",
+      "trimap_output": "<Kyven>\\.runtime\\documentation-real\\trimap.png",
+      "provider_id": "vitmatte-small-composition-1k",
+      "profile": "balanced",
+      "crop_mode": "full",
+      "roi": null,
+      "context_padding": 128,
+      "generate_trimap": true,
+      "foreground_radius": 5,
+      "background_radius": 8,
+      "tile_size": 512,
+      "tile_overlap": 64,
+      "skip_known_tiles": true
+    },
+    "metadata": {
+      "provider": "vitmatte-small-composition-1k",
+      "device": "cuda",
+      "profile": "balanced",
+      "tiles": 6,
+      "tiles_total": 6,
+      "tiles_skipped": 0,
+      "unknown_pixels": 21102,
+      "tile_size": 512,
+      "tile_overlap": 64,
+      "skip_known_tiles": true,
+      "trimap": {
+        "generated": true,
+        "foreground_radius": 5,
+        "background_radius": 8
+      },
+      "crop_mode": "full",
+      "context_padding": 128,
+      "processing_roi": {
+        "x0": 0,
+        "y0": 0,
+        "x1": 1024,
+        "y1": 540,
+        "width": 1024,
+        "height": 540,
+        "source_width": 1024,
+        "source_height": 540
+      },
+      "cache_hit": false
+    }
+  },
+  "inpaint": {
+    "seconds": 1.766,
+    "request": {
+      "source": "<Kyven>\\.runtime\\documentation-real\\source.png",
+      "mask": "<Kyven>\\.runtime\\documentation-real\\removal-mask.png",
+      "output": "<Kyven>\\.runtime\\documentation-real\\inpaint.png",
+      "model_mask": null,
+      "mask_output": null,
+      "patch_output": null,
+      "provider_id": "big-lama-native",
+      "profile": "balanced",
+      "crop_mode": "auto",
+      "roi": null,
+      "context_padding": 128,
+      "mask_grow": 0,
+      "edge_color_match": 0.0,
+      "edge_softness": 0,
+      "mask_threshold": 0.0,
+      "invert_mask": false,
+      "mask_channel": "luminance",
+      "processing_size": 0,
+      "preprocess_mask": true,
+      "quality_mode": "standard",
+      "refinement_steps": 15,
+      "refinement_strength": 1.0,
+      "refinement_scales": 3
+    },
+    "metadata": {
+      "device": "cuda",
+      "model_input": [
+        472,
+        528
+      ],
+      "padding": [
+        1,
+        1,
+        2,
+        2
+      ],
+      "mask_rule": "alpha > 0",
+      "native_resolution": true,
+      "quality_mode": "standard",
+      "refinement_steps": 0,
+      "refinement_scales": 0,
+      "processing_roi": {
+        "x0": 375,
+        "y0": 16,
+        "x1": 845,
+        "y1": 540,
+        "width": 470,
+        "height": 524,
+        "source_width": 1024,
+        "source_height": 540
+      },
+      "crop_mode": "auto",
+      "edge_color_offset": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "edge_softness": 0,
+      "patch_source_preserved_outside_model_mask": true,
+      "cache_hit": false
+    }
+  },
+  "fill": {
+    "seconds": 17.172,
+    "request": {
+      "source": "<Kyven>\\.runtime\\documentation-real\\source.png",
+      "mask": "<Kyven>\\.runtime\\documentation-real\\removal-mask.png",
+      "output": "<Kyven>\\.runtime\\documentation-real\\fill.png",
+      "model_mask": null,
+      "mask_output": null,
+      "patch_output": null,
+      "provider_id": "mage-flow-edit-turbo-q6",
+      "profile": "balanced",
+      "crop_mode": "auto",
+      "roi": null,
+      "context_padding": 256,
+      "mask_grow": 0,
+      "edge_color_match": 0.0,
+      "edge_softness": 4,
+      "mask_threshold": 0.0,
+      "invert_mask": false,
+      "mask_channel": "luminance",
+      "processing_size": 0,
+      "preprocess_mask": true,
+      "quality_mode": "standard",
+      "refinement_steps": 15,
+      "refinement_strength": 1.0,
+      "refinement_scales": 3,
+      "fill": {
+        "prompt": "Remove the man. Restore the storefront and pavement behind him. Preserve the white car and the original lighting.",
+        "seed": 42,
+        "steps": 4,
+        "working_size": 512,
+        "thinking_steps": 2,
+        "step_size": 0.2,
+        "friction": 15.0,
+        "strength": 8.0,
+        "beta": 1.0,
+        "early_stop": 1,
+        "vae_tile_size": 256,
+        "timeout_seconds": 1800,
+        "oom_retry": true,
+        "color_match": 1.0,
+        "color_match_mode": "auto",
+        "color_match_radius": 64,
+        "blend_margin": 0,
+        "mask_overlap": 32,
+        "seamless_blend": "off",
+        "seam_repair": "off",
+        "seam_width": 24,
+        "moss_guidance": 4.0
+      },
+      "preserve_input_mask": true
+    },
+    "metadata": {
+      "working_size": [
+        512,
+        352
+      ],
+      "reference_max_side": 512,
+      "seed": 42,
+      "steps": 4,
+      "device": "cuda",
+      "quantization": "Q6_K",
+      "mask_during_sampling": true,
+      "effective_prompt": "Remove the man. Restore the storefront and pavement behind him. Preserve the white car and the original lighting.",
+      "original_prompt": "Remove the man. Restore the storefront and pavement behind him. Preserve the white car and the original lighting.",
+      "auto_translated": false,
+      "oom_retried": false,
+      "seconds": 9.5,
+      "edit_operation": "remove",
+      "runtime": "stable-diffusion.cpp",
+      "color_matching": {
+        "applied": true,
+        "background": true,
+        "gain": [
+          0.9992074966430664,
+          1.0017391443252563,
+          1.0045180320739746
+        ],
+        "offset": [
+          -1.7800521850585938,
+          -1.7445526123046875,
+          -1.598602294921875
+        ],
+        "context_error": [
+          1.8030357360839844,
+          1.49237060546875,
+          1.5414562225341797
+        ],
+        "method": "affine",
+        "background_rows": 90,
+        "local_background": true,
+        "local_pixels": 22227,
+        "local_radius": 64,
+        "max_local_offset": 27.118194580078125,
+        "mode": "auto",
+        "strength": 1.0
+      },
+      "seamless_blend": {
+        "applied": false
+      },
+      "blend_margin": 0,
+      "permission": "artist_alpha",
+      "processing_roi": {
+        "x0": 215,
+        "y0": 0,
+        "x1": 1005,
+        "y1": 540,
+        "width": 790,
+        "height": 540,
+        "source_width": 1024,
+        "source_height": 540
+      },
+      "crop_mode": "auto",
+      "edge_color_offset": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "edge_softness": 4,
+      "patch_source_preserved_outside_model_mask": true,
+      "cache_hit": false
+    }
+  },
+  "dlss": {
+    "seconds": 0.219,
+    "request": {
+      "source": "<Kyven>\\.runtime\\documentation-real\\source.exr",
+      "output": "<Kyven>\\.runtime\\documentation-real\\dlss.exr",
+      "worker": "<Kyven>\\.runtime\\dlss\\bin\\KyvenDLSSWorker.exe",
+      "motion": null,
+      "mask": null,
+      "depth": null,
+      "session": "documentation-real",
+      "frame": 1,
+      "temporal": false,
+      "reset": false,
+      "mask_source": "none",
+      "mask_channel": "A",
+      "motion_x": "R",
+      "motion_y": "G",
+      "motion_units": "pixels",
+      "motion_y_up": true,
+      "motion_scale_x": 1.0,
+      "motion_scale_y": 1.0,
+      "depth_channel": "depth.Z",
+      "intensity": 1.0,
+      "local_tone": 1.0,
+      "local_structure": 1.0,
+      "skin_structure": -1.0,
+      "style": 0,
+      "preset": 0,
+      "temporal_strength": 0.35,
+      "history_frames": 3,
+      "history_budget_mb": 512,
+      "history_clamp": 2.0,
+      "motion_consistency": false,
+      "forward_x": "forward.u",
+      "forward_y": "forward.v",
+      "consistency_threshold": 1.5,
+      "depth_rejection": 0.1,
+      "rejection": 0.1,
+      "scene_cut": 0.45,
+      "protect_outside": true,
+      "max_dimension": 1024,
+      "hdr_rolloff": true,
+      "preserve_source_color": true,
+      "rolloff_knee": 0.5,
+      "timeout": 120.0
+    },
+    "metadata": {
+      "alpha": "preserved",
+      "cache_hit": true,
+      "control_mask": "none",
+      "external_motion": false,
+      "guide_convention": "artist_white_allows; native_rgba_white_allows",
+      "hdr_rolloff": "anchored_peak_shoulder_v1",
+      "history_capacity": 0,
+      "history_cpu_bytes": 0,
+      "history_frames_buffered": 0,
+      "history_reason": "single_frame",
+      "history_reset": true,
+      "motion_consistency": false,
+      "output_sha256": "5a0113531579f64462055b9ffd2ca0e8d0b6391070085d498201226a88b57925",
+      "processing_size": [
+        1024,
+        540
+      ],
+      "provider": "dlss-external",
+      "resolution": "native_residual",
+      "rolloff_knee": 0.5,
+      "runtime": {
+        "KyvenDLSSWorker.exe": "b6333cedf67008221096fe78f4d9f9c5d9077b0b756b052997a6441bcb36f013",
+        "nvngx.dll": "ad30f2debd142c10c042d287cde7f3aa21ee23009f78191dbdc7d6c3c3619860",
+        "nvngx_dlssnr.dll": "6eb209e764f39872625debd6abaf45e2bb6322f6f270f781f70c059ae30b3927"
+      },
+      "source_color": "preserved_rgb_ratios",
+      "temporal_mean_weight": 0.0,
+      "temporal_reused_fraction": 0.0,
+      "temporal_samples_used": 0
+    }
+  },
+  "waft": {
+    "nuke": "16.0v4",
+    "seconds": 18.672,
+    "model": "WAFT-a1 FP16 / deployed v5 / 5 iterations",
+    "working_side": 512,
+    "motion": "Controlled horizontal translation of the real plate: +8 source pixels/frame",
+    "frame": 2,
+    "channels": [
+      "forward.u",
+      "forward.v",
+      "backward.u",
+      "backward.v"
+    ],
+    "grid_suppression": 1,
+    "edge_threshold": 0.25,
+    "median_forward_u": 8.014543533325195,
+    "median_forward_v": 0.0010065974202007055,
+    "display": "HSV hue=atan2(v,u); value=clip(magnitude/16,0,1); saturation=1"
+  },
+  "checks": {
+    "inpaint": {
+      "outside_mask_exact": true,
+      "changed_selected_pixels": 65717
+    },
+    "fill": {
+      "outside_mask_exact": true,
+      "changed_selected_pixels": 65252
+    },
+    "refine": {
+      "partial_alpha_pixels": 10609
+    }
+  },
+  "artifacts": {
+    "source.png": "b5878ac6e550d3cb1b95b40f7cea4770a74e6a77f90c40ffcaf5f4eba49a431b",
+    "segment-alpha.png": "61762be7e40297e91b4458e87dc81285abee6278d1e78bc4da53fdb52d51bc32",
+    "segment-edge-guide.png": "d4eb4ead623566cff933d0034a4125437d9466f5944c98c836fbc6fed4f00826",
+    "refine-trimap.png": "2a878925910d21c0cca594c3ce6585008ca11e8a3b06e26dbbeb0c9eb09d4f93",
+    "refine-alpha.png": "8269a62388d154eed82167c4bbbee884c9bcad7a1b832a873d486d0f6b16358e",
+    "removal-mask.png": "5f620d66ae8f817ff7cfe525b3caa3be5e7fca82053e26306a5c605707c962ec",
+    "inpaint-result.png": "44185beb1a6b13fc7f5a1d2718d3dfbce4b72aab3f204deb221849c2d14fbc6d",
+    "generative-fill-result.png": "5b5f75a4e0580c4330d0fe38e73e6ebf554b4baa0f71e90c2f42d58e3a336129",
+    "dlss-result-srgb.png": "98f48bfec511b04c276abd4651c55faf471e438f616b65ce50a9fb40b46bc8b0",
+    "waft-frame-2.png": "475a13d7fb2ca98b1844179d761f8b71c00aff70e1859122ad74b28afc06420b",
+    "waft-frame-3.png": "1f891446dc9dd790a056c5067ac5c3c92ef9829288575fba2d34947694ac5ec7"
+  }
+}

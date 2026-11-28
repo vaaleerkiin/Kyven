@@ -28,7 +28,7 @@ administrator access, registry changes, or a system-wide Python environment.
 | WAFT SmartVector | Gizmo, callbacks and both embedded models through Git LFS | Connect `hosts/nuke` and restart Nuke 16 |
 | DLSS | Worker, shim and pinned runtime metadata | Use **Model Manager > Kyven DLSS Runtime > Install Selected** |
 | Segment / Refine / Inpaint | Adapters, providers and model catalog | Choose and install the model versions you need |
-| Generative Fill | Native node and standalone worker code | Select the Klein bundle in Model Manager; its components install automatically |
+| Generative Fill | Native node and separate Mage/FLUX workers | Mage is the factory default; **Install / Repair Model** prepares the selected backend |
 
 For WAFT alone, skip the server environment installer and connect the Nuke plugin
 path described below. DLSS uses Windows/RTX and the server environment; its NVIDIA
@@ -89,8 +89,9 @@ its weights. If no compatible Python is found, setup downloads a pinned standalo
 Python 3.12, verifies its size and SHA-256, and extracts it into `.runtime/python`.
 It does not register Python or modify system PATH. Existing Python 3.10-3.13
 interpreters remain supported, including an explicit `-PythonExe` override.
-Generative Fill installs its separate environment, Klein, Qwen and
-VAE through the same manager; no separate node setup or console command is required.
+Generative Fill installs the selected backend's private environment, generator,
+Qwen encoder and VAE through the same manager. Mage and FLUX have separate
+dependencies; no console command is required.
 
 Replace `D:/Kyven` with the actual repository location. Kyven discovers its root
 from that plugin path; setting `KYVEN_ROOT` is normally unnecessary.
@@ -98,8 +99,9 @@ from that plugin path; setting `KYVEN_ROOT` is normally unnecessary.
 ### Optional installation outside Nuke
 
 `install.cmd` or `powershell -ExecutionPolicy Bypass -File .\install.ps1` uses the
-same installers. Press Enter for SAM 2.1 Small and ViTMatte Small, or choose **12**
-for Generative Fill (10.83 GB model bundle; 8 GB GPU and 32 GB RAM recommended).
+same installers. Press Enter for SAM 2.1 Small and ViTMatte Small. Choose **14**
+for Mage Generative Fill (about 7.69 GB bundle), or **12** for FLUX (about 10.83 GB).
+Recorded qualification used an 8 GB GPU and 32 GB RAM; see [backend details](GENERATIVE_FILL.md).
 The installer prints the Nuke plugin path at the end.
 
 ## Standalone WAFT SmartVector
@@ -167,16 +169,18 @@ to install missing components. The standalone installer can also prepare the new
 .\install.ps1 -Model lama-2025jan-onnx
 .\install.ps1 -Model big-lama-native
 .\install.ps1 -Model flux2-klein-4b-q4-lanpaint
+.\install.ps1 -Model mage-flow-edit-turbo-q6
 .\install.ps1 -Model none
 ```
 
 The installer installs pinned PyTorch before building SAM/HQ-SAM. The optional
 SAM CUDA extension is disabled on Windows, so Visual Studio and the CUDA toolkit
 are not required for installation. PyTorch CUDA inference remains available.
-Generative Fill resolves its dependencies in a separate environment and reuses
-the core PyTorch installation without replacing core Transformers. Git is not
-required for its pinned source archives. Runtime verification checks the actual
-Klein/Qwen/GGUF adapter and the SciPy/OpenCV compositing dependencies.
+FLUX Generative Fill resolves dependencies in a separate environment and can reuse
+core PyTorch without replacing core Transformers. Mage uses its own lightweight
+environment and native executables, without installing PyTorch or SAM. Git is not
+required for these pinned bundles. Runtime verification checks the selected
+backend and its SciPy/OpenCV compositing dependencies.
 
 ## Install or remove models from Nuke
 

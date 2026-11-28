@@ -7,6 +7,12 @@ Kyven Inpaint removes masked content from a Source image and reconstructs the ba
 Processing ROI. It is designed for paint and clean-up work: the model sees only the useful crop,
 while Kyven restores the result to the untouched full input format.
 
+![Inpaint: Source and removal mask produce an estimated clean background](images/nodes/inpaint.png)
+
+*Actual Big-LaMa Native removal. [Raw images and settings](EXAMPLES.md#inpaint) ·
+[Input/settings/result walkthrough](NODES.md#inpaint) ·
+[Captured Nuke controls](NODE_CONTROLS.md#inpaint).*
+
 ## On this page
 
 - [Quick start](#quick-start)
@@ -49,6 +55,8 @@ mask convention is reversed.
 
 Start with LaMa ONNX while positioning the mask and ROI. Switch to Big-LaMa Native when a large ROI
 loses visible texture detail at the fast model's fixed input size.
+The factory new-node selection is Big-LaMa Native; Model Manager's **Set as
+Default** can change it. The fast-model suggestion above is a preview workflow.
 
 ### Input Colorspace
 
@@ -57,8 +65,11 @@ Cattery LaMa. It defaults to **Linear**. Before inference, a Colorspace node con
 selected input space to `sRGB`; after inference, a second Colorspace converts from `sRGB` back to
 the selected space. The intervening Write and Reads are raw so they cannot apply a second transform.
 
-The selector exposes the colorspaces available in the current Nuke color-management configuration,
-including gamma, log, and camera spaces when the configuration provides them.
+This is Nuke's native **Colorspace** transfer menu, including gamma, log and
+camera-transfer choices. The visible **Linear** item is stored internally as
+`RGB`; the control reference records both. This selector is not a full OCIO
+working-space/gamut transform. Convert wide-gamut footage appropriately upstream
+when required by the shot's color pipeline.
 
 Changing this setting requires reprocessing the frame or range. Existing cached Result and Patch
 files were created with the previous transfer and must not be reused for comparison.

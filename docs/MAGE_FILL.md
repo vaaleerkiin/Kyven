@@ -1,5 +1,8 @@
 # Mage Generative Fill
 
+[Documentation home](README.md) · [Generative Fill guide](GENERATIVE_FILL.md) ·
+[Visual walkthrough](NODES.md#generative-fill) · [Nuke workflow](NUKE.md)
+
 New Generative Fill nodes default to **Mage-Flow Edit Turbo Q6**.
 Existing FLUX and Base nodes keep their selected model. Use the Model menu to
 switch. Model Manager's Set as Default affects new nodes. LanPaint and Base-only

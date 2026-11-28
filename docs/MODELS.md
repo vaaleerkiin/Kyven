@@ -93,8 +93,8 @@ kyven models download mematte-vits-aim500 --models-dir models
 kyven models download mematte-vitb-composition-1k --models-dir models
 ```
 
-In Nuke, Model Manager has **Set as Default**. It stores one default each for Segment, Refine, and
-Inpaint. The selection is applied only when a new node is created; existing scripts and nodes keep
+In Nuke, Model Manager has **Set as Default**. It stores one default each for Segment, Refine,
+Inpaint and Generative Fill. The selection is applied only when a new node is created; existing scripts and nodes keep
 their explicit model selection. DLSS uses its own managed runtime rather than one of these selectable default models; see [DLSS setup](DLSS.md#setup).
 
 ## Inpaint catalog
@@ -113,3 +113,25 @@ use.
 Big-LaMa's `Refined` quality mode uses the same verified checkpoint. It performs multi-scale feature
 optimization and therefore changes runtime and memory use, not the catalog download. Standard is the
 portable default; Refined is best used on a tight ROI with an 8 GB GPU or as a slow CPU fallback.
+
+## Generative Fill catalog
+
+| Model ID | Display name | Starting Nuke settings | Setup |
+| --- | --- | --- | --- |
+| `mage-flow-edit-turbo-q6` | Mage-Flow Edit Turbo Q6 | Factory default, 512 px / 4 steps | Private native worker and approximately 7.69 GB verified bundle |
+| `flux2-klein-4b-q4-lanpaint` | FLUX.2 Klein 4B Q4 + LanPaint | 512 px / 4 steps | Separate Torch/LanPaint worker and approximately 10.83 GB bundle |
+| `flux2-klein-base-4b-q4-lanpaint` | FLUX.2 Klein 4B Base Q4 + LanPaint (Preview) | 512 px / 20 steps / guidance 4 | Separate Base weights; identical verified dependencies can be reused |
+
+These are optional heavier profiles. Recorded GPU qualification used an 8 GB RTX
+4070 Laptop and 32 GB RAM; it does not establish a 4 GB guarantee. CPU inference
+is selectable. Mage supports a working side up to 2048, FLUX up to 1024, subject
+to available memory. **Install / Repair Model** prepares the selected model and
+its dependencies; **Install Required Components** skips weights. Mage-only setup
+does not require Torch, SAM or FLUX. Each backend uses a separate private runtime.
+
+Mage/native workers use MIT components and an Apache-2.0 encoder; CUDA artifacts
+retain NVIDIA's terms. FLUX weights are Apache-2.0 and its LanPaint worker is
+GPL-3.0. The retired MOSS Edit model has unconfirmed commercial terms and is not
+in the normal node selector. See [Generative Fill](GENERATIVE_FILL.md),
+[Mage qualification](MAGE_FILL.md#qualification) and
+[third-party notices](../THIRD_PARTY_NOTICES.md).

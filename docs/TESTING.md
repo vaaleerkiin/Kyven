@@ -67,6 +67,25 @@ Interactive preview regressions check native yellow guidance before any HTTP res
 trimap-slider changes without export, correctly premultiplied colors, a stable three-row preview
 block during loading/success/error, preserved Nuke RAM cache and coalesced slider-event bursts.
 
+## Documentation capture
+
+The control reference can be rebuilt without model inference:
+
+```powershell
+& 'C:\Program Files\Nuke16.0v4\Nuke16.0.exe' --nukex -i -t scripts/document_nodes.py
+python -m pytest tests/test_documentation.py tests/test_nuke_tooltips.py -q -p no:cacheprovider
+```
+
+Use a separate terminal process: the capture script creates nodes in its in-memory
+script and ignores saved model preferences. It does not open an artist's script,
+download models or submit jobs. It writes `docs/NODE_CONTROLS.md` and a private
+capture report under `.runtime/documentation-capture/`. Conditional controls can
+appear after changing modes; the task guides describe those.
+
+The README's photographic examples run actual inference. Their separate
+[capture workflow](EXAMPLES.md#reproduce-the-capture) requires installed models
+and the DLSS runtime; WAFT also requires a licensed Nuke 16 process.
+
 ## GPU and release qualification
 
 Native graph checks do not establish quality or memory usage of SAM, Refine providers, LaMa,

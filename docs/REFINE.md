@@ -8,6 +8,12 @@ the same source RGB and binary mask/trimap inputs and produce the same alpha/out
 
 Refine converts a coarse mask into a soft alpha matte while keeping model inference outside the compositing host.
 
+![Refine: coarse mask, trimap guidance and soft alpha](images/nodes/refine.png)
+
+*Actual ViTMatte Small detail crop. [Raw images and settings](EXAMPLES.md#refine) ·
+[Input/settings/result walkthrough](NODES.md#refine) ·
+[Captured Nuke controls](NODE_CONTROLS.md#refine).*
+
 ## On this page
 
 - [Quick start](#quick-start)
@@ -191,6 +197,22 @@ the Group to save the integrated result; **Create Matte Read** opens the cached 
 
 After updating, restart Nuke or use **Kyven > Upgrade Selected Refine Node** to add the optional
 controls to an existing node. Its cached matte and current processing settings are preserved.
+
+## Outputs
+
+Output changes do not rerun matting. The first three modes use optional alpha
+integration when enabled; trimap and preview modes remain independent.
+
+| Output | Result |
+| --- | --- |
+| **Refined Matte** | Refined alpha shown as grayscale RGBA |
+| **Source + Refined Alpha** | Original RGB with refined alpha; default |
+| **Refined Cutout** | Source RGB multiplied by refined alpha |
+| **Trimap** | Black/gray/white model guidance in RGBA |
+| **Source + Trimap Alpha** | Source RGB with guidance in alpha |
+| **Trimap Cutout** | Source RGB multiplied by trimap guidance |
+| **Source (Bypass)** | Unchanged Source |
+| **Tile Preview** | Processing-plan diagnostic; does not run a matting model |
 
 ## Cache
 

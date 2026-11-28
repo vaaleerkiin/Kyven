@@ -1,6 +1,8 @@
 <h1><a href="https://github.com/vaaleerkiin/Kyven"><img src="hosts/nuke/icons/kyven_logo.png" alt="Kyven Tools logo" width="48" align="middle"></a>&nbsp;Kyven Tools</h1>
 
-**Local AI tools for Foundry Nuke: roto, alpha refinement, inpaint, WAFT SmartVector optical flow, and optional RTX neural reconstruction.**
+**Local AI tools for Foundry Nuke: roto, alpha refinement, inpaint, generative editing, WAFT SmartVector optical flow, and optional RTX neural reconstruction.**
+
+[Real examples](#real-examples) · [Installation](#start-here) · [Documentation](docs/README.md)
 
 Kyven's Segment, Refine, Inpaint, Generative Fill and DLSS nodes keep model loading and long inference outside Nuke. These nodes communicate
 with a local authenticated server and return ordinary image sequences, so rendered work remains
@@ -73,6 +75,10 @@ updates, moving the repository, and unattended model selection.
 
 ## Nodes
 
+**[Visual guide to all six nodes](docs/NODES.md)** shows what to connect, which
+controls to start with and what each output means. The
+[Nuke control reference](docs/NODE_CONTROLS.md) records controls from actual nodes.
+
 **WAFT SmartVector** is also bundled locally as a standalone Nuke 16 Cattery
 plugin, with its FP16 and FP32 models inside `plugins/Cattery/WAFT/`. Open
 **Nodes > Kyven > WAFT SmartVector**; no Kyven server or model-manager download
@@ -85,7 +91,7 @@ See [standalone plugins](plugins/README.md) for packaging and portability.
 | **Kyven Segment** | Source + Viewer points | Single-frame roto and SAM 2 video tracking | SAM 2.1 Small |
 | **Kyven Refine** | Source + coarse mask/trimap | Soft alpha and difficult boundaries | ViTMatte Small |
 | **Kyven Inpaint** | Source + removal mask | Paint-out and background reconstruction | LaMa ONNX Fast |
-| **Kyven Generative Fill (optional)** | Source + mask + prompt | Generate replacements; auto crop and shared Qwen prompt improvement | FLUX.2 Klein 4B Q4 + LanPaint |
+| **Kyven Generative Fill (optional)** | Source + alpha mask + prompt | Add, replace, modify or remove content locally | Mage-Flow Edit Turbo Q6; FLUX alternatives available |
 | **Kyven DLSS (optional RTX)** | Source + optional motion, depth and control mask | Neural reconstruction with temporal history | Kyven worker + separately licensed NVIDIA NR component |
 | **WAFT SmartVector (standalone)** | Source image sequence | Motion Vectors or Smart Vectors | Embedded WAFT-a1 FP16 / FP32 |
 
@@ -95,12 +101,93 @@ refresh and runtime limitations. Optional DLSS has no CPU inference provider.
 A common roto flow is:
 
 ```text
-Source -> Kyven Segment -> optional Kyven Refine -> compositing nodes
+Source ----------------------> Refine Source
+Source -> Segment -----------> Refine Mask -> refined alpha for compositing
 ```
 
 For temporal roto, set a key frame, add corrections where required, optionally enable
 **Seamless Key Frame**, and run Forward, Backward, or Both Directions. For paint-out, connect the
 original Source and a removal mask directly to Kyven Inpaint.
+
+## Real examples
+
+The comparisons below use a photographic plate and actual Kyven model outputs.
+Results have not been retouched. Labels identify the model and settings; the
+[capture notes](docs/EXAMPLES.md) link the original images, masks and recorded
+requests. Segment, Refine, Inpaint, Generative Fill and DLSS were rendered through
+their Kyven providers; WAFT was rendered through the deployed native Nuke gizmo.
+
+### Segment — select an object
+
+Connect **Source**, place positive points on the subject and click **Process
+Current Frame**. **Alpha** shows the selection; **Cutout** multiplies Source by
+the mask. For a shot, set a key and use SAM 2 tracking with correction frames.
+This example uses SAM 2.1 Small with five positive points on the person.
+
+![Actual Segment result: photographic Source with prompts, generated alpha and cutout](docs/images/nodes/segment.png)
+
+[Segment guide](docs/SEGMENT.md)
+
+### Refine — solve soft edges
+
+Connect original **Source** and a coarse **Mask** in alpha. Inspect **Trimap**,
+then **Process Current Frame** to recover soft coverage. This detail crop shows
+the real Source, prepared trimap and ViTMatte Small alpha, using erosion 5 px,
+dilation 8 px and 512 px tiles. The result is a matte, not replacement RGB.
+
+![Actual Refine result: Source detail, black-gray-white trimap and refined alpha](docs/images/nodes/refine.png)
+
+[Refine guide](docs/REFINE.md)
+
+### Inpaint — remove unwanted content
+
+Connect **Source** and a removal **Mask**; white selects replacement pixels.
+Check **Preview Model Mask**, then **Process Current Frame**. Big-LaMa Native
+reconstructs the masked background without a text prompt. The example uses the
+Segment silhouette grown by 14 px. Inspect the actual reconstructed geometry and
+texture before accepting the result; each range frame is processed independently.
+
+![Actual Inpaint result: original person, removal mask and Big-LaMa reconstructed background](docs/images/nodes/inpaint.png)
+
+[Inpaint guide](docs/INPAINT.md)
+
+### Generative Fill — describe the edit
+
+Connect **Source**, an alpha **Mask**, and enter an instruction. Use **Install /
+Repair Model** on first use, then **Generate Current Frame**. New nodes default
+to Mage-Flow Edit Turbo Q6. Here Mage removes the person at 512 px working
+resolution, four steps and seed 42. Source pixels outside the permission mask
+were verified unchanged. FLUX alternatives remain selectable.
+
+![Actual Generative Fill result: original plate, edit mask and Mage person removal](docs/images/nodes/generative-fill.png)
+
+[Generative Fill guide](docs/GENERATIVE_FILL.md) · [Mage setup](docs/MAGE_FILL.md)
+
+### DLSS — reconstruct RGB on RTX
+
+Install **Kyven DLSS Runtime**, connect **Source** and click **Process Current
+Frame**. Compare **Result** with Source using Intensity and Preserve Source Color.
+This is an actual still-frame RTX render with Temporal off; the third panel
+amplifies the absolute display-RGB difference by 8. The output stays at Source
+resolution. Temporal processing additionally requires valid external Motion.
+
+![Actual DLSS result: matching Source and reconstructed detail crops plus amplified difference](docs/images/nodes/dlss.png)
+
+[DLSS guide](docs/DLSS.md)
+
+### WAFT SmartVector — generate motion data
+
+Connect a sequence, choose **Motion Vectors** or **Smart Vectors**, then render
+with an ordinary **Write: EXR, channels = all**. No Kyven Server is needed.
+For this native WAFT test, Nuke pans the real photograph by 8 px per frame.
+The measured median forward motion is **8.01 px horizontally** and approximately
+zero vertically. The last panel visualizes actual output channels with direction
+as hue and magnitude as brightness. This controlled pan does not demonstrate
+independently moving objects or occlusion handling.
+
+![Actual native WAFT render: real photo at two controlled offsets and measured forward flow](docs/images/nodes/waft.png)
+
+[WAFT guide](docs/WAFT.md)
 
 ## Cache contract
 
@@ -150,6 +237,8 @@ installation, troubleshooting, pipeline integration, and development.
 
 Most-used guides:
 
+- [Visual guide: inputs, settings and results for every node](docs/NODES.md)
+- [Nuke control reference](docs/NODE_CONTROLS.md)
 - [Nuke workflow](docs/NUKE.md)
 - [Segment](docs/SEGMENT.md)
 - [Refine](docs/REFINE.md)

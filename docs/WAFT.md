@@ -8,6 +8,13 @@ Vectors or Smart Vectors. It is a self-contained Cattery plugin bundled alongsid
 Kyven: calculations use Nuke's native Inference nodes, with no Kyven Server or
 Model Manager download. Package version 5 uses five model iterations.
 
+![WAFT: adjacent frames produce motion data](images/nodes/waft.png)
+
+*Actual native Nuke render on a controlled 8 px/frame photographic pan.
+[Raw vectors, settings and scope](EXAMPLES.md#waft-smartvector) ·
+[Input/settings/result walkthrough](NODES.md#waft-smartvector) ·
+[Captured Nuke controls](NODE_CONTROLS.md#waft-smartvector).*
+
 ## First use
 
 GitHub **Code > Download ZIP** includes both model binaries because LFS objects

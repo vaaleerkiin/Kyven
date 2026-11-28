@@ -1,9 +1,13 @@
 # Kyven Tools for Nuke
 
 [Documentation home](README.md) · [Install](INSTALLATION.md) · [Segment](SEGMENT.md) ·
-[Refine](REFINE.md) · [Inpaint](INPAINT.md) · [Troubleshooting](TROUBLESHOOTING.md)
+[Refine](REFINE.md) · [Inpaint](INPAINT.md) · [Generative Fill](GENERATIVE_FILL.md) ·
+[Troubleshooting](TROUBLESHOOTING.md)
 
-This guide covers behavior shared by the four Kyven Nuke nodes. Each node also has a dedicated guide with its inputs, controls, processing, output and cache behavior.
+This guide covers the five server-backed Kyven Nuke nodes. Each has a dedicated
+guide with its inputs, controls, processing, outputs and cache behavior. The
+[visual guide](NODES.md) explains all six nodes, including standalone WAFT;
+the [control reference](NODE_CONTROLS.md) lists captured native controls.
 
 **WAFT SmartVector** is an additional standalone Cattery plugin. Its native Nuke
 Inference graph, embedded models and output controls are covered in [WAFT](WAFT.md).
@@ -20,17 +24,18 @@ motion and alpha guides. Its live/temporal and EXR-cache behavior is documented 
 | Roto one frame or track through a shot | **Kyven Segment** | [Segment](SEGMENT.md) |
 | Turn a coarse mask/trimap into soft alpha | **Kyven Refine** | [Refine](REFINE.md) |
 | Remove an object and rebuild background | **Kyven Inpaint** | [Inpaint](INPAINT.md) |
+| Edit masked content using a text instruction | **Kyven Generative Fill** | [Generative Fill](GENERATIVE_FILL.md) |
 | Apply optional RTX neural reconstruction | **Kyven DLSS** | [DLSS](DLSS.md) |
 | Generate motion or smart vectors from a sequence | **WAFT SmartVector** | [WAFT](WAFT.md) |
 
 Typical roto graph:
 
 ```text
-Source -> Segment -----------------------> composite
-   |          |
-   |          +-- optional Trimap --+
-   |                                 v
-   +------------------------------> Refine -> composite
+Source -------------------------> Refine Source (input 1)
+Source -> Segment ---------------> Refine Mask (input 0) -> composite
+
+Segment Output = Source + Alpha: Refine Generate Trimap from Mask ON
+Segment Output = Edge Guide:     Refine Generate Trimap from Mask OFF
 ```
 
 Typical paint-out graph:
@@ -63,6 +68,7 @@ Create nodes from:
 Nodes > Kyven > Segment
 Nodes > Kyven > Refine
 Nodes > Kyven > Inpaint
+Nodes > Kyven > Generative Fill
 Nodes > Kyven > DLSS (Optional RTX)
 Nodes > Kyven > WAFT SmartVector
 ```
@@ -74,6 +80,11 @@ After updating the repository, restart Nuke and upgrade old Groups when required
 - `Kyven > Upgrade Selected Inpaint Node`;
 - `Kyven > Upgrade Selected DLSS Node`.
 
+Generative Fill has no separate upgrade menu action; **Upgrade Selected Inpaint
+Node** recognizes a Fill Group and refreshes its graph/controls. Restart Nuke
+first to load the updated Python modules.
+WAFT updates require its complete standalone folder and a fresh node; see [WAFT](WAFT.md).
+
 Upgrades preserve inputs, useful controls, hidden node identity, and existing readable cache. New
 artist cache fields may be added without moving or deleting a legacy UUID cache.
 
@@ -84,15 +95,17 @@ artist cache fields may be added without moving or deleting a legacy UUID cache.
 | **Live Current Frame** | Debounced asynchronous refresh while moving or editing |
 | **Process Current Frame** | Explicitly process and replace only the playhead frame |
 | **Process Frame Range** | Export the selected range and process frames sequentially |
+| **Generate Current Frame / Generate Frame Range** | Generative Fill's explicit processing buttons; requires a nonempty Prompt |
 | **Cancel** | Cooperatively cancel export, queue wait, or inference |
 
-Segment additionally provides SAM 2 temporal Forward/Backward/Both tracking. Refine and Inpaint are
-frame-independent. Their range renders can show temporal variation because each frame is inferred
-without memory.
+Segment additionally provides SAM 2 Forward/Backward/Both tracking. Refine,
+Inpaint and Generative Fill ranges are frame-independent and can show temporal
+variation. Generative Fill hides Live and keeps it off. DLSS temporal processing
+requires external Motion and sequential processing; see its guide.
 
 Explicit processing shows a native Nuke progress window with stage, percentage, ETA, and Cancel.
 Live work reports through Status to avoid opening a dialog after every timeline or control change.
-Disable Live before starting a range or tracking pass.
+Manual processing automatically turns Live off and leaves it off on completion.
 
 Each node is single-flight: repeated button presses and overlapping Live callbacks cannot run two
 jobs for that node. The server also merges identical active requests into one job. A failed,
@@ -102,11 +115,13 @@ cancelled, or interrupted operation releases the node's Busy state.
 
 - Segment has one Source input.
 - DLSS has Source, Motion, Depth and Mask inputs; Motion is required for temporal processing. See [DLSS setup](DLSS.md#setup).
-- Refine and Inpaint show **Source** on the left and **Mask** on the right.
-- Refine/Inpaint can read a mask from Alpha or Red.
+- Refine, Inpaint and Generative Fill show **Source** on the left (input 1) and
+  **Mask** on the right (input 0).
+- Refine, Inpaint and Generative Fill always read Mask **alpha**. Copy an RGB-only
+  mask into alpha with Shuffle/Copy upstream; there is no Alpha/Red selector.
 - Masks, mattes, and trimaps are written/read as raw data so OCIO/ACES does not transform numeric
   mask values.
-- Inpaint converts the selected **Input Colorspace** to sRGB for LaMa and back afterward; cache Reads
+- Inpaint and Generative Fill convert the selected **Input Colorspace** to sRGB and back afterward; cache Reads
   remain raw to avoid a second transform.
 
 ## Processing ROI
@@ -115,7 +130,7 @@ Processing ROI is an optimization crop, not a final output crop. Kyven crops the
 translates prompts/masks, runs the selected provider, and restores the result to the full Source
 format. Invalid or empty ROIs safely fall back to the full frame.
 
-Segment can animate ROI during tracking. Refine and Inpaint support Auto/Manual/Full crop behavior
+Segment can animate ROI during tracking. Refine, Inpaint and Generative Fill support Auto/Manual/Full crop behavior
 described in their node guides. A smaller ROI can improve effective detail and reduce work, but model
 internals mean performance and VRAM do not always scale directly with crop area.
 
@@ -132,7 +147,7 @@ All five nodes use the same Folder / Name / Version layout. Segment, Refine, Inp
         └── _kyven_work/
 ```
 
-Name is labelled **Roto Name**, **Refine Name**, **Inpaint Name**, or **Name** on DLSS. The UUID is not part of the
+Name is labelled **Roto Name**, **Refine Name**, **Inpaint Name**, **Fill Name**, or **Name** on DLSS. The UUID is not part of the
 public path. Two nodes with the same Folder, Name, and Version intentionally share and may overwrite
 the same sequence.
 
@@ -155,13 +170,15 @@ artist read `<Name>_<Version>.%04d.png` (or `.exr` for DLSS) without understandi
 Cache actions:
 
 - **Create Matte Read** creates a normal Read for Segment or Refine.
-- **Create Result Read** creates a normal Read for Inpaint or DLSS.
+- **Create Result Read** creates a normal Read for Inpaint, Generative Fill or DLSS.
 - DLSS also provides **Load Cache** to reconnect a previously rendered sequence.
 - **Delete Node Cache** removes only the selected Name/Version after confirmation.
 - **Delete All Kyven Cache** appears only on legacy UUID-cache nodes and affects only
   `.runtime/nuke_cache`; it never deletes artist-selected cache roots or models.
 
-The delete actions above apply to Segment, Refine and Inpaint; consult the [DLSS cache guide](DLSS.md#resolution-memory-and-cache) for DLSS. Successful outputs are atomic. Manifests include the source/prompt/settings/model identity and
+The delete actions above apply to Segment, Refine, Inpaint and Generative Fill;
+consult the [DLSS cache guide](DLSS.md#resolution-memory-and-cache) for DLSS.
+Successful outputs are atomic. Manifests include the source/prompt/settings/model identity and
 validate every required file. Independent ranges reuse valid frames after interruption. Incomplete
 SAM 2 temporal state is restarted even if individual mask files exist.
 
@@ -169,12 +186,16 @@ SAM 2 temporal state is restarted even if individual mask files exist.
 
 Output selection uses native Nuke branches and never reruns a model.
 
-- Segment: Source + Alpha, Alpha, Cutout, Source + Trimap, Trimap, Bypass.
-- Refine: Source + Refined Alpha, Refined Matte/Cutout, trimap views, Source bypass.
+- Segment: Source + Alpha, Alpha, Cutout, Source + Edge Guide, Edge Guide, Bypass.
+- Refine: Refined Matte, Source + Refined Alpha, Refined Cutout, Trimap,
+  Source + Trimap Alpha, Trimap Cutout, Source (Bypass), Tile Preview.
 - Inpaint: Result, Result + Mask Alpha, Result Premult, Generated Patch, Difference, Source.
+- Generative Fill: the same six output labels as Inpaint, but Result preserves
+  Source alpha/AOVs; mask modes use result permission alpha, not model-only growth.
 - DLSS: Result (reconstructed RGB with source alpha and auxiliary channels), Source.
 
-See the [Segment](SEGMENT.md), [Refine](REFINE.md), [Inpaint](INPAINT.md), and [DLSS](DLSS.md) guides for exact output
+See the [Segment](SEGMENT.md), [Refine](REFINE.md), [Inpaint](INPAINT.md),
+[Generative Fill](GENERATIVE_FILL.md) and [DLSS](DLSS.md) guides for exact output
 semantics.
 
 ## Models and server controls
@@ -183,7 +204,7 @@ semantics.
 Downloads activate only after exact size and SHA-256 verification. **Refresh Models** updates the
 node list and hardware advice. See [Models and safety](MODELS.md).
 
-The adapter starts a hidden external Python process on `127.0.0.1:18788` and requires API 36. A
+The adapter starts a hidden external Python process on `127.0.0.1:18788` and requires API 48. A
 random bearer token in `.runtime/server.token` protects every request. Nuke never imports PyTorch,
 CUDA, or model implementations.
 
@@ -194,11 +215,11 @@ an update if a stale process remains. The newest output is written to `.runtime/
 
 - one object per Segment node;
 - partially completed SAM 2 tracking memory cannot yet resume;
-- Refine and Inpaint ranges are frame-independent;
+- Refine, Inpaint and Generative Fill ranges are frame-independent;
 - the Nuke adapter is currently developed and tested primarily on Windows;
 - node layout and API may still change during pre-alpha.
 
-Continue with the [Segment](SEGMENT.md), [Refine](REFINE.md), [Inpaint](INPAINT.md), or [DLSS](DLSS.md) guide. For
+Continue with the [visual guide](NODES.md) or the detailed node guides. For
 failures, go directly to [Troubleshooting](TROUBLESHOOTING.md).
 
 ## Input preparation and processing
@@ -208,6 +229,8 @@ Each node keeps one working format for inputs:
 - Segment: one high-quality JPEG per frame, shared by single-frame segmentation and SAM2 tracking.
 - Refine: uncompressed TIFF for source and mask.
 - Inpaint: uncompressed TIFF for source and masks.
+- Generative Fill: the shared Inpaint TIFF preparation for Source and masks,
+  with its own prompt, sampling-mask and result-permission settings.
 - DLSS: one multilayer 32-bit float EXR per frame for HDR source, alpha and selected
   external guides, with lossless ZIP compression.
 

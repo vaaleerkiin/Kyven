@@ -39,7 +39,7 @@ it must not be committed or logged.
 | `POST` | `/v1/jobs/segment-video` | Queue SAM 2 temporal mask propagation |
 | `POST` | `/v1/jobs/refine` | Queue ViTMatte alpha refinement |
 | `POST` | `/v1/jobs/inpaint` | Queue LaMa Source + Mask object removal |
-| `POST` | `/v1/jobs/generative-fill` | Queue local Z-Image Q4 + LanPaint masked generation |
+| `POST` | `/v1/jobs/generative-fill` | Queue local masked generation using Mage or FLUX/LanPaint |
 | `POST` | `/v1/jobs/prompt-enhance` | Improve a prompt with the shared Qwen3-4B weights |
 | `POST` | `/v1/jobs/dlss` | Queue optional local DLSS reconstruction with external motion/control guides |
 | `POST` | `/v1/preview/trimap` | Build trimap on CPU without ViTMatte |
@@ -164,7 +164,7 @@ It contains the deterministic cache key and result metadata. A repeated request 
 manifest and every required image/NPZ before returning a cache hit; missing or corrupt media forces
 a safe recalculation.
 
-API version 36 is the current Nuke/server contract. `GET /v1/jobs/{id}` returns `progress`
+API version 48 is the current Nuke/server contract. `GET /v1/jobs/{id}` returns `progress`
 (0.0-1.0) and `progress_message`. Segment video requests may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
 returned masks to the original dimensions. Restart Nuke after updating Kyven so the adapter does not

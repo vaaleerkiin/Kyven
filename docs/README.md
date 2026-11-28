@@ -6,6 +6,12 @@
 This is the main index for Kyven documentation. Choose the path that matches what you are trying to
 do; you do not need to read every guide in order.
 
+**[Start with the visual node guide](NODES.md)** to see what all six nodes do,
+what to connect, and how to inspect their results. It includes six real model
+comparisons; [capture notes and raw images](EXAMPLES.md) record their settings.
+The [control reference](NODE_CONTROLS.md) captures real Nuke controls,
+initial values and hover help without running model inference.
+
 For a new installation: WAFT's complete Cattery folder and models arrive through
 Git LFS; connect it directly to Nuke. DLSS uses a managed runtime installation.
 Segment, Refine and Inpaint use separately installed model variants. See the
@@ -20,6 +26,7 @@ Segment, Refine and Inpaint use separately installed model variants. See the
    - [Segment](SEGMENT.md) for point prompts, roto, correction frames, and SAM 2 tracking;
    - [Refine](REFINE.md) for trimaps, soft alpha, hair, and edge refinement;
    - [Inpaint](INPAINT.md) for object removal and clean-up;
+   - [Generative Fill](GENERATIVE_FILL.md) for masked text-directed edits with Mage or FLUX;
    - [DLSS](DLSS.md) for optional RTX neural reconstruction and temporal setup;
    - [WAFT SmartVector](WAFT.md) for standalone optical flow with embedded models.
 4. Use [Troubleshooting](TROUBLESHOOTING.md) when the server, CUDA, a model, ROI, cache, or Read
@@ -53,12 +60,15 @@ Move to heavier models only when the shot demonstrates a quality limitation.
 
 | Guide | Audience | Read it for |
 | --- | --- | --- |
+| [Visual node guide](NODES.md) | Artist | All six nodes: inputs, first-frame settings, result channels and sequence limits |
+| [Nuke control reference](NODE_CONTROLS.md) | Artist / TD | Captured control labels, factory values, choices and hover help |
 | [Installation](INSTALLATION.md) | Artist / admin | First install, update, move, model installation |
 | [Nuke workflow](NUKE.md) | Artist | Shared controls, ranges, outputs, cache, server behavior |
 | [Segment](SEGMENT.md) | Roto artist / developer | Prompts, tracking, Seamless Key Frame, logits, CLI |
 | [Refine](REFINE.md) | Roto artist | Trimaps, ViTMatte/MEMatte, tiling, outputs |
 | [Inpaint](INPAINT.md) | Paint artist | Models, ROI, masks, blending, quality modes |
-| [Generative Fill](GENERATIVE_FILL.md) | Artist / TD | Z-Image Q4, LanPaint, strict mask crop, Qwen prompt improvement |
+| [Generative Fill](GENERATIVE_FILL.md) | Artist / TD | Mage default, FLUX alternatives, result permission, prompts and output modes |
+| [Mage details](MAGE_FILL.md) | Artist / TD | Setup, color matching, tight-mask preset and recorded qualification |
 | [DLSS (optional RTX)](DLSS.md) | Artist / TD | Local runtime, external vectors, alpha guides, live and temporal behavior |
 | [WAFT SmartVector](WAFT.md) | Artist / TD | Embedded optical-flow models, motion/smart outputs, portable Cattery folder |
 | [WAFT development recovery](../development/waft/README.md) | Developer | Recreate dependencies, checkpoints and model builds from lightweight sources |
@@ -77,9 +87,10 @@ Move to heavier models only when the shot demonstrates a quality limitation.
 | Improve a coarse edge | Refine + generated trimap | Inspect Trimap, then adjust erosion/dilation |
 | Use SAM uncertainty in Refine | Segment `Edge Guide` output | Disable Refine `Generate Trimap from Mask` |
 | Remove an object quickly | Inpaint + Auto ROI + LaMa ONNX | Switch to Big-LaMa Native when texture detail is insufficient |
+| Add or replace content using text | Generative Fill + Mage + alpha mask | Generate Current Frame; inspect Result and Difference before a range |
 | Reconstruct a shot on a supported RTX system | DLSS with Source | Add external Motion vectors for temporal stability |
 | Generate motion or smart vectors | WAFT SmartVector with Source sequence | Choose output mode; write all channels to EXR |
-| Hand cache to another artist | Open `<Cache Folder>/<Name>/<Version>/` | Read `<Name>_<Version>.%04d.png` for Segment, Refine or Inpaint; DLSS uses `.exr` |
+| Hand cache to another artist | Open `<Cache Folder>/<Name>/<Version>/` | Public `.png` for Segment/Refine/Inpaint/Fill, `.exr` for DLSS; use a Nuke Write for final Group output/AOVs |
 
 ## Documentation conventions
 

@@ -1,13 +1,21 @@
 # Experimental MOSS Generative Fill
 
+[Documentation home](README.md) · [Current Generative Fill guide](GENERATIVE_FILL.md)
+
 > Retired from normal node selection; this document describes the legacy experiment.
 
-MOSS is an additional backend in the existing native Nuke Generative Fill Group.
-FLUX.2 Klein remains available and remains the default for existing and new nodes.
-The MOSS backend uses a standalone worker; it requires no ComfyUI installation or
-server. Heavy libraries never load in Nuke.
+MOSS was an experimental backend in the native Nuke Generative Fill Group.
+FLUX.2 Klein was the default during this experiment. Current new nodes default
+to Mage (unless a different Model Manager default is saved); MOSS is no longer
+offered in the node selector. The retained backend uses a standalone worker and
+no ComfyUI installation. Heavy libraries never load in Nuke.
 
-## Install and select
+## Historical installation and selection
+
+The steps below record the preview workflow. The current node no longer exposes
+MOSS selection. Model Manager can still manage its legacy catalog entry, and
+explicit CLI/API requests can address the provider. Use the
+[current guide](GENERATIVE_FILL.md) for new node setup.
 
 1. Update Kyven, restart Nuke and create a Generative Fill node, or refresh its
    models through Model Manager to upgrade the selector in an existing Group.

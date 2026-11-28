@@ -7,6 +7,12 @@
 from positive and negative Viewer points. It supports one frame, independent frame ranges, and
 temporally consistent SAM 2 video tracking.
 
+![Segment: Source and point prompts produce alpha](images/nodes/segment.png)
+
+*Actual SAM 2.1 Small result. [Raw images and settings](EXAMPLES.md#segment) ·
+[Input/settings/result walkthrough](NODES.md#segment) ·
+[Captured Nuke controls](NODE_CONTROLS.md#segment).*
+
 ## On this page
 
 - [Quick start](#quick-start)

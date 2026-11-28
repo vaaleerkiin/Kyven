@@ -83,7 +83,8 @@ dependency; DLSS inference remains optional Windows/RTX with no CPU fallback. Th
 Cache metadata reports `history_capacity`, `history_frames_buffered`, `history_cpu_bytes`,
 `temporal_samples_used`, `temporal_reused_fraction` and `temporal_mean_weight`. Low reuse suggests
 checking vector direction, units, channel names, disocclusions, masks and rejection settings before
-increasing stability strength. API 36 / cache algorithm 5 separate this result from the earlier EMA.
+increasing stability strength. API 36 / cache algorithm 5 introduced this behavior
+as distinct from the earlier EMA; the current Nuke/server contract is API 48.
 The node's History readout displays previous frames actually used, capacity, reused pixel fraction
 and mean temporal blend for the last processed result. It does not claim to inspect the opaque native
 DLSS history. These diagnostic updates never trigger Live processing.
