@@ -32,7 +32,7 @@ def _write_rgb_atomic(path: Path, pixels: np.ndarray) -> None:
         descriptor, name = tempfile.mkstemp(prefix=f".{path.stem}-", suffix=path.suffix, dir=path.parent)
         os.close(descriptor)
         temporary = Path(name)
-        image = Image.fromarray(np.asarray(pixels, dtype=np.uint8), mode="RGB")
+        image = Image.fromarray(np.asarray(pixels, dtype=np.uint8))
         image.save(temporary)
         replace_with_retry(temporary, path)
     except Exception as exc:
@@ -148,6 +148,7 @@ class InpaintService:
         source_pixels = np.asarray(source, dtype=np.uint8)
         mask_pixels = np.asarray(mask, dtype=np.uint8)
         strict_mask = bool(getattr(request, "preserve_input_mask", False))
+        native_post = strict_mask and request.fill.native_postprocess
         if request.model_mask is not None:
             with Image.open(request.model_mask) as model_mask_file:
                 model_mask = model_mask_file.convert("L")
@@ -169,10 +170,10 @@ class InpaintService:
         else:
             inference_full, merge_full = prepare_inpaint_masks(
                 mask_pixels,
-                preprocess=request.preprocess_mask,
+                preprocess=True if native_post else request.preprocess_mask,
                 invert=request.invert_mask,
-                threshold=request.mask_threshold,
-                model_grow=request.mask_grow,
+                threshold=0 if native_post else request.mask_threshold,
+                model_grow=0 if native_post else request.mask_grow,
             )
             if request.preprocess_mask:
                 merge_full = inference_full.copy()
@@ -180,15 +181,16 @@ class InpaintService:
             # Generative Fill may grow the inference mask to improve context,
             # but the artist's mask remains the only permission to change RGB.
             interpreted = 255 - mask_pixels if request.invert_mask else mask_pixels.copy()
-            cutoff = round(request.mask_threshold * 255.0)
+            cutoff = 0 if native_post else round(request.mask_threshold * 255.0)
             merge_full = np.where(interpreted >= max(1, cutoff), interpreted, 0).astype(np.uint8)
-            if request.fill.blend_margin:
+            if request.fill.blend_margin and not request.fill.native_postprocess:
                 # Explicit opt-in: give a tight subject matte a clean transition
                 # zone outside its silhouette. Zero keeps exact artist alpha.
                 merge_full = expand_binary_mask(merge_full, request.fill.blend_margin)
-            inference_full = np.maximum(
-                inference_full, np.where(merge_full > 0, 255, 0).astype(np.uint8))
-            if request.fill.mask_overlap:
+            if not request.fill.native_postprocess:
+                inference_full = np.maximum(
+                    inference_full, np.where(merge_full > 0, 255, 0).astype(np.uint8))
+            if request.fill.mask_overlap and not request.fill.native_postprocess:
                 # Generate beyond the permission edge so the model's transition
                 # and VAE fringe do not land on the final compositing boundary.
                 inference_full = expand_binary_mask(inference_full, request.fill.mask_overlap)
@@ -224,10 +226,10 @@ class InpaintService:
             raw_crop = np.asarray(Image.fromarray(mask_pixels, mode="L").crop(crop_box))
             inference_mask, merge_crop_pixels = prepare_inpaint_masks(
                 raw_crop,
-                preprocess=request.preprocess_mask,
+                preprocess=True if native_post else request.preprocess_mask,
                 invert=request.invert_mask,
-                threshold=request.mask_threshold,
-                model_grow=request.mask_grow,
+                threshold=0 if native_post else request.mask_threshold,
+                model_grow=0 if native_post else request.mask_grow,
             )
             if request.preprocess_mask:
                 merge_crop_pixels = inference_mask.copy()
@@ -241,11 +243,14 @@ class InpaintService:
 
         provider = self._registry.activate(request.provider_id)
         capabilities = provider.capabilities
+        lab_output = (request.patch_output.with_name(request.patch_output.stem + ".lab.png")
+                      if native_post else None)
+        required_outputs = (request.output, request.mask_output, request.patch_output, lab_output)
         cache_key = request.cache_key(capabilities.provider_version, capabilities.model_checksum)
         cached = read_valid_manifest(
             request.output,
             cache_key,
-            (request.output, request.mask_output, request.patch_output),
+            required_outputs,
         )
         if cached is not None:
             metadata = dict(cached.get("metadata") or {})
@@ -286,9 +291,14 @@ class InpaintService:
         predicted = np.clip(predicted, 0, 255).astype(np.uint8)
 
         original_crop = source_pixels[region.y0 : region.y1, region.x0 : region.x1]
+        raw_prediction = predicted.copy() if native_post else None
         color_matching = {}
         seamless = {"applied": False}
-        if strict_mask:
+        if native_post:
+            from kyven.generative_fill.lab import match_lab_context
+            predicted, color_matching = match_lab_context(predicted, original_crop, inference_mask)
+            color_matching.update(mode="lab", strength=1.0)
+        elif strict_mask:
             from kyven.generative_fill.color_match import match_context
             mode = request.fill.color_match_mode
             strength = request.fill.color_match if mode != "off" else 0.0
@@ -337,7 +347,20 @@ class InpaintService:
         generated_pixels = merge_crop_pixels > 0 if strict_mask else inference_mask >= 128
         patch_crop[generated_pixels] = predicted[generated_pixels]
         if request.patch_output is not None:
-            _write_rgb_atomic(request.patch_output, full_patch)
+            if native_post:
+                # Private straight-RGBA patches retain generated crop context.
+                # Alpha records actual coverage; Nuke clips the live permission
+                # and feathers it without inference or file rewrites.
+                coverage = np.zeros((*mask_pixels.shape, 1), dtype=np.uint8)
+                coverage[region.y0:region.y1, region.x0:region.x1] = 255
+                raw_full = source_pixels.copy()
+                raw_full[region.y0:region.y1, region.x0:region.x1] = raw_prediction
+                matched_full = source_pixels.copy()
+                matched_full[region.y0:region.y1, region.x0:region.x1] = predicted
+                _write_rgb_atomic(request.patch_output, np.concatenate((raw_full, coverage), -1))
+                _write_rgb_atomic(lab_output, np.concatenate((matched_full, coverage), -1))
+            else:
+                _write_rgb_atomic(request.patch_output, full_patch)
         merged_crop = np.clip(original_crop * (1.0 - alpha) + predicted * alpha, 0, 255).astype(np.uint8)
         output = source_pixels.copy()
         output[region.y0 : region.y1, region.x0 : region.x1] = merged_crop
@@ -350,16 +373,17 @@ class InpaintService:
             metadata["seamless_blend"] = seamless
             metadata["blend_margin"] = request.fill.blend_margin
             metadata["permission"] = "expanded" if request.fill.blend_margin else "artist_alpha"
+            metadata["native_postprocess"] = bool(native_post)
         metadata.update({
             "processing_roi": region.metadata(),
             "crop_mode": request.crop_mode,
             "edge_color_offset": color_offset,
             "edge_softness": request.edge_softness,
-            "patch_source_preserved_outside_model_mask": True,
+            "patch_source_preserved_outside_model_mask": not native_post,
             "cache_hit": False,
         })
         write_manifest_atomic(request.output, cache_key, metadata,
-                              required_outputs=(request.output, request.mask_output, request.patch_output))
+                              required_outputs=required_outputs)
         return InpaintResult(
             request.output,
             request.mask_output,

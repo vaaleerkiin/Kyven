@@ -5,6 +5,7 @@ import threading
 import time
 from typing import Any
 
+from kyven_nuke import generative_fill_post as post
 from kyven_nuke import inpaint_node
 from kyven_nuke.node import (
     _add_knob,
@@ -21,15 +22,33 @@ from kyven_nuke.runtime import ensure_server
 
 PROVIDER_ID = "flux2-klein-4b-q4-lanpaint"
 MAGE_PROVIDER_ID = "mage-flow-edit-turbo-q6"
-MODEL_IDS = (PROVIDER_ID, "flux2-klein-base-4b-q4-lanpaint", MAGE_PROVIDER_ID)
-MODEL_LABELS = ("FLUX.2 Klein 4B Q4 + LanPaint", "FLUX.2 Klein 4B Base Q4 + LanPaint (Preview)", "Mage-Flow Edit Turbo Q6")
+BASE_PROVIDER_ID = "flux2-klein-base-4b-q4-lanpaint"
+BASE_LABEL = "FLUX.2 Klein 4B Base Q4 + LanPaint (Legacy)"
+MODEL_IDS = (PROVIDER_ID, MAGE_PROVIDER_ID)
+MODEL_LABELS = ("FLUX.2 Klein 4B Q4 + LanPaint", "Mage-Flow Edit Turbo Q6")
 
 
 def _model_id(node: Any) -> str:
     selected = str(node["model"].value())
     if selected.startswith("Mage-Flow Edit Turbo"):
         return MAGE_PROVIDER_ID
+    if selected.startswith("FLUX.2 Klein 4B Base"):
+        return BASE_PROVIDER_ID
     return MODEL_IDS[MODEL_LABELS.index(selected)] if selected in MODEL_LABELS else PROVIDER_ID
+
+
+def upgrade_selected_generative_fill_node() -> None:
+    nuke = _nuke()
+    selected = nuke.selectedNodes()
+    if len(selected) != 1 or "qwen_system_prompt" not in selected[0].knobs():
+        nuke.message("Select one Kyven Generative Fill node.")
+        return
+    node = selected[0]
+    _ensure_fill_graph(node)
+    node["knobChanged"].setValue("kyven_nuke.generative_fill_node.knob_changed()")
+    _set_status(str(node.fullName()),
+                "Controls updated; caches preserved. Generate once to prepare live Lab and edge controls."
+                if not post.native_ready(node) else "Live Lab and edge controls ready.")
 
 
 def _ensure_model_control(node: Any) -> None:
@@ -44,12 +63,17 @@ def _ensure_model_control(node: Any) -> None:
             _place_knob_after(node, "moss_guidance", "steps")
     if "moss_guidance" in node.knobs():
         node["moss_guidance"].setLabel("Base Guidance")
-        node["moss_guidance"].setVisible(_model_id(node) == MODEL_IDS[1])
-        node["moss_guidance"].setEnabled(_model_id(node) == MODEL_IDS[1])
+        node["moss_guidance"].setVisible(_model_id(node) == BASE_PROVIDER_ID)
+        node["moss_guidance"].setEnabled(_model_id(node) == BASE_PROVIDER_ID)
     for name in ("zimage_guidance", "zimage_control_scale", "zimage_negative_prompt"):
         if name in node.knobs():
             node[name].setVisible(False)
     mage = _model_id(node) == MAGE_PROVIDER_ID
+    if "fill_is_mage" not in node.knobs():
+        flag = _nuke().Boolean_Knob("fill_is_mage", "Mage Backend")
+        flag.setVisible(False)
+        node.addKnob(flag)
+    node["fill_is_mage"].setValue(mage)
     help_text = {
         "model": (
             "Selects Mage or FLUX for local masked image editing. Mage is the factory "
@@ -62,16 +86,16 @@ def _ensure_model_control(node: Any) -> None:
             "final blend; the model's sampling mask is binary."
         ),
         "preview_model_mask": (
-            "Preview the sampling region, including model growth, Generation Overlap "
-            "and any explicit Result Mask Grow. This can exceed the final edit permission."
+            "Preview the exact exported binary model mask, including Model Mask Grow. "
+            "FLUX may add Generation Overlap in the worker."
         ),
         "mask_grow": (
-            "Grow the inference region only. This does not expand the result permission; "
-            "Mage's separate Result Mask Grow explicitly allows edits in an extra band."
+            "Grow the FLUX inference region only. Does not expand the result blend alpha. "
+            "Mage uses input alpha directly and hides this control."
         ),
         "edge_softness": (
-            "Feather the generated patch inward within the result permission mask. "
-            "Mage's Result Mask Grow can explicitly expand that mask."
+            "Feather the FLUX patch inward within the result permission mask. "
+            "Generate again to apply."
         ),
         "output_mode": (
             "Result keeps Source alpha and auxiliary channels. Result + Mask Alpha "
@@ -84,29 +108,18 @@ def _ensure_model_control(node: Any) -> None:
             "transitions away from the composite edge. This does not expand result permission."
         ),
     }
-    help_text["fill_smooth_removal"] = (
-        "Prepare a wider removal transition: Auto crop, padding 384, processing "
-        "resolution 1024, Result Mask Grow 32, softness 24, overlap 0 and Auto "
-        "Color Match. This explicitly permits extra RGB edits. Generate again to apply."
-    )
     for name, tip in help_text.items():
         if name in node.knobs():
             node[name].setTooltip(tip)
-    if "fill_blend_margin" not in node.knobs() and "edge_softness" in node.knobs():
-        margin = _nuke().Int_Knob("fill_blend_margin", "Result Mask Grow (px)")
-        margin.setRange(0, 128)
-        margin.setValue(0)
-        margin.setTooltip("0 preserves the exact artist mask. A positive value explicitly allows RGB edits in this extra band around the alpha, giving removal edges room to blend.")
-        node.addKnob(margin)
-        _place_knob_after(node, "fill_blend_margin", "edge_softness")
-        preset = _nuke().PyScript_Knob("fill_smooth_removal", "Smooth Removal Edges",
-                                     "kyven_nuke.generative_fill_node.smooth_removal_edges()")
-        node.addKnob(preset)
-        _place_knob_after(node, "fill_smooth_removal", "fill_blend_margin")
-        node["fill_smooth_removal"].setTooltip(help_text["fill_smooth_removal"])
-    for name in ("fill_blend_margin", "fill_smooth_removal"):
+    if "fill_smooth_removal" in node.knobs():
+        node["fill_smooth_removal"].setVisible(False)
+    for name in ("mask_grow", "mask_threshold", "fill_mask_overlap"):
         if name in node.knobs():
-            node[name].setVisible(mage)
+            node[name].setVisible(not mage)
+    if mage:
+        node["preview_model_mask"].setTooltip(
+            "Exact binary alpha exported to Mage, before any result mask adjustments. "
+            "Only crop and working-resolution resampling are applied in the worker.")
     if "working_size" in node.knobs():
         node["working_size"].setRange(256, 2048 if mage else 1024)
         if not mage and node["working_size"].value() > 1024:
@@ -162,15 +175,17 @@ def _ensure_model_control(node: Any) -> None:
             node[name].setLabel(label)
     if "model_help" in node.knobs():
         node["model_help"].setValue(
-            "Mage: 4 steps. Start at 512; up to 2048 is available. Standard alpha feathering; no neural edge pass. Install / Repair Model prepares everything."
+            "Mage: 4 steps. Start at 512; up to 2048 is available. Result mask controls run after generation. Install / Repair Model prepares everything."
             if mage else "Base preview: 20 steps and guidance. Validate each shot. Install / Repair Model prepares everything."
-            if _model_id(node) == MODEL_IDS[1] else "FLUX: 4 steps with LanPaint. Up to 1024. Install / Repair Model prepares everything.")
+            if _model_id(node) == BASE_PROVIDER_ID else "FLUX: 4 steps with LanPaint. Up to 1024. Install / Repair Model prepares everything.")
     if mage:
-        node["mask_help"].setValue("White alpha selects edits. Result Mask Grow 0 keeps the exact mask; a positive value allows an extra blend band. Smooth Removal Edges prepares a wider transition for tight subject mattes.")
-        node["output_help"].setValue("Result keeps Source alpha and channels. RGB outside the selected result mask and its explicit grow margin remains Source.")
+        node["mask_help"].setValue("White input alpha selects model edits. Result Grow / Erode and Mask Blur run after generation and do not change the model mask.")
+        node["output_help"].setValue("Result keeps Source alpha and channels. RGB outside the final result blend mask remains Source. Result mask adjustments update immediately.")
     selected = str(node["model"].value())
+    desired_labels = MODEL_LABELS + ((BASE_LABEL,) if _model_id(node) == BASE_PROVIDER_ID else ())
+    post.ensure_controls(node, mage)
     try:
-        if tuple(node["model"].values()) == MODEL_LABELS:
+        if tuple(node["model"].values()) == desired_labels:
             node["model"].setEnabled(True)
             return
     except (AttributeError, TypeError):
@@ -180,10 +195,11 @@ def _ensure_model_control(node: Any) -> None:
     try:
         if callback is not None:
             callback.setValue("")
-        node["model"].setValues(list(MODEL_LABELS))
-        previous_id = MAGE_PROVIDER_ID if selected.startswith("Mage-Flow Edit Turbo") else MODEL_IDS[MODEL_LABELS.index(selected)] if selected in MODEL_LABELS else PROVIDER_ID
-        node["model"].setValue(MODEL_IDS.index(previous_id))
-        if selected not in MODEL_LABELS and previous_id != MAGE_PROVIDER_ID:
+        node["model"].setValues(list(desired_labels))
+        previous_id = (MAGE_PROVIDER_ID if selected.startswith("Mage-Flow Edit Turbo") else
+                       BASE_PROVIDER_ID if selected.startswith("FLUX.2 Klein 4B Base") else PROVIDER_ID)
+        node["model"].setValue(2 if previous_id == BASE_PROVIDER_ID else MODEL_IDS.index(previous_id))
+        if selected not in MODEL_LABELS and previous_id not in (MAGE_PROVIDER_ID, BASE_PROVIDER_ID):
             node["steps"].setValue(4)
             node["fill_mask_overlap"].setValue(32)
         node["model"].setEnabled(True)
@@ -220,6 +236,13 @@ def _payload(node: Any, *args: Any) -> dict[str, Any]:
         "seam_width": int(node["fill_seam_width"].value()) if "fill_seam_width" in node.knobs() else 24,
     }
     if payload["model_id"] == MAGE_PROVIDER_ID:
+        # Color and edge sliders operate only on the cached native graph.
+        payload["edge_softness"] = 0
+        payload["mask_grow"] = 0
+        payload["mask_threshold"] = 0
+        payload["preprocess_mask"] = True
+        payload["fill"].update(native_postprocess=True, blend_margin=0, mask_overlap=0, color_match=1.0,
+                               color_match_mode="off", color_match_radius=64)
         payload["fill"]["seam_repair"] = "off"
         payload["fill"]["seamless_blend"] = "off"
     return payload
@@ -341,22 +364,35 @@ def smooth_removal_edges() -> None:
     if _model_id(node) != MAGE_PROVIDER_ID:
         _set_status(str(node.fullName()), "Select Mage before applying the removal edge preset.")
         return
-    for name, value in (("fill_blend_margin", 32), ("edge_softness", 24),
-                        ("fill_mask_overlap", 0), ("context_padding", 384),
-                        ("crop_mode", "auto"),
-                        ("working_size", 1024), ("fill_color_mode", "Auto"),
-                        ("fill_color_match", 1), ("fill_color_radius", 64)):
-        node[name].setValue(value)
-    _set_status(str(node.fullName()), "Removal edge preset ready: result alpha grows 32 px. Generate again to apply.")
+    # Compatibility for old serialized buttons; never alter generation settings.
+    node["fill_blend_margin"].setValue(32)
+    node["edge_softness"].setValue(24)
+    _set_status(str(node.fullName()), "Result mask adjusted after generation.")
 
 
 def knob_changed() -> None:
     nuke = _nuke()
     node = nuke.thisNode()
     knob = nuke.thisKnob().name()
+    from kyven_nuke.input_cache import scope_changed
+    if scope_changed(node, knob):
+        return
+    if knob in post.LIVE_CONTROLS and _model_id(node) == MAGE_PROVIDER_ID:
+        enabled = node["fill_color_mode"].value() != "Off"
+        for name in ("fill_color_match", "fill_match_luminance", "fill_match_chroma"):
+            node[name].setEnabled(enabled)
+        _set_status(str(node.fullName()),
+                    "Live Color Match / edge adjustment. Write this Group to save the final look."
+                    if post.native_ready(node) else
+                    "Generate once to enable live Lab Color Match and edge adjustment for this frame.")
+        return
+    if knob == "working_resolution":
+        node["working_size"].setValue(int(node["working_resolution"].value()))
+        _set_status(str(node.fullName()), "Processing resolution changed. Generate again to apply.")
+        return
     if knob == "model":
         model = _model_id(node)
-        base = model == MODEL_IDS[1]
+        base = model == BASE_PROVIDER_ID
         node["steps"].setValue(20 if base else 4)
         node["moss_guidance"].setEnabled(base)
         _ensure_model_control(node)
@@ -370,7 +406,9 @@ def knob_changed() -> None:
         if "fill_color_radius" in node.knobs():
             node["fill_color_radius"].setEnabled(node["fill_color_mode"].value() in {"Auto", "Background"})
     if knob in {"fill_blend_margin", "fill_mask_overlap", "edge_softness", "fill_color_mode",
-                "fill_color_match", "fill_color_radius", "context_padding", "working_size"}:
+                "fill_color_match", "fill_color_radius", "context_padding", "working_size",
+                "prompt", "seed", "steps", "mask_threshold", "invert_mask", "mask_grow",
+                "crop_mode", "processing_roi", "in_colorspace", "profile"}:
         _set_status(str(node.fullName()), "Fill settings changed. Generate Current Frame to update the cached result.")
     if knob == "in_colorspace":
         inpaint_node._configure_color_io(node)
@@ -392,7 +430,7 @@ def _ensure_fill_graph(node: Any) -> None:
         for i, channel in enumerate(("r", "g", "b", "a")):
             value = f"(parent.invert_mask ? 1-{channel} : {channel})"
             permission[f"expr{i}"].setValue(
-                f"({value} > 0 && {value} >= parent.mask_threshold) ? clamp({value},0,1) : 0")
+                f"({value} > 0 && (parent.fill_is_mage || {value} >= parent.mask_threshold)) ? clamp({value},0,1) : 0")
         effective = nuke.toNode("KyvenEffectiveMask")
         effective.setInput(0, permission)
         effective["which"].clearAnimated()
@@ -405,7 +443,7 @@ def _ensure_fill_graph(node: Any) -> None:
         expanded_support = nuke.toNode("KyvenFillBlendSupport") or nuke.nodes.FilterErode(name="KyvenFillBlendSupport")
         expanded_support.setInput(0, support)
         expanded_support["channels"].setValue("rgba")
-        expanded_support["size"].setExpression("parent.model==2 ? -parent.fill_blend_margin : 0")
+        expanded_support["size"].setExpression("parent.fill_is_mage ? -parent.fill_blend_margin : 0")
         clipped_mask = nuke.toNode("KyvenFillClippedMask") or nuke.nodes.Merge2(
             name="KyvenFillClippedMask", operation="multiply")
         clipped_mask.setInput(0, nuke.toNode("KyvenProcessedMaskSwitch"))
@@ -414,7 +452,7 @@ def _ensure_fill_graph(node: Any) -> None:
         public_mask = nuke.toNode("KyvenFillPublicMask") or nuke.nodes.Switch(name="KyvenFillPublicMask")
         public_mask.setInput(0, permission)
         public_mask.setInput(1, clipped_mask)
-        public_mask["which"].setExpression("parent.model==2 && parent.fill_blend_margin>0")
+        public_mask["which"].setExpression("parent.fill_is_mage && parent.fill_blend_margin>0")
         nuke.toNode("KyvenGeneratedPatch").setInput(1, public_mask)
         nuke.toNode("KyvenResultSourceAlpha").setInput(1, public_mask)
         sampling_union = nuke.toNode("KyvenFillSamplingUnion") or nuke.nodes.Merge2(name="KyvenFillSamplingUnion", operation="max")
@@ -424,6 +462,11 @@ def _ensure_fill_graph(node: Any) -> None:
         sampling_preview.setInput(0, sampling_union)
         sampling_preview["channels"].setValue("rgba")
         sampling_preview["size"].setExpression("-parent.fill_mask_overlap")
+        model_mask = nuke.toNode("KyvenFillModelMask") or nuke.nodes.Switch(name="KyvenFillModelMask")
+        model_mask.setInput(0, nuke.toNode("KyvenModelMaskGrow"))
+        model_mask.setInput(1, support)
+        model_mask["which"].setExpression("parent.fill_is_mage")
+        nuke.toNode("KyvenInpaintModelMaskWrite").setInput(0, model_mask)
         composite = nuke.toNode("KyvenResultComposite")
         source_alpha = nuke.toNode("KyvenFillSafeSourceAlpha") or nuke.nodes.Expression(
             name="KyvenFillSafeSourceAlpha")
@@ -441,7 +484,8 @@ def _ensure_fill_graph(node: Any) -> None:
         preserve["to0"].setValue("rgba.alpha")
         output = nuke.toNode("KyvenOutputSwitch")
         output.setInput(0, preserve)
-        output.setInput(6, sampling_preview)
+        output.setInput(6, model_mask)
+        post.ensure_graph(node)
         # Retain the established output selector's other modes and cache plumbing.
     finally:
         node.end()
@@ -475,7 +519,7 @@ def create_generative_fill_node() -> Any:
     node["preprocess_mask"].setValue(True)
     node["quality_mode"].setValue(0)
     node["context_padding"].setValue(256)
-    node["edge_softness"].setValue(4)
+    node["edge_softness"].setValue(0)
 
     prompt = nuke.Multiline_Eval_String_Knob("prompt", "Prompt")
     prompt.setTooltip("Describe the edit: remove, add, replace or modify. Russian is translated automatically. The mask limits where pixels may change.")
@@ -517,7 +561,7 @@ def create_generative_fill_node() -> Any:
         knob.setValue(default)
         knob.setTooltip(tip)
         _add_knob(nuke, node, knob)
-    retry = nuke.Boolean_Knob("oom_retry", "Retry Smaller After GPU OOM")
+    retry = nuke.Boolean_Knob("oom_retry", "Retry Smaller After Memory Error")
     retry.setValue(True)
     retry.setTooltip("Retry once with a smaller working crop. The original output mask stays unchanged.")
     _add_knob(nuke, node, retry)
@@ -595,8 +639,9 @@ def create_generative_fill_node() -> Any:
         node[name].setTooltip(tip)
     _ensure_fill_graph(node)
     node["fill_color_mode"].setTooltip("Auto matches clean Source context and, for explicit removal prompts, continuous flat backgrounds. Context preserves the new object's colors. Background forces removal matching. Off disables color correction.")
-    if _model_id(node) == MODEL_IDS[1]:
+    if _model_id(node) == BASE_PROVIDER_ID:
         node["steps"].setValue(20)
+    post.ensure_controls(node, _model_id(node) == MAGE_PROVIDER_ID)
     node["output_mode"].setValue(0)
     node["knobChanged"].setValue("kyven_nuke.generative_fill_node.knob_changed()")
     return node

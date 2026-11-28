@@ -118,3 +118,76 @@ def test_2048_request_is_allowed_for_mage_only(tmp_path):
     request.validate()
     with pytest.raises(KyvenError, match="only for Mage"):
         replace(request, provider_id=PROVIDER_ID).validate()
+
+
+def _mage_worker():
+    import importlib.util
+    path = Path(__file__).parents[1] / "src/kyven/resources/generative_fill/mage_worker.py"
+    spec = importlib.util.spec_from_file_location("mage_memory_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_mage_retries_exact_ram_graph_failure_without_changing_inputs(tmp_path, monkeypatch):
+    from dataclasses import asdict
+
+    from PIL import Image
+
+    module = _mage_worker()
+    runtime = module.Runtime.__new__(module.Runtime)
+    runtime.cli, runtime.models, runtime.device = Path("sd-cli.exe"), tmp_path, "cuda"
+    source, mask = tmp_path / "source.png", tmp_path / "mask.png"
+    Image.new("RGB", (1024, 768), (75, 100, 125)).save(source)
+    Image.new("L", (1024, 768), 255).save(mask)
+    attempts, events = [], []
+    failure = ("RAM graph capacity exceeded. Requested 56027248 bytes, 0 bytes available, "
+               "3319795200 bytes resident, pending device commit is 2085214208 bytes")
+
+    def run(command, timeout):
+        attempts.append(command)
+        assert "--disable-prefetch" in command
+        if len(attempts) == 1:
+            raise RuntimeError(failure)
+        Image.open(command[command.index("-i") + 1]).save(command[command.index("-o") + 1])
+
+    runtime.run = run
+    monkeypatch.setattr(module, "emit", lambda event, **values: events.append(values))
+    payload = {"source": str(source), "mask": str(mask), "output": str(tmp_path / "output.png"),
+                   "settings": asdict(FillSettings(prompt="Remove a person", working_size=1024))}
+    original = {p: p.read_bytes() for p in (source, mask)}
+    result = runtime.fill(payload)
+    assert len(attempts) == 2
+    assert [c[c.index("-W") + 1] for c in attempts] == ["1024", "512"]
+    assert result["metadata"]["oom_retried"]
+    assert Image.open(payload["output"]).size == (1024, 768)
+    assert all(p.read_bytes() == before for p, before in original.items())
+    assert any("RAM/VRAM" in event.get("message", "") for event in events)
+
+
+def test_mage_memory_failure_is_readable_and_retry_can_be_disabled(tmp_path):
+    from dataclasses import asdict
+
+    import pytest
+    from PIL import Image
+
+    module = _mage_worker()
+    runtime = module.Runtime.__new__(module.Runtime)
+    runtime.cli, runtime.models, runtime.device = Path("sd-cli.exe"), tmp_path, "cpu"
+    source = tmp_path / "source.png"
+    Image.new("RGB", (512, 512)).save(source)
+    attempts = []
+
+    def run(*args):
+        attempts.append(args)
+        raise RuntimeError("mage_flow segment failed during workspace allocation")
+
+    runtime.run = run
+    with pytest.raises(MemoryError, match="Processing Resolution 512 or 256"):
+        runtime.fill({"source": str(source), "mask": str(source), "output": str(tmp_path / "out.png"),
+                          "settings": asdict(FillSettings(prompt="Edit", working_size=512, oom_retry=False))})
+    assert len(attempts) == 1
+    assert not (tmp_path / "out.png").exists()
+    assert not module.is_memory_error("model checksum verification failed")
+    assert module.is_memory_error("CUDA out of memory")
+    assert module.is_memory_error("RAM weight capacity exceeded")

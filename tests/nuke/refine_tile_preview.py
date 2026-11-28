@@ -63,7 +63,8 @@ def run():
     node['generate_trimap'].setValue(False)
     node['tile_mode'].setValue('Tiles')
     node['tile_size'].setValue(128)
-    node['tile_overlap'].setValue(32)
+    check('128 px tiles automatically reduce the default 64 px overlap to 32',
+          node['tile_overlap'].value() == 32)
     identity = node['kyven_uuid'].value()
     source_file = node.node('KyvenRefineSourceWrite')['file'].value()
     mask_file = node.node('KyvenRefineMaskWrite')['file'].value()

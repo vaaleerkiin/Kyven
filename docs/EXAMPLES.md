@@ -62,7 +62,9 @@ The capture check verified byte-identical Source RGB outside the removal mask;
 **Mage-Flow Edit Turbo Q6**, seed **42**, **4 steps**, Processing Resolution **512**,
 Auto crop with **256 px** context, model grow **0**, Generation Overlap **32 px**,
 Result Mask Grow **0**, inward edge softness **4 px**, Auto Color Match. Seamless
-Blend and experimental boundary repair are off, matching the current Mage node path.
+Blend and experimental boundary repair were off. This example was captured with
+the earlier worker mask path; current Mage nodes separate model alpha from live
+Grow / Erode and Gaussian Blur, both initially 0.
 It uses the same prepared removal mask as Inpaint.
 
 Exact instruction:

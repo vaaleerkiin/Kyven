@@ -42,6 +42,7 @@ class ModelSpec:
     allow_patterns: tuple[str, ...] = ()
     license_acceptance_required: bool = False
     runtime: str = ""
+    retired: bool = False
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> ModelSpec:
@@ -77,6 +78,7 @@ class ModelSpec:
             "redistribution": self.redistribution,
             "license_acceptance_required": self.license_acceptance_required,
             "runtime": self.runtime,
+            "retired": self.retired,
             "installed": installed,
             "compatible": (
                 None
@@ -108,9 +110,10 @@ class ModelCatalog:
                 suggested_action="List available Kyven models and choose one of them.",
             ) from exc
 
-    def list(self, task: str | None = None) -> tuple[ModelSpec, ...]:
+    def list(self, task: str | None = None, *, include_retired: bool = False) -> tuple[ModelSpec, ...]:
         return tuple(
-            spec for spec in self._specs.values() if task is None or spec.task == task
+            spec for spec in self._specs.values()
+            if (task is None or spec.task == task) and (include_retired or not spec.retired)
         )
 
     def registry(self, models_dir: Path, device: str) -> ProviderRegistry:

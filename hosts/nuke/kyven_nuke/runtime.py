@@ -17,7 +17,7 @@ from kyven_nuke import config
 from kyven_nuke.client import NukeKyvenClient, NukeKyvenClientError
 
 PORT = 18788
-REQUIRED_API_VERSION = 48
+REQUIRED_API_VERSION = 49
 LEGACY_PORTS = (8765, 8766, 8767, 8768, 8769, 18768, 18769, 18770, 18771, 18772, 18773, 18774, 18775, 18776, 18777, 18778, 18779, 18780, 18781, 18782, 18783, 18784, 18785, 18786, 18787)
 _server_start_lock = threading.Lock()
 _runtime_install_lock = threading.RLock()

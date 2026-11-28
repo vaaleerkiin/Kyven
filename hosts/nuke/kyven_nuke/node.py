@@ -274,6 +274,9 @@ def prompt_knob_changed() -> None:
     nuke = _nuke()
     knob = nuke.thisKnob()
     knob_name = knob.name()
+    from kyven_nuke.input_cache import scope_changed
+    if scope_changed(nuke.thisNode(), knob_name):
+        return
     for kind in ("positive", "negative"):
         prefix = f"remove_{kind}_point_"
         if knob_name.startswith(prefix):
@@ -2573,6 +2576,8 @@ def _ensure_processing_layout(node: Any) -> None:
         node["process_range"].setFlag(nuke.STARTLINE)
     if "cancel" in node.knobs():
         node["cancel"].clearFlag(nuke.STARTLINE)
+    from kyven_nuke.input_cache import update_scope_controls
+    update_scope_controls(node)
 
 
 def _ensure_output_controls(node: Any) -> None:

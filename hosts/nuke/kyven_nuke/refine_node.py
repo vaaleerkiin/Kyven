@@ -922,6 +922,9 @@ def knob_changed() -> None:
     nuke = _nuke()
     node = nuke.thisNode()
     name = nuke.thisKnob().name()
+    from kyven_nuke.input_cache import scope_changed
+    if scope_changed(node, name):
+        return
     if name in {"cache_root", "refine_name", "cache_version"}:
         _defer_ui_action(_apply_refine_cache_fields, str(node.fullName()))
         return
@@ -951,7 +954,7 @@ def knob_changed() -> None:
     update_controls(node)
     if name in {"tile_mode", "tile_size", "tile_overlap", "skip_known_tiles", "profile"}:
         from kyven_nuke.refine_tiling import update_controls as update_tiling_controls
-        update_tiling_controls(node)
+        update_tiling_controls(node, clamp_overlap=name in {"tile_size", "tile_mode"})
     from kyven_nuke.refine_tile_preview import PREVIEW_KNOBS, is_preview, request_preview
     if is_preview(node):
         if name in PREVIEW_KNOBS:

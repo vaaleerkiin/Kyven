@@ -39,7 +39,7 @@ def effective_tile_size(node: Any, frame: int | None = None) -> int:
 
 
 @suspend_callbacks
-def update_controls(node: Any) -> None:
+def update_controls(node: Any, *, clamp_overlap: bool = False) -> None:
     """Show the actual model tile size and explain the work skipped by trimap."""
 
     if not {"tile_mode", "tiling_help", "skip_known_tiles"}.issubset(node.knobs()):
@@ -57,6 +57,10 @@ def update_controls(node: Any) -> None:
         return
     node["tile_overlap"].setRange(0, min(256, (tile-1)//2) if tile else 256)
     overlap = int(node["tile_overlap"].value())
+    # Keep useful context when shrinking a tile; preserve animated settings.
+    if clamp_overlap and tile and (overlap < 0 or overlap * 2 >= tile) and not node["tile_overlap"].isAnimated():
+        overlap = max(0, min(overlap, tile // 4))
+        node["tile_overlap"].setValue(overlap)
     if tile and (overlap < 0 or overlap * 2 >= tile):
         text = f'<font color="#ffb070">Overlap must be 0 to {(tile-1)//2} px.</font>'
     elif tile:
@@ -156,4 +160,4 @@ def ensure_controls(node: Any) -> None:
                  "tile_preview_info"):
         _place_knob_after(node, name, anchor)
         anchor = name
-    update_controls(node)
+    update_controls(node, clamp_overlap=True)

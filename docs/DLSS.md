@@ -82,7 +82,7 @@ the selected motion, depth and active mask channels. The server reads it once an
 the decoded channels for all guides. Transport remains 32-bit float with lossless ZIP
 compression: HDR, negative values, alpha and vectors retain their precision. Packing
 reduces file/open overhead; size savings depend on the shot and connected channels.
-Update/restart both Nuke and the Kyven server (API 48). Reopening the script or upgrading
+Update/restart both Nuke and the Kyven server (API 49). Reopening the script or upgrading
 the DLSS node installs the new writer while preserving its UUID, connections and settings.
 
 **Load Cache** reads an existing public result sequence from Cache Folder / Name / Version

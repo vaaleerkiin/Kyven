@@ -16,12 +16,13 @@ inference service is required.
 
 | Model | New-node settings | Processing Resolution limit | Runtime / edges |
 | --- | --- | --- | --- |
-| **Mage-Flow Edit Turbo Q6** | Factory default; 512 px, 4 steps | 2048 px | Private stable-diffusion.cpp worker; alpha feathering and Color Match |
+| **Mage-Flow Edit Turbo Q6** | Factory default; 512 px, 4 steps | 2048 px | Private native worker; live Lab Color Match and edge feather in Nuke |
 | **FLUX.2 Klein 4B Q4 + LanPaint** | Alternative; 512 px, 4 steps | 1024 px | Private Torch/Diffusers/LanPaint worker; optional Seamless Blend |
-| **FLUX.2 Klein 4B Base Q4 + LanPaint (Preview)** | Preview; 20 steps, Base Guidance 4 | 1024 px | Undistilled and slower; validate every shot |
 
 **Set as Default** in Model Manager affects new nodes. Existing nodes retain their
-selection. Mage hides LanPaint, VAE tile and Base-only controls. MOSS is retired
+selection. FLUX Base is retired from fresh nodes and normal model selection;
+existing Base nodes retain a Legacy entry and their caches. Mage hides LanPaint,
+VAE tile and Base-only controls. MOSS is retired
 from normal selection; its catalog entry remains for managing existing installs.
 [MOSS notes](MOSS_FILL.md) cover that experimental backend.
 
@@ -64,43 +65,44 @@ Start at 512. More context can help continuation, but a larger crop at the same
 working side reduces detail per source pixel. Mage supports up to 2048; above
 1024 its editing reference is reduced for Qwen3-VL context while the diffusion
 canvas retains the selected resolution. FLUX is limited to 1024.
-CLI/API `FillSettings.working_size` defaults to 768; new Nuke nodes start at 512.
+Mage's dropdown offers 256 (preview), 512, 768, 1024, 1280, 1536, 1792 and 2048;
+FLUX stops at 1024. Saved custom sizes remain available. Changing resolution needs
+new generation. CLI/API defaults to 768; new Nuke nodes start at 512.
 
 ## Artist permission, sampling mask and edges
 
-Two masks serve different purposes:
+Mage keeps generation and compositing separate:
 
-- **Result permission:** input alpha after inversion/threshold. With **Result Mask
-  Grow 0**, final RGB edits stay within this alpha. Retained soft coverage controls
-  compositing, with optional inward **Result Edge Softness** (default 4 px).
-- **Sampling region:** binary model mask plus **Model Mask Grow** and **Generation
-  Overlap** (default 32 source pixels). This additional context moves model
-  transitions away from the composite edge without authorizing extra edits.
+- **Model mask:** nonzero input alpha, optionally inverted, exported as a binary
+  mask. Preview Model Mask shows that exact export. Crop and working-resolution
+  resampling happen in the worker; result controls do not change this mask.
+- **Result mask:** input alpha, **Grow / Erode (px)**, **Mask Blur (px)**, then
+  generated crop coverage. Both controls default to 0 and operate after generation.
+  Positive grow expands, negative grow shrinks, and blur is ordinary Gaussian Blur.
 
-**Preview Model Mask** shows the combined sampling region, which can exceed final
-permission. An empty mask returns Source without loading an image model.
-**Result** preserves Source alpha and auxiliary channels; RGB-only Source receives
-opaque alpha. Protected RGB comes from live float Nuke Source, bypassing generation.
+The **RESULT MASK / AFTER GENERATION** block updates cached Mage pixels live.
+It cannot change the generation request or trigger inference. An empty input mask
+returns Source without loading a model. Result preserves Source alpha and auxiliary
+channels; RGB outside the final blend mask comes from live float Nuke Source.
 
-Mage's **Result Mask Grow (px)** explicitly permits RGB edits in an extra dilated
-band around nonzero artist alpha. **Smooth Removal Edges** prepares Auto crop,
-padding 384, processing resolution 1024, grow 32, softness 24, overlap 0 and Auto
-Color Match. Generate again to apply it. This preset widens permission, so the
-exact original alpha boundary no longer limits RGB edits. Outside the expanded
-band Source stays protected. See [tight masks](MAGE_FILL.md#tight-masks-and-visible-outlines).
+FLUX retains separate Model Mask Grow and Generation Overlap controls for inference
+and worker edge processing. Old caches remain readable. Generate Mage once to enable
+its paired native patch controls. See [input and result masks](MAGE_FILL.md#input-mask-and-result-mask).
 
 ## Color and boundary matching
 
-**Color Matching = Auto**, **Color Match Strength = 1**, **Color Match Radius = 64**
-are defaults. Auto calibrates clean Source context and matches continuous local
-backgrounds for explicit removals. **Context** preserves new subject colors;
-**Background** forces removal-style matching. **Off** or strength 0 disables
-correction; radius 0 disables the local transition. Insufficient context can cause
-matching to be skipped. It cannot fix wrong geometry or an unmasked shadow.
+Mage's **Color Matching** offers **Lab** and **Off**. After one generation,
+**Color Match Strength**, **Match Luminance**, **Match Chroma** and **Grow / Erode** and **Mask Blur** update cached pixels directly in Nuke. Preview Blend Mask displays the
+actual final blend alpha. No diffusion, worker request or cache rewrite occurs while
+tuning these controls. The clean-context fit excludes the masked Source subject.
 
-Mage uses standard inward alpha feathering and Color Match. Current node requests
-disable experimental boundary repair and Seamless Blend; legacy knobs are hidden.
-No second neural boundary pass runs from the node.
+Use Match Luminance 0 with Match Chroma above 0 to match color while retaining
+generated brightness. Off or strength 0 compares the raw patch. Details and the
+ComfyUI Lab reference are in [Mage live controls](MAGE_FILL.md#responsive-lab-color-match).
+Mage's Nuke requests disable experimental boundary repair and Seamless Blend.
+
+FLUX retains Auto/Context/Background/Off worker matching, strength and local radius;
+those settings require new processing. Legacy CLI requests also retain that path.
 
 FLUX exposes **Seamless Blend**. Auto uses a CPU gradient-domain solve for removals
 and Base edits; distilled additions/replacements keep context color calibration.
@@ -130,7 +132,8 @@ preserved channels rather than treating a cached PNG as a complete float/AOV ren
 
 Public results are `<Cache Folder>/<Fill Name>/<Version>/<Fill Name>_<Version>.%04d.png`.
 Private inputs, masks, patches and manifests remain under `_kyven_work/`.
-**Create Result Read** opens the cache. **Refresh Frames** after upstream edits,
+For Mage, **Create Base Result Read** opens the cache before live look adjustments;
+Write the Group to save the selected Lab/edge look. **Refresh Frames** after upstream edits,
 then Generate again. Cache identity includes inputs, prompt, seed, crop, solver
 settings and pinned model. Range frames are generated independently; there is no
 temporal consistency. Live generation is hidden and off.
@@ -217,10 +220,9 @@ FLUX worker are GPL-3.0; preserve notices and corresponding source when distribu
 The Nuke adapter and IPC client remain Apache-2.0. See
 [notices](../THIRD_PARTY_NOTICES.md) and [ADR 0009](adr/0009-generative-fill.md).
 
-Restart Nuke and the server after updating. Generative Fill has no separate
-Upgrade Selected menu command. Saved fill groups use graph/control repair on
-refresh; **Upgrade Selected Inpaint Node** also recognizes a Generative Fill
-Group and refreshes its graph. Existing FLUX/Base selections and rendered caches
-remain. Early Z-Image IDs
+Restart Nuke and the server after updating to API 49. Select a saved Fill Group
+and use **Upgrade Selected Generative Fill Node**, then generate once to prepare
+the live Lab/edge patches. Existing FLUX/Base selections and rendered caches remain;
+Base appears only on existing legacy nodes. Early Z-Image IDs
 migrate to distilled Klein, invalidating old inference identity without deleting
 renders. Follow WAFT's separate update procedure for that standalone plugin.

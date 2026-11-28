@@ -593,7 +593,7 @@ def _apply(
     if working:
         suffix += f" | working {working[0]}x{working[1]}"
     if metadata.get("oom_retried"):
-        suffix += " | reduced after VRAM limit"
+        suffix += " | reduced after RAM/VRAM limit"
     if metadata.get("blend_margin"):
         suffix += f" | blend margin +{metadata['blend_margin']}px"
     if metadata.get("auto_translated"):
@@ -946,6 +946,9 @@ def reset_roi_to_input() -> None:
 
 def knob_changed() -> None:
     nuke = _nuke(); node = nuke.thisNode(); knob_name = nuke.thisKnob().name()
+    from kyven_nuke.input_cache import scope_changed
+    if scope_changed(node, knob_name):
+        return
     if knob_name in {"cache_root", "inpaint_name", "cache_version"}:
         _defer_ui_action(_apply_inpaint_cache_fields, str(node.fullName()))
         return

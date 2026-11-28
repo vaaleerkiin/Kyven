@@ -22,66 +22,74 @@ OpenCV/SciPy worker. It does not install PyTorch, SAM, FLUX weights or Git.
 Verified model files are reused when repairing an installation. Keep roughly
 12 GB free for the model bundle and extracted executables, plus Python packages.
 
-## Masks and boundaries
+## Responsive Lab Color Match
 
-Mage receives the source image as both the initial image and an editing
-reference. The inference mask constrains latent predictions during every sampling
-evaluation. Final source compositing independently enforces the original artist
-alpha, including fractional alpha and unchanged float Source pixels outside it.
-Inference masks are binary; output alpha remains independent.
+After one generation, these controls update cached pixels directly in Nuke:
 
-Mage uses ordinary inward alpha feathering with **Result Edge Softness**, default
-4 source pixels. The node does not run experimental boundary reconstruction or
-a second neural pass. Legacy experimental knobs are retained invisibly so saved
-scripts load, but Mage requests from the node force those passes off.
+| Control | Default | Use |
+| --- | --- | --- |
+| **Color Matching** | Lab | Lab matches clean Source context; Off shows raw generated colors |
+| **Color Match Strength** | 1 | Master amount of the fitted Lab correction |
+| **Match Luminance** | 1 | Match brightness/contrast independently of color |
+| **Match Chroma** | 1 | Match the Lab a/b channels independently of brightness |
+| **Grow / Erode (px)** | 0 | After generation: positive expands the blend mask, negative shrinks it |
+| **Mask Blur (px)** | 0 | Ordinary Gaussian Blur after grow/erode, in Source pixels |
+| **Preview Blend Mask** | Off | Inspect the final alpha after grow/erode and blur |
 
-**Color Matching** and **Color Match Strength** are on the main tab:
+For example, set Match Luminance to 0 and tune Match Chroma to correct a color cast
+while retaining generated brightness. Set strength to 0 or choose Off to compare
+the raw patch. Preview Model Mask shows the exact binary alpha exported to Mage.
 
-- **Auto** calibrates generated RGB to clean Source context. Explicit removal
-  prompts also match continuous, locally flat background surfaces.
-- **Context** calibrates exposure/color while preserving new subject colors.
-- **Background** forces the removal-style background matching.
-- **Off** disables color correction. Strength 0 also disables it.
+The fit uses standard Reinhard mean/std transfer in D65 Lab, inspired by the
+[DLSS5 Color Matcher in this ComfyUI pack](https://github.com/Strix-3D/ComfyUI-DLSS5-Enhancer-v15/blob/main/nodes.py).
+Statistics use paired clean context outside the inference mask and its fringe;
+removed Source subjects are excluded. Insufficient context leaves the patch
+unchanged. Bounded NumPy samples need no new model or heavy dependency.
 
-Paired, held-out-validated tone curves correct nonlinear gamma drift when they
-outperform an affine exposure/white-balance fit. Removal matching also estimates
-each flat boundary side independently and carries a smooth RGB offset inward.
-It does not warp or blur generated image detail. **Color Match Radius** controls
-that local transition (0 disables it). If the context is insufficient or
-uncorrelated, the node reports that Color Match was skipped.
+Generation stores raw and fully matched straight-RGBA patches, with generated
+crop coverage in alpha. Native Nuke operators blend luminance/chroma in Lab and
+process the result alpha. The Group preserves Source alpha and auxiliary channels;
+RGB outside the final blend alpha comes from live float Source. Color Match cannot
+correct geometry or remove an unmasked shadow.
 
-### Tight masks and visible outlines
+**Create Base Result Read** opens the base cache before live adjustments. Use an
+ordinary Nuke Write connected to the Group to save Color Match, result mask,
+Source alpha and auxiliary channels. Changes to live controls leave generation's
+request identity and cached bytes unchanged. Old caches remain readable; generate
+once to prepare paired patches. Mage forces experimental boundary passes off.
+FLUX and legacy CLI requests retain Auto/Context/Background worker matching.
 
-**Smooth Removal Edges** prepares Auto crop, Context Padding 384, Processing
-Resolution 1024, Result Mask Grow 32, Result Edge Softness 24, Generation Overlap
-0 and Auto Color Match. Click Generate again to apply it. This explicitly lets
-the result change RGB in an additional 32-source-pixel band around the input
-alpha. Outside that expanded permission band Source stays unchanged; Source
-alpha and other channels are preserved. Keeping model-only overlap at zero
-aligns the sampling constraint with the expanded blend boundary.
+## Input mask and result mask
 
-New nodes still default to **Result Mask Grow 0**, preserving exact artist alpha.
-Positive grow uses the dilated nonzero mask support as the result permission.
-The result/patch mask output includes the expanded feathered area. Preview Model
-Mask shows the combined result permission, Model Grow and Generation Overlap.
-Changing edge/color settings requires Generate again; the node says so.
+Mage receives the nonzero input alpha as a binary mask, with optional Invert Mask.
+The same graph feeds Preview Model Mask and the exported model-mask file. Hidden
+legacy Model Mask Grow, Threshold and Generation Overlap do not affect Mage.
+The worker crops and resamples this mask to Processing Resolution; no result mask
+control adds dilation, erosion or blur on the model path.
 
-Simply feathering a tight subject matte inward can restore the old subject's
-edge from Source. In the measured street test, inward softness 48 produced a
-visible person ghost. Expanded margin 32 with softness 24 moved the transition
-onto surrounding background and avoided that outline. A real Nuke run of the
-preset at 1024 completed in 59.6 s including Russian translation. More context
-alone, a LaMa boundary pass and multiband blending were also tested; the latter
-two were not adopted because of blur/ghosting in this shot. Generated structural
-mismatches can remain; the preset is not a universal geometry reconstruction fix.
+The separate **RESULT MASK / AFTER GENERATION** block contains **Grow / Erode**,
+**Mask Blur** and **Preview Blend Mask**. Its pipeline is input alpha, signed
+FilterErode, ordinary Gaussian Blur, then generated crop coverage. Blur does not
+automatically erode or multiply the original alpha back in. Both controls default
+to 0. Try Grow / Erode **+8** and Mask Blur **4** to extend and soften a composite,
+or Grow / Erode **-2** and Blur **0** to tighten its edge. Values are Source pixels
+and update the cached result immediately without generating again.
 
-Color estimation excludes the masked source subject and its expanded fringe.
-Color Match cannot repair incorrect geometry or reconstruct a hidden shadow.
-For structural mismatches, try another seed, more context, or a larger processing
-resolution. An undersized mask cannot remove source pixels outside its alpha.
+Grow and blur can expose generated context beyond the original alpha, up to the
+actual generated crop boundary. Increase Context Padding and generate again if
+you need more generated coverage. Grow cannot reconstruct content that the model
+left unchanged outside its edit mask.
+
+For removal, supply an input mask covering the object, shadow and edge
+contamination. Blurring a tight subject matte can mix the original subject back
+into the result. Post mask controls only change compositing; change the input
+mask and generate again when the model must remove more content.
+The old compound Smooth Removal Edges preset is hidden. Result mask adjustments
+never change crop, resolution, context, model mask or color settings.
 
 The default processing side is 512. This limits the crop, not the output frame.
-Mage's Processing Resolution range now reaches 2048; FLUX retains 1024.
+Processing Resolution is a dropdown: Mage offers 256 (preview), 512, 768, 1024,
+1280, 1536, 1792 and 2048; FLUX stops at 1024. Existing custom sizes are retained.
 Existing nodes acquire the range when their controls refresh after loading the
 updated Python module. Restart Nuke to load an update in an existing session.
 Above 1024, the editing reference is reduced to a maximum side of 1024 to fit
@@ -96,7 +104,25 @@ Prompt improvement uses the same Qwen3-VL GGUF text weights on CPU. Its system
 instruction, token count, temperature, top-p and seed remain configurable. Russian
 image prompts are translated locally. No model calls a hosted image service.
 
+## Memory failures and recovery
+
+The worker recognizes CUDA allocation failures and managed **RAM graph/weight
+capacity exceeded** failures. **Retry Smaller After Memory Error** is enabled by
+default: retry once at half the selected side, bounded to 256-512 px. For example,
+1024 retries at 512, while 512 retries at 256. It resamples the same Source and
+model mask; the Source-resolution output and post-generation mask controls remain
+independent. Status reports the actual working dimensions and the memory retry.
+
+Asynchronous weight prefetch is disabled to reduce concurrent RAM/device commit.
+If the retry also fails, Status suggests 512/256 and points to the complete worker
+log instead of dumping the tensor-loading progress. Closing unused memory-heavy
+apps can help; changing result Grow / Erode or Blur cannot fix this inference error.
+
 ## Qualification
+
+The following earlier generation runs used the worker mask path and matching
+available at capture time. Current Nuke nodes use the separated native mask path
+described above.
 
 On the RTX 4070 Laptop 8 GB / 32 GB RAM, six tasks on one street frame with two
 seeds each completed for both Mage and FLUX.2 Klein Q4 + LanPaint. At a maximum
@@ -119,7 +145,7 @@ The same production request with Neural boundary repair completed in 95.34 s,
 peak 7374 MiB. Both results preserve every source byte outside the original
 mask. On this shot Neural softened pavement detail without clearly improving
 the result. These were experimental boundary tests; the final node instead uses
-standard alpha feathering and Color Match with both boundary passes disabled.
+native mask compositing and Lab Color Match with both boundary passes disabled.
 
 Fresh installation was exercised in a separate path containing spaces and
 Cyrillic. Both environments passed `pip check` without PyTorch installed. The
@@ -140,3 +166,9 @@ stable-diffusion.cpp / llama.cpp are MIT. NVIDIA CUDA redistributables retain
 NVIDIA's own terms. Model Manager downloads these optional artifacts; they are
 not embedded in the repository. Preserve license notices when redistributing.
 The Mage worker does not import LanPaint or the GPL FLUX worker.
+
+Native cached-patch qualification on the 1024 x 540 plate rendered four looks
+in 0.22-0.25 s each including PNG output, with no server calls or cache writes.
+Real Nuke integration checks also verify signed grow/erode, exact agreement with
+ordinary Gaussian Blur, unchanged exported model pixels and payloads, crop coverage
+clipping, Source precision/alpha, missing partners and save/reopen.

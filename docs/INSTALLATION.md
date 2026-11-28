@@ -5,7 +5,7 @@ For Mage Generative Fill, select **14** in `install.cmd`, or run
 lightweight base and private Mage environment without PyTorch or SAM. In Nuke,
 Generative Fill defaults to Mage; **Install / Repair Model** prepares its
 complete runtime and verified weights. Start at Processing Resolution 512,
-Color Matching Auto and Result Edge Softness 4. See [Mage](MAGE_FILL.md).
+Color Matching Lab, Grow / Erode 0 and Mask Blur 0. See [Mage](MAGE_FILL.md).
 
 [Documentation home](README.md) · [Nuke workflow](NUKE.md) · [Models](MODELS.md) ·
 [Troubleshooting](TROUBLESHOOTING.md)

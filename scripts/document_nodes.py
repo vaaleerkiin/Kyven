@@ -94,7 +94,7 @@ def main() -> None:
         current = create()
         records.append((title, guide, capture(current, standard)))
         if title == "Generative Fill / Mage":
-            for label in generative_fill_node.MODEL_LABELS[:2]:
+            for label in generative_fill_node.MODEL_LABELS[:1]:
                 current["model"].setValue(label)
                 generative_fill_node._ensure_model_control(current)
                 current["steps"].setValue(20 if "Base" in label else 4)

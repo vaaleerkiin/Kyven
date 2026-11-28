@@ -153,7 +153,8 @@ def restyle_dlss_node(node: Any, *, upgrade: bool = False) -> None:
         from kyven_nuke.input_cache import ensure_controls
         ensure_controls(node)
         primary[primary.index("process_range"):primary.index("process_range")] = [
-            "input_cache_scope", "cache_frames", "refresh_frames"]
+            "cache_frames", "refresh_frames"]
+        primary.insert(primary.index("process_frame"), "input_cache_scope")
         advanced = ["dlss_advanced", "motion_section", "advanced_help", "use_nuke_vectors", "motion_x", "motion_y",
                     "motion_units", "motion_y_up", "motion_scale_x", "motion_scale_y",
                     "motion_consistency", "forward_x", "forward_y", "consistency_threshold",

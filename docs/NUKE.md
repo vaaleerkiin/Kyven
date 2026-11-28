@@ -78,11 +78,12 @@ After updating the repository, restart Nuke and upgrade old Groups when required
 - `Kyven > Upgrade Selected Segment Node`;
 - `Kyven > Upgrade Selected Refine Node`;
 - `Kyven > Upgrade Selected Inpaint Node`;
+- `Kyven > Upgrade Selected Generative Fill Node`;
 - `Kyven > Upgrade Selected DLSS Node`.
 
-Generative Fill has no separate upgrade menu action; **Upgrade Selected Inpaint
-Node** recognizes a Fill Group and refreshes its graph/controls. Restart Nuke
-first to load the updated Python modules.
+Use **Upgrade Selected Generative Fill Node** for saved Fill Groups. Restart
+Nuke first to load the updated Python modules. Mage needs one generation per frame
+to prepare its new live Lab/edge patch pair; old rendered caches remain readable.
 WAFT updates require its complete standalone folder and a fresh node; see [WAFT](WAFT.md).
 
 Upgrades preserve inputs, useful controls, hidden node identity, and existing readable cache. New
@@ -204,7 +205,7 @@ semantics.
 Downloads activate only after exact size and SHA-256 verification. **Refresh Models** updates the
 node list and hardware advice. See [Models and safety](MODELS.md).
 
-The adapter starts a hidden external Python process on `127.0.0.1:18788` and requires API 48. A
+The adapter starts a hidden external Python process on `127.0.0.1:18788` and requires API 49. A
 random bearer token in `.runtime/server.token` protects every request. Nuke never imports PyTorch,
 CUDA, or model implementations.
 
@@ -238,7 +239,11 @@ Segment JPEG replaces the former lossless PNG source. JPEG is lossy even at maxi
 this avoids duplicate exports and uses the format required by SAM2's video loader. Public matte
 and inpaint results still use PNG: these are results, not duplicate input exports.
 
-Choose Current Frame or Frame Range beside **Cache Frames**. Cache Frames fills missing/invalid
+**Frame Scope** defaults to **Current Frame** for all five server-backed nodes.
+Only the current-frame processing button is visible. Select **Frame Range**
+explicitly to reveal the range button and bounds. Cache Frames and Refresh Frames
+follow the same selection. Existing nodes receive this safe default when upgraded;
+subsequent explicit selections are preserved. Cache Frames fills missing/invalid
 inputs; **Refresh Frames** updates snapshots after upstream edits. **Process Current Frame**
 (and Live Current Frame) fills only its missing input snapshots automatically, then submits
 inference. Ready snapshots are reused. **Process Frame Range** and tracking call the same preparation

@@ -96,10 +96,11 @@ Model** prepares the selected backend. Start at **Processing Resolution 512**,
 set Cache Folder / Fill Name / Version, then **Generate Current Frame**.
 Live generation is hidden and off.
 
-**Result:** edited RGB with Source alpha and other channels in **Result**. With
-**Result Mask Grow 0**, model growth/overlap cannot authorize changes outside
-artist alpha. Positive Mage **Result Mask Grow** explicitly permits an extra band.
-**Smooth Removal Edges** sets grow to 32 px; Generate again to apply the preset.
+**Result:** edited RGB with Source alpha and other channels in **Result**.
+Mage's separate result mask block applies signed **Grow / Erode** then ordinary
+**Mask Blur**, both 0 by default. These controls update the cached composite;
+Preview Model Mask and the mask sent to Mage remain unchanged. Preview Blend Mask
+shows the final compositing alpha, limited to the generated crop.
 
 **For a shot:** a fixed seed does not provide temporal consistency. Inspect
 geometry and edges. Color Match corrects color/exposure, not wrong structure.

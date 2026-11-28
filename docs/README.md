@@ -68,7 +68,7 @@ Move to heavier models only when the shot demonstrates a quality limitation.
 | [Refine](REFINE.md) | Roto artist | Trimaps, ViTMatte/MEMatte, tiling, outputs |
 | [Inpaint](INPAINT.md) | Paint artist | Models, ROI, masks, blending, quality modes |
 | [Generative Fill](GENERATIVE_FILL.md) | Artist / TD | Mage default, FLUX alternatives, result permission, prompts and output modes |
-| [Mage details](MAGE_FILL.md) | Artist / TD | Setup, color matching, tight-mask preset and recorded qualification |
+| [Mage details](MAGE_FILL.md) | Artist / TD | Setup, live Lab matching, separate result mask controls and memory recovery |
 | [DLSS (optional RTX)](DLSS.md) | Artist / TD | Local runtime, external vectors, alpha guides, live and temporal behavior |
 | [WAFT SmartVector](WAFT.md) | Artist / TD | Embedded optical-flow models, motion/smart outputs, portable Cattery folder |
 | [WAFT development recovery](../development/waft/README.md) | Developer | Recreate dependencies, checkpoints and model builds from lightweight sources |
@@ -91,6 +91,8 @@ Move to heavier models only when the shot demonstrates a quality limitation.
 | Reconstruct a shot on a supported RTX system | DLSS with Source | Add external Motion vectors for temporal stability |
 | Generate motion or smart vectors | WAFT SmartVector with Source sequence | Choose output mode; write all channels to EXR |
 | Hand cache to another artist | Open `<Cache Folder>/<Name>/<Version>/` | Public `.png` for Segment/Refine/Inpaint/Fill, `.exr` for DLSS; use a Nuke Write for final Group output/AOVs |
+
+[Documentation website](WEBSITE.md) explains the automatic Markdown-to-GitHub-Pages build.
 
 ## Documentation conventions
 

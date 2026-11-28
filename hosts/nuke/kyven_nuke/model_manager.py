@@ -36,6 +36,7 @@ def _manager_models():
             "installed": config.python_executable().is_file(), "size_bytes": 0}
     catalog = config.root() / "src/kyven/resources/models/catalog.json"
     local = json.loads(catalog.read_text(encoding="utf-8"))["models"] if catalog.is_file() else []
+    local = [model for model in local if not model.get("retired", False)]
     runtimes = {item["model_id"]: item.get("runtime", "") for item in local}
     if config.python_executable().is_file():
         try:

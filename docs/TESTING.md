@@ -88,6 +88,23 @@ and the DLSS runtime; WAFT also requires a licensed Nuke 16 process.
 
 ## GPU and release qualification
 
+Native Mage postprocessing checks use synthetic raw/matched cached patches and
+verify independent Lab luminance/chroma control, exact outside-mask float Source,
+Source alpha, signed grow/erode, ordinary Gaussian Blur and mask preview, unchanged
+exported model pixels and generation payloads
+and cached bytes, resolution-menu limits, legacy Base migration and save/reopen.
+CPU tests verify Lab round trips, clean-context reference exclusion, degenerate
+statistics, paired artifact restoration and catalog retirement. Run them with:
+
+```powershell
+python -m pytest tests/test_generative_fill_lab.py -q -p no:cacheprovider
+$env:KYVEN_NUKE_EXECUTABLE = 'C:\Program Files\Nuke16.0v4\Nuke16.0.exe'
+python -m pytest tests/test_nuke_runtime.py -k 'mage_live or generative_fill_mask' -q -p no:cacheprovider
+```
+
+See [ADR 0010](adr/0010-mage-live-compositing.md) for the separate real Mage/native
+Nuke timing observation and its limits.
+
 Native graph checks do not establish quality or memory usage of SAM, Refine providers, LaMa,
 WAFT or DLSS inference. Before release, run short real sequences: current frame/ranges, cancel/retry,
 model switching/unloading, settings changes, cache reuse, script reopen, unavailable runtime and

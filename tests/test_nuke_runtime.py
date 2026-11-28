@@ -63,6 +63,22 @@ def test_real_nuke_generative_fill_mask_cache_and_reopen(tmp_path):
     assert payload.get('ok'), json.dumps(payload, indent=2) + result.stderr
 
 
+def test_real_nuke_mage_live_color_edges_resolution_and_reopen(tmp_path):
+    executable = os.environ.get('KYVEN_NUKE_EXECUTABLE')
+    if not executable:
+        pytest.skip('Set KYVEN_NUKE_EXECUTABLE for licensed Nuke integration checks')
+    report = tmp_path / 'fill-post.json'
+    result = subprocess.run([executable, '--nukex', '-i', '-t',
+        str(Path(__file__).parent / 'nuke/generative_fill_post.py')],
+        env={**os.environ, 'KYVEN_FILL_POST_REPORT': str(report)},
+        capture_output=True, text=True, timeout=90, check=False,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert report.is_file(), result.stdout + result.stderr
+    payload = json.loads(report.read_text())
+    assert payload.get('ok'), json.dumps(payload, indent=2) + result.stdout + result.stderr
+
+
 def test_real_nuke_fill_identity_has_no_pixel_shift_or_bbox_offset(tmp_path):
     executable = os.environ.get('KYVEN_NUKE_EXECUTABLE')
     if not executable:

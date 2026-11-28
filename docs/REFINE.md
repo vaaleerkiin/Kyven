@@ -128,7 +128,10 @@ in Auto crop mode. Numeric animation and existing values survive node upgrades.
 **Tile Overlap (px)** is the minimum shared border. The regular step is `Tile Size - Overlap`:
 1024 px with 64 px overlap advances by 960 px. The final row/column is aligned to the crop boundary,
 so those tiles can overlap more. Predictions blend across their shared borders to reduce tile seams.
-Overlap must be smaller than half the tile size. More overlap repeats work. Tile overlap is separate
+Overlap must be smaller than half the tile size. When reducing Tile Size, an
+incompatible unanimated overlap automatically drops to one quarter of the new
+size: selecting 128 px with the default overlap 64 changes overlap to 32.
+Animated overlap is preserved and invalid values are reported. More overlap repeats work. Tile overlap is separate
 from the optional ROI integration feather below.
 
 **Skip Black / White Tiles** is enabled by default for both ViTMatte and MEMatte. A tile runs only

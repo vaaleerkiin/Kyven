@@ -20,6 +20,14 @@ def emit(event, **values):
     print(json.dumps(dict(event=event, **values), ensure_ascii=False), flush=True)
 
 
+def is_memory_error(error):
+    """Recognize managed host/device budgets as well as allocator failures."""
+    return bool(re.search(
+        r"out of memory|cudaMalloc|(?:RAM|VRAM) (?:graph|weight) capacity exceeded|"
+        r"allocat[^\n]*(?:fail|unable)|(?:fail|unable)[^\n]*allocat|"
+        r"cannot fit (?:params|graph|buffer)", str(error), re.IGNORECASE))
+
+
 class Runtime:
     def __init__(self, models, device):
         self.models = Path(models)
@@ -72,6 +80,7 @@ class Runtime:
             "--backend",
             "cpu" if self.device == "cpu" else "te=cpu,vae=cuda0,diffusion=cuda0",
             "--offload-to-cpu",
+            "--disable-prefetch",
             "--diffusion-fa",
             "-t",
             "8",
@@ -237,14 +246,19 @@ class Runtime:
                         settings["timeout_seconds"],
                     )
                 except RuntimeError as exc:
-                    if attempt + 1 == len(sizes) or not re.search(
-                        r"out of memory|cudaMalloc|allocat.*fail", str(exc), re.IGNORECASE
-                    ):
+                    if not is_memory_error(exc):
                         raise
+                    if attempt + 1 == len(sizes):
+                        raise MemoryError(
+                            f"Mage ran out of RAM or VRAM at {canvas[0]} x {canvas[1]} px. "
+                            "Use Processing Resolution 512 or 256 and close unused memory-heavy apps. "
+                            "Enable Retry Smaller After GPU OOM for automatic recovery. "
+                            "Details are in .runtime/mage-fill/worker.log."
+                        ) from exc
                     emit(
                         "progress",
                         progress=0.3,
-                        message="GPU memory limit reached; retrying a smaller crop",
+                        message=f"RAM/VRAM limit reached; retrying at {sizes[attempt + 1]} px",
                     )
                     continue
                 with Image.open(root / "raw.png") as raw:

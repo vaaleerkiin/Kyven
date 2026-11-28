@@ -120,7 +120,10 @@ portable default; Refined is best used on a tight ROI with an 8 GB GPU or as a s
 | --- | --- | --- | --- |
 | `mage-flow-edit-turbo-q6` | Mage-Flow Edit Turbo Q6 | Factory default, 512 px / 4 steps | Private native worker and approximately 7.69 GB verified bundle |
 | `flux2-klein-4b-q4-lanpaint` | FLUX.2 Klein 4B Q4 + LanPaint | 512 px / 4 steps | Separate Torch/LanPaint worker and approximately 10.83 GB bundle |
-| `flux2-klein-base-4b-q4-lanpaint` | FLUX.2 Klein 4B Base Q4 + LanPaint (Preview) | 512 px / 20 steps / guidance 4 | Separate Base weights; identical verified dependencies can be reused |
+
+FLUX Base is retired from the normal catalog and new node selector. Its pinned
+entry/provider remain available for existing scripts; no weight or render is
+deleted. New nodes offer Mage and distilled FLUX only.
 
 These are optional heavier profiles. Recorded GPU qualification used an 8 GB RTX
 4070 Laptop and 32 GB RAM; it does not establish a 4 GB guarantee. CPU inference

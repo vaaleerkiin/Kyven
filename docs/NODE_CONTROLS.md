@@ -29,13 +29,10 @@ Inputs: `0` Source.
 | **Reset ROI to Input** (`reset_prompts`) | Action | Resets Processing ROI to the input image bounds. Use when the crop cuts off the subject. |
 | **Fill Enclosed Holes** (`fill_holes`) | False | Fills enclosed holes in the cached SAM mask. Enable if solid parts of the subject have unwanted gaps; disable to preserve real holes. Updates cached-mask post-processing without rerunning SAM. |
 | **Live Current Frame** (`live_mode`) | False | Automatically processes the current frame when the timeline or relevant settings change. Useful for adjusting a result interactively; turn off to avoid background processing while working elsewhere. |
+| **Frame Scope** (`input_cache_scope`) | Current Frame | Current Frame is the default: only the current-frame action is shown. Select Frame Range explicitly to reveal range processing and range bounds. Cache Frames and Refresh Frames use the same scope. Choices: Current Frame; Frame Range. |
 | **Process Current Frame** (`process_frame`) | Action | Processes only the current timeline frame with these settings. Use this to judge the result before processing a whole range. |
-| **Range First** (`range_first`) | 1 | First frame of the processing and input-cache range, inclusive. Raise it to skip earlier frames. |
-| **Range Last** (`range_last`) | 100 | Last frame of the processing and input-cache range, inclusive. Lower it to process fewer frames while testing. |
-| **Input Frames** (`input_cache_scope`) | Frame Range | Chooses whether Cache Frames and Refresh Frames work on the full frame range or only the current timeline frame. It does not change the range used by Process Frame Range. Choices: Frame Range; Current Frame. |
 | **Cache Frames** (`cache_frames`) | Action | Saves missing or outdated input snapshots for the selected Input Frames scope. Reuses snapshots that are already valid. Run this before range processing. |
 | **Refresh Frames** (`refresh_frames`) | Action | Re-exports input snapshots for the selected Input Frames scope, including previously cached frames. Use after changing upstream images, masks, or vectors, then process again to update the results. |
-| **Process Frame Range** (`process_range`) | Action | Processes every frame from Range First through Range Last, including both endpoints. Prepare input snapshots with Cache Frames; use Refresh Frames after upstream edits. |
 | **Cancel** (`cancel`) | Action | Requests cancellation of the current operation. Already completed cached frames are retained; cancellation may wait for the active processing step. |
 | **Key Frame** (`key_frame`) | 0 | Frame where the primary object prompts anchor video tracking. Choose a clear view of the subject. Tracking propagates from this frame within the selected range. |
 | **Set Current as Key** (`set_key_frame`) | Action | Makes the current timeline frame the primary tracking key frame. Set the object points here before propagating the mask through the shot. |
@@ -70,7 +67,7 @@ Inputs: `0` MaskOrTrimap, `1` Source.
 | **Model Manager...** (`open_model_manager`) | Action | Opens the model and runtime manager. Use it to install the components required by the selected model and check their availability. |
 | **Tiling Mode** (`tile_mode`) | Tiles | Tiles uses your explicit Tile Size and Tile Overlap. Full Crop runs one pass over the whole processing crop; size and overlap are remembered for returning to Tiles. Neither mode scales down the source image. Choices: Tiles; Full Crop. |
 | **Tile Size (px)** (`tile_size`) | 1024.0 | Maximum tile side in source-image pixels, used in Tiles mode. Minimum 128. Smaller tiles reduce peak memory and can skip more known regions, but give the model less image context. Larger tiles use more memory. Tiles run one at a time. |
-| **Tile Overlap (px)** (`tile_overlap`) | 64.0 | Minimum shared border between neighboring tiles. Step = Tile Size minus Overlap; final edge tiles may overlap more to retain full-size context. Predictions blend across overlaps to reduce seams. More overlap repeats work. Must be smaller than half the tile size. |
+| **Tile Overlap (px)** (`tile_overlap`) | 64.0 | Minimum shared border between neighboring tiles. Step = Tile Size minus Overlap; final edge tiles may overlap more to retain full-size context. Predictions blend across overlaps to reduce seams. More overlap repeats work. Must be smaller than half the tile size. Reducing Tile Size automatically reduces an incompatible unanimated overlap to one quarter of the new tile. |
 | **Skip Black / White Tiles** (`skip_known_tiles`) | True | Run only tiles containing gray unknown trimap pixels. Black and white are restored exactly to alpha 0 and 1 without inference. Active tiles retain all surrounding RGB and trimap pixels as context. If the entire crop is known, no model is loaded or run. Disable to compare with processing all tiles. |
 | **Show Tiles** (`show_tiles`) | False | Turns tile display on or off. On shows Tile Preview; Off restores your previous matte, cutout, trimap or Source output. Display only: tile size, overlap and model inputs are preserved. Turning it on reuses the same-frame preview snapshot; Preview Tiles explicitly refreshes upstream edits. |
 | **Preview Tiles** (`preview_tiles`) | Action | Switches Output to Tile Preview and draws the exact current-frame tile plan on CPU. View RGB for green RUN boxes, gray SKIP boxes, yellow unknown pixels and cyan crop bounds. Alpha also shows diagnostic coverage. The local server prepares the overlay without loading models. Node controls and timeline moves refresh it automatically; click again after upstream edits on the same frame. Live inference is suppressed in Tile Preview. |
@@ -81,14 +78,11 @@ Inputs: `0` MaskOrTrimap, `1` Source.
 | **Crop Mode** (`crop_mode`) | auto | Auto finds the useful mask area and adds Context Padding. Manual uses your Manual ROI rectangle. Full processes the entire source. A tighter crop can save work, but keep enough surrounding image for the model. Choices: auto; manual; full. |
 | **Context Padding (px)** (`context_padding`) | 128.0 | Extra source-image pixels around the automatically detected mask region. Increase to give the model more surrounding context; decrease for a tighter crop. Applies in Auto crop mode. |
 | **Live Current Frame** (`live_mode`) | False | Automatically processes the current frame when the timeline or relevant settings change. Useful for adjusting a result interactively; turn off to avoid background processing while working elsewhere. |
+| **Frame Scope** (`input_cache_scope`) | Current Frame | Current Frame is the default: only the current-frame action is shown. Select Frame Range explicitly to reveal range processing and range bounds. Cache Frames and Refresh Frames use the same scope. Choices: Current Frame; Frame Range. |
 | **Process Current Frame** (`process_frame`) | Action | Processes only the current timeline frame with these settings. Use this to judge the result before processing a whole range. |
 | **Cancel** (`cancel`) | Action | Requests cancellation of the current operation. Already completed cached frames are retained; cancellation may wait for the active processing step. |
-| **Range First** (`range_first`) | 1 | First frame of the processing and input-cache range, inclusive. Raise it to skip earlier frames. |
-| **Range Last** (`range_last`) | 100 | Last frame of the processing and input-cache range, inclusive. Lower it to process fewer frames while testing. |
-| **Input Frames** (`input_cache_scope`) | Frame Range | Chooses whether Cache Frames and Refresh Frames work on the full frame range or only the current timeline frame. It does not change the range used by Process Frame Range. Choices: Frame Range; Current Frame. |
 | **Cache Frames** (`cache_frames`) | Action | Saves missing or outdated input snapshots for the selected Input Frames scope. Reuses snapshots that are already valid. Run this before range processing. |
 | **Refresh Frames** (`refresh_frames`) | Action | Re-exports input snapshots for the selected Input Frames scope, including previously cached frames. Use after changing upstream images, masks, or vectors, then process again to update the results. |
-| **Process Frame Range** (`process_range`) | Action | Processes every frame from Range First through Range Last, including both endpoints. Prepare input snapshots with Cache Frames; use Refresh Frames after upstream edits. |
 | **Output** (`output_mode`) | Source + Refined Alpha | Chooses how to display the refined matte or its trimap preview. Source + Refined Alpha keeps source RGB with the refined alpha; Refined Matte shows the matte; Refined Cutout premultiplies the subject. Trimap modes help inspect the uncertain edge before inference. Choices: Refined Matte; Source + Refined Alpha; Refined Cutout; Trimap; Source + Trimap Alpha; Trimap Cutout; Source (Bypass); Tile Preview. |
 | **Cache Folder** (`cache_root`) | Empty | Base directory for input snapshots and generated results. Cache files are organized under Folder / Name / Version. Choose a writable location with enough free space. |
 | **Refine Name** (`refine_name`) | refine | Nodes with the same Name and Version share this cache. |
@@ -125,14 +119,11 @@ Inputs: `0` Mask, `1` Source.
 | **Context Padding (px)** (`context_padding`) | 128 | Extra source-image pixels around the automatically detected mask region. Increase to give the model more surrounding context; decrease for a tighter crop. Applies in Auto crop mode. |
 | **Reset ROI to Source** (`reset_roi`) | Action | Resets the manual processing rectangle to the full Source image. Use if the crop is misplaced or too small. |
 | **Live Current Frame** (`live_mode`) | False | Automatically processes the current frame when the timeline or relevant settings change. Useful for adjusting a result interactively; turn off to avoid background processing while working elsewhere. |
+| **Frame Scope** (`input_cache_scope`) | Current Frame | Current Frame is the default: only the current-frame action is shown. Select Frame Range explicitly to reveal range processing and range bounds. Cache Frames and Refresh Frames use the same scope. Choices: Current Frame; Frame Range. |
 | **Process Current Frame** (`process_frame`) | Action | Processes only the current timeline frame with these settings. Use this to judge the result before processing a whole range. |
 | **Cancel** (`cancel`) | Action | Requests cancellation of the current operation. Already completed cached frames are retained; cancellation may wait for the active processing step. |
-| **Range First** (`range_first`) | 1 | First frame of the processing and input-cache range, inclusive. Raise it to skip earlier frames. |
-| **Range Last** (`range_last`) | 100 | Last frame of the processing and input-cache range, inclusive. Lower it to process fewer frames while testing. |
-| **Input Frames** (`input_cache_scope`) | Frame Range | Chooses whether Cache Frames and Refresh Frames work on the full frame range or only the current timeline frame. It does not change the range used by Process Frame Range. Choices: Frame Range; Current Frame. |
 | **Cache Frames** (`cache_frames`) | Action | Saves missing or outdated input snapshots for the selected Input Frames scope. Reuses snapshots that are already valid. Run this before range processing. |
 | **Refresh Frames** (`refresh_frames`) | Action | Re-exports input snapshots for the selected Input Frames scope, including previously cached frames. Use after changing upstream images, masks, or vectors, then process again to update the results. |
-| **Process Frame Range** (`process_range`) | Action | Processes every frame from Range First through Range Last, including both endpoints. Prepare input snapshots with Cache Frames; use Refresh Frames after upstream edits. |
 | **Output** (`output_mode`) | Result + Mask Alpha | Result shows the completed RGB image. Result + Mask Alpha adds the effective model mask as alpha; Result Premult multiplies RGB by that mask. Generated Patch isolates the generated replacement for compositing with Source. Choices: Result; Result + Mask Alpha; Result Premult; Generated Patch; Difference; Source. |
 | **Cache Folder** (`cache_root`) | Empty | Base directory for input snapshots and generated results. Cache files are organized under Folder / Name / Version. Choose a writable location with enough free space. |
 | **Inpaint Name** (`inpaint_name`) | inpaint | Nodes with the same Name and Version share this cache. |
@@ -156,47 +147,42 @@ Inputs: `0` Mask, `1` Source.
 | **Improve Prompt** (`improve_prompt`) | Action | Rewrite the editing instruction locally with the selected model's Qwen encoder. No source image is sent to prompt improvement. |
 | **Restore Original** (`restore_prompt`) | Action | Restore the text that was present before the last successful Improve Prompt action. |
 | **Seed** (`seed`) | 42.0 | A fixed integer seed makes repeated generation reproducible with the same settings and runtime. |
-| **Model** (`model`) | Mage-Flow Edit Turbo Q6 | Selects Mage or FLUX for local masked image editing. Mage is the factory default; FLUX uses LanPaint, and Base is a slower preview option. Install / Repair Model prepares the selected backend. Choices: FLUX.2 Klein 4B Q4 + LanPaint; FLUX.2 Klein 4B Base Q4 + LanPaint (Preview); Mage-Flow Edit Turbo Q6. |
-| **Processing Resolution** (`working_size`) | 512 | Maximum side of the cropped region in pixels; the output retains Source resolution. Lower values are faster and use less VRAM. |
+| **Model** (`model`) | Mage-Flow Edit Turbo Q6 | Selects Mage or FLUX for local masked image editing. Mage is the factory default; FLUX uses LanPaint, and Base is a slower preview option. Install / Repair Model prepares the selected backend. Choices: FLUX.2 Klein 4B Q4 + LanPaint; Mage-Flow Edit Turbo Q6. |
+| **Processing Resolution** (`working_resolution`) | 512 | Maximum crop side used by the model, not final output size. Mage supports up to 2048; FLUX up to 1024. Larger sizes need more memory. Generate again to apply. Choices: 256; 512; 768; 1024; 1280; 1536; 1792; 2048. |
 | **Input Colorspace** (`in_colorspace`) | Linear (stored: RGB) | Colorspace of the source image entering the inpaint conversion. Match the actual incoming image so model input and returned RGB are converted correctly; a mismatch can shift brightness or color. Choices: gamma 1.80; gamma 2.20; gamma 2.40; gamma 2.60; rec709 (~1.95); sRGB (~2.20); Cineon; Linear; HSV; HSL; YPbPr; YCbCr; CIE-XYZ; CIE-Yxy; L*a*b*; CIE-LCH; Panalog; REDLog; ViperLog; AlexaV3LogC; PLogLin; SLog; SLog1; SLog2; SLog3; CLog; Log3G10; Log3G12; HybridLogGamma; Protune; BT1886; st2084; Blackmagic Film Generation 5; ARRILogC4. |
 | **Model Manager...** (`open_model_manager`) | Action | Opens the model and runtime manager. Use it to install the components required by the selected model and check their availability. |
 | **Install / Repair Model** (`install_fill_runtime`) | Action | Install or verify the selected model and all its required components. Existing verified weights are reused. |
-| **Preview Model Mask** (`preview_model_mask`) | False | Preview the sampling region, including model growth, Generation Overlap and any explicit Result Mask Grow. This can exceed the final edit permission. |
+| **Preview Model Mask** (`preview_model_mask`) | False | Exact binary alpha exported to Mage, before any result mask adjustments. Only crop and working-resolution resampling are applied in the worker. |
 | **Invert Input Mask** (`invert_mask`) | False | Invert the input alpha before interpreting the edit permission mask. |
-| **Result Edge Softness (px)** (`edge_softness`) | 4.0 | Feather the generated patch inward within the result permission mask. Mage's Result Mask Grow can explicitly expand that mask. |
-| **Result Mask Grow (px)** (`fill_blend_margin`) | 0 | 0 preserves the exact artist mask. A positive value explicitly allows RGB edits in this extra band around the alpha, giving removal edges room to blend. |
-| **Smooth Removal Edges** (`fill_smooth_removal`) | Action | Prepare a wider removal transition: Auto crop, padding 384, processing resolution 1024, Result Mask Grow 32, softness 24, overlap 0 and Auto Color Match. This explicitly permits extra RGB edits. Generate again to apply. |
-| **Color Matching** (`fill_color_mode`) | Auto | Auto matches clean Source context and, for explicit removal prompts, continuous flat backgrounds. Context preserves the new object's colors. Background forces removal matching. Off disables color correction. Choices: Auto; Context; Background; Off. |
-| **Color Match Strength** (`fill_color_match`) | 1.0 | 0 keeps generated colors; 1 applies full calibration from clean Source context. Source pixels inside the removal mask are never used as a color reference. |
-| **Color Match Radius (px)** (`fill_color_radius`) | 64 | Local background color matching around removal edges, in source pixels. 0 disables the local step. Texture and pixel positions are not warped. |
+| **Color Matching** (`fill_color_mode`) | Lab | Lab matches clean context using Reinhard Lab statistics. Off shows the raw generated patch. Mage changes update the cached patch immediately after one generation. Choices: Lab; Off. |
+| **Color Match Strength** (`fill_color_match`) | 1.0 | Master amount of the cached Lab match. 0 keeps raw generated colors; 1 applies the selected luminance/chroma amounts. Updates without inference. |
+| **Match Luminance** (`fill_match_luminance`) | 1.0 | 0 preserves the generated value; 1 applies the fitted Lab match. Updates cached Mage pixels in Nuke without generation. |
+| **Match Chroma** (`fill_match_chroma`) | 1.0 | 0 preserves the generated value; 1 applies the fitted Lab match. Updates cached Mage pixels in Nuke without generation. |
 | **Crop Mode** (`crop_mode`) | auto | Auto finds the useful mask area and adds Context Padding. Manual uses your Manual ROI rectangle. Full processes the entire source. A tighter crop can save work, but keep enough surrounding image for the model. Choices: auto; manual; full. |
 | **Context Padding (px)** (`context_padding`) | 256 | Extra source-image pixels around the automatically detected mask region. Increase to give the model more surrounding context; decrease for a tighter crop. Applies in Auto crop mode. |
 | **Reset ROI to Source** (`reset_roi`) | Action | Resets the manual processing rectangle to the full Source image. Use if the crop is misplaced or too small. |
+| **Frame Scope** (`input_cache_scope`) | Current Frame | Current Frame is the default: only the current-frame action is shown. Select Frame Range explicitly to reveal range processing and range bounds. Cache Frames and Refresh Frames use the same scope. Choices: Current Frame; Frame Range. |
 | **Generate Current Frame** (`process_frame`) | Action | Processes only the current timeline frame with these settings. Use this to judge the result before processing a whole range. |
 | **Cancel** (`cancel`) | Action | Requests cancellation of the current operation. Already completed cached frames are retained; cancellation may wait for the active processing step. |
-| **Range First** (`range_first`) | 1 | First frame of the processing and input-cache range, inclusive. Raise it to skip earlier frames. |
-| **Range Last** (`range_last`) | 100 | Last frame of the processing and input-cache range, inclusive. Lower it to process fewer frames while testing. |
-| **Input Frames** (`input_cache_scope`) | Frame Range | Chooses whether Cache Frames and Refresh Frames work on the full frame range or only the current timeline frame. It does not change the range used by Process Frame Range. Choices: Frame Range; Current Frame. |
 | **Cache Frames** (`cache_frames`) | Action | Saves missing or outdated input snapshots for the selected Input Frames scope. Reuses snapshots that are already valid. Run this before range processing. |
 | **Refresh Frames** (`refresh_frames`) | Action | Re-exports input snapshots for the selected Input Frames scope, including previously cached frames. Use after changing upstream images, masks, or vectors, then process again to update the results. |
-| **Generate Frame Range** (`process_range`) | Action | Processes every frame from Range First through Range Last, including both endpoints. Prepare input snapshots with Cache Frames; use Refresh Frames after upstream edits. |
 | **Output** (`output_mode`) | Result | Result keeps Source alpha and auxiliary channels. Result + Mask Alpha uses the result permission alpha; Result Premult also premultiplies RGB. Generated Patch exposes replacement RGB with permission alpha. Difference shows the RGB change; Source bypasses generation. Choices: Result; Result + Mask Alpha; Result Premult; Generated Patch; Difference; Source. |
+| **Grow / Erode (px)** (`fill_blend_margin`) | 0.0 | After generation only: positive grows the blend mask, negative shrinks it. Source pixels; never changes the mask sent to Mage. Limited to the generated crop. |
+| **Mask Blur (px)** (`edge_softness`) | 0.0 | Ordinary Gaussian Blur after Grow / Erode, in Source pixels. 0 disables blur. Updates cached pixels immediately; never changes the model mask. |
+| **Preview Blend Mask** (`fill_preview_blend_mask`) | False | Show the final live blend alpha, after Grow / Erode and ordinary Gaussian Blur. |
 | **Cache Folder** (`cache_root`) | Empty | Base directory for input snapshots and generated results. Cache files are organized under Folder / Name / Version. Choose a writable location with enough free space. |
 | **Fill Name** (`inpaint_name`) | generative_fill | Nodes with the same Name and Version share this cache. |
 | **Version** (`cache_version`) | v001 | Selects the cache version, for example v001. Folder, Name and Version identify the files used by this node. Use New Cache Version to keep an earlier result while making another pass. |
 | **New Cache Version** (`new_cache_version`) | Action | Switches to a new cache version so another pass can be stored separately. Earlier cache files remain on disk. |
-| **Create Result Read** (`create_result_read`) | Action | Creates a separate Nuke Read node for the cached result sequence. Process frames first; moving or deleting the cache will break this Read. |
+| **Create Base Result Read** (`create_result_read`) | Action | Read the cached base result. Use a normal Write on this Group to save the live Color Match and edge adjustments, Source alpha and auxiliary channels. |
 | **Delete Node Cache** (`delete_node_cache`) | Action | Deletes cached files for this node's cache. Results must be regenerated afterward, and nodes or Reads sharing that cache may lose their files. |
 | **Status** (`kyven_status`) | Ready | Reports readiness, processing progress or the latest error. If a result does not update, read this field for the next action. |
 | **Start Server** (`start_server_control`) | Action | Starts or connects to the local Kyven inference server used by the nodes. Use if the server is stopped or unavailable. |
 | **Stop Server** (`stop_server_control`) | Action | Stops the local Kyven server. Other Kyven nodes using that server will also be affected; start it again before further inference. |
-| **Generation Overlap** (`fill_mask_overlap`) | 32 | Generate extra source pixels beyond the sampling region to move model transitions away from the composite edge. This does not expand result permission. |
 | **Diffusion Steps** (`steps`) | 4 | Mage and distilled Klein use 4 steps. Base starts at 20. More steps cost time. |
 | **Generation Timeout (s)** (`generation_timeout`) | 1800 | Cancel and unload the worker if a generation exceeds this limit. |
-| **Retry Smaller After GPU OOM** (`oom_retry`) | True | Retry once with a smaller working crop. The original output mask stays unchanged. |
+| **Retry Smaller After Memory Error** (`oom_retry`) | True | Retry once with a smaller working crop. The original output mask stays unchanged. |
 | **Memory Profile** (`profile`) | balanced | Controls the inference memory/performance configuration. Start with balanced; try low_memory if GPU memory runs out. Quality may require more memory. This is not a guarantee of better results for every model. Choices: low_memory; balanced; quality. |
-| **Threshold** (`mask_threshold`) | 0.0 | Ignore alpha below this cutoff. Retained fractional alpha controls the final blend; the model's sampling mask is binary. |
-| **Model Mask Grow** (`mask_grow`) | 0.0 | Grow the inference region only. This does not expand the result permission; Mage's separate Result Mask Grow explicitly allows edits in an extra band. |
 | **System Prompt** (`qwen_system_prompt`) | See editable text in node | Instruction used only by Improve Prompt. Qwen is text-only and cannot inspect the source image. |
 | **Maximum New Tokens** (`qwen_max_tokens`) | 192 | Limit how much text Qwen can generate. Lower values are faster on CPU. |
 | **Prompt Timeout (s)** (`qwen_timeout`) | 600 | Stop prompt improvement and unload its worker when this time limit is reached. |
@@ -217,34 +203,31 @@ Inputs: `0` Mask, `1` Source.
 | **Improve Prompt** (`improve_prompt`) | Action | Rewrite the editing instruction locally with the selected model's Qwen encoder. No source image is sent to prompt improvement. |
 | **Restore Original** (`restore_prompt`) | Action | Restore the text that was present before the last successful Improve Prompt action. |
 | **Seed** (`seed`) | 42.0 | A fixed integer seed makes repeated generation reproducible with the same settings and runtime. |
-| **Model** (`model`) | FLUX.2 Klein 4B Q4 + LanPaint | Selects Mage or FLUX for local masked image editing. Mage is the factory default; FLUX uses LanPaint, and Base is a slower preview option. Install / Repair Model prepares the selected backend. Choices: FLUX.2 Klein 4B Q4 + LanPaint; FLUX.2 Klein 4B Base Q4 + LanPaint (Preview); Mage-Flow Edit Turbo Q6. |
-| **Processing Resolution** (`working_size`) | 512 | Maximum side of the cropped region in pixels; the output retains Source resolution. Lower values are faster and use less VRAM. |
+| **Model** (`model`) | FLUX.2 Klein 4B Q4 + LanPaint | Selects Mage or FLUX for local masked image editing. Mage is the factory default; FLUX uses LanPaint, and Base is a slower preview option. Install / Repair Model prepares the selected backend. Choices: FLUX.2 Klein 4B Q4 + LanPaint; Mage-Flow Edit Turbo Q6. |
+| **Processing Resolution** (`working_resolution`) | 512 | Maximum crop side used by the model, not final output size. Mage supports up to 2048; FLUX up to 1024. Larger sizes need more memory. Generate again to apply. Choices: 256; 512; 768; 1024. |
 | **Input Colorspace** (`in_colorspace`) | Linear (stored: RGB) | Colorspace of the source image entering the inpaint conversion. Match the actual incoming image so model input and returned RGB are converted correctly; a mismatch can shift brightness or color. Choices: gamma 1.80; gamma 2.20; gamma 2.40; gamma 2.60; rec709 (~1.95); sRGB (~2.20); Cineon; Linear; HSV; HSL; YPbPr; YCbCr; CIE-XYZ; CIE-Yxy; L*a*b*; CIE-LCH; Panalog; REDLog; ViperLog; AlexaV3LogC; PLogLin; SLog; SLog1; SLog2; SLog3; CLog; Log3G10; Log3G12; HybridLogGamma; Protune; BT1886; st2084; Blackmagic Film Generation 5; ARRILogC4. |
 | **Model Manager...** (`open_model_manager`) | Action | Opens the model and runtime manager. Use it to install the components required by the selected model and check their availability. |
 | **Install / Repair Model** (`install_fill_runtime`) | Action | Install or verify the selected model and all its required components. Existing verified weights are reused. |
-| **Preview Model Mask** (`preview_model_mask`) | False | Preview the sampling region, including model growth, Generation Overlap and any explicit Result Mask Grow. This can exceed the final edit permission. |
+| **Preview Model Mask** (`preview_model_mask`) | False | Preview the exact exported binary model mask, including Model Mask Grow. FLUX may add Generation Overlap in the worker. |
 | **Invert Input Mask** (`invert_mask`) | False | Invert the input alpha before interpreting the edit permission mask. |
-| **Result Edge Softness (px)** (`edge_softness`) | 4.0 | Feather the generated patch inward within the result permission mask. Mage's Result Mask Grow can explicitly expand that mask. |
-| **Color Matching** (`fill_color_mode`) | Auto | Auto matches clean Source context and, for explicit removal prompts, continuous flat backgrounds. Context preserves the new object's colors. Background forces removal matching. Off disables color correction. Choices: Auto; Context; Background; Off. |
-| **Color Match Strength** (`fill_color_match`) | 1.0 | 0 keeps generated colors; 1 applies full calibration from clean Source context. Source pixels inside the removal mask are never used as a color reference. |
+| **Color Matching** (`fill_color_mode`) | Auto | Choose worker color matching for FLUX; generate again to apply. Choices: Auto; Context; Background; Off. |
+| **Color Match Strength** (`fill_color_match`) | 1.0 | Amount of worker color matching. Generate again to apply FLUX changes. |
 | **Color Match Radius (px)** (`fill_color_radius`) | 64 | Local background color matching around removal edges, in source pixels. 0 disables the local step. Texture and pixel positions are not warped. |
 | **Crop Mode** (`crop_mode`) | auto | Auto finds the useful mask area and adds Context Padding. Manual uses your Manual ROI rectangle. Full processes the entire source. A tighter crop can save work, but keep enough surrounding image for the model. Choices: auto; manual; full. |
 | **Context Padding (px)** (`context_padding`) | 256 | Extra source-image pixels around the automatically detected mask region. Increase to give the model more surrounding context; decrease for a tighter crop. Applies in Auto crop mode. |
 | **Reset ROI to Source** (`reset_roi`) | Action | Resets the manual processing rectangle to the full Source image. Use if the crop is misplaced or too small. |
+| **Frame Scope** (`input_cache_scope`) | Current Frame | Current Frame is the default: only the current-frame action is shown. Select Frame Range explicitly to reveal range processing and range bounds. Cache Frames and Refresh Frames use the same scope. Choices: Current Frame; Frame Range. |
 | **Generate Current Frame** (`process_frame`) | Action | Processes only the current timeline frame with these settings. Use this to judge the result before processing a whole range. |
 | **Cancel** (`cancel`) | Action | Requests cancellation of the current operation. Already completed cached frames are retained; cancellation may wait for the active processing step. |
-| **Range First** (`range_first`) | 1 | First frame of the processing and input-cache range, inclusive. Raise it to skip earlier frames. |
-| **Range Last** (`range_last`) | 100 | Last frame of the processing and input-cache range, inclusive. Lower it to process fewer frames while testing. |
-| **Input Frames** (`input_cache_scope`) | Frame Range | Chooses whether Cache Frames and Refresh Frames work on the full frame range or only the current timeline frame. It does not change the range used by Process Frame Range. Choices: Frame Range; Current Frame. |
 | **Cache Frames** (`cache_frames`) | Action | Saves missing or outdated input snapshots for the selected Input Frames scope. Reuses snapshots that are already valid. Run this before range processing. |
 | **Refresh Frames** (`refresh_frames`) | Action | Re-exports input snapshots for the selected Input Frames scope, including previously cached frames. Use after changing upstream images, masks, or vectors, then process again to update the results. |
-| **Generate Frame Range** (`process_range`) | Action | Processes every frame from Range First through Range Last, including both endpoints. Prepare input snapshots with Cache Frames; use Refresh Frames after upstream edits. |
 | **Output** (`output_mode`) | Result | Result keeps Source alpha and auxiliary channels. Result + Mask Alpha uses the result permission alpha; Result Premult also premultiplies RGB. Generated Patch exposes replacement RGB with permission alpha. Difference shows the RGB change; Source bypasses generation. Choices: Result; Result + Mask Alpha; Result Premult; Generated Patch; Difference; Source. |
+| **Edge Softness (px)** (`edge_softness`) | 0.0 | Feather the FLUX patch inward within the result permission mask. Generate again to apply. |
 | **Cache Folder** (`cache_root`) | Empty | Base directory for input snapshots and generated results. Cache files are organized under Folder / Name / Version. Choose a writable location with enough free space. |
 | **Fill Name** (`inpaint_name`) | generative_fill | Nodes with the same Name and Version share this cache. |
 | **Version** (`cache_version`) | v001 | Selects the cache version, for example v001. Folder, Name and Version identify the files used by this node. Use New Cache Version to keep an earlier result while making another pass. |
 | **New Cache Version** (`new_cache_version`) | Action | Switches to a new cache version so another pass can be stored separately. Earlier cache files remain on disk. |
-| **Create Result Read** (`create_result_read`) | Action | Creates a separate Nuke Read node for the cached result sequence. Process frames first; moving or deleting the cache will break this Read. |
+| **Create Result Read** (`create_result_read`) | Action | Read the cached base result. Use a normal Write on this Group to save the live Color Match and edge adjustments, Source alpha and auxiliary channels. |
 | **Delete Node Cache** (`delete_node_cache`) | Action | Deletes cached files for this node's cache. Results must be regenerated afterward, and nodes or Reads sharing that cache may lose their files. |
 | **Status** (`kyven_status`) | Ready | Reports readiness, processing progress or the latest error. If a result does not update, read this field for the next action. |
 | **Start Server** (`start_server_control`) | Action | Starts or connects to the local Kyven inference server used by the nodes. Use if the server is stopped or unavailable. |
@@ -255,82 +238,14 @@ Inputs: `0` Mask, `1` Source.
 | **Early Stop** (`lanpaint_early_stop`) | 1 | Skip thinking iterations during this many final diffusion steps. Must be smaller than Diffusion Steps. |
 | **VAE Tile Size** (`vae_tile_size`) | 256 | Smaller decode tiles reduce temporary GPU memory. |
 | **Generation Timeout (s)** (`generation_timeout`) | 1800 | Cancel and unload the worker if a generation exceeds this limit. |
-| **Retry Smaller After GPU OOM** (`oom_retry`) | True | Retry once with a smaller working crop. The original output mask stays unchanged. |
+| **Retry Smaller After Memory Error** (`oom_retry`) | True | Retry once with a smaller working crop. The original output mask stays unchanged. |
 | **Langevin Step Size** (`lanpaint_step_size`) | 0.2 | Advanced LanPaint solver parameter. Restore defaults if the result becomes unstable. |
 | **Friction** (`lanpaint_friction`) | 15.0 | Advanced LanPaint solver parameter. Restore defaults if the result becomes unstable. |
 | **Constraint Strength** (`lanpaint_strength`) | 8.0 | Advanced LanPaint solver parameter. Restore defaults if the result becomes unstable. |
 | **Noise Beta** (`lanpaint_beta`) | 1.0 | Advanced LanPaint solver parameter. Restore defaults if the result becomes unstable. |
 | **Memory Profile** (`profile`) | balanced | Controls the inference memory/performance configuration. Start with balanced; try low_memory if GPU memory runs out. Quality may require more memory. This is not a guarantee of better results for every model. Choices: low_memory; balanced; quality. |
 | **Threshold** (`mask_threshold`) | 0.0 | Ignore alpha below this cutoff. Retained fractional alpha controls the final blend; the model's sampling mask is binary. |
-| **Model Mask Grow** (`mask_grow`) | 0.0 | Grow the inference region only. This does not expand the result permission; Mage's separate Result Mask Grow explicitly allows edits in an extra band. |
-| **Seamless Blend** (`fill_seamless_blend`) | Auto | Auto matches boundaries for removals and all Base edits. On also applies it to other additions/replacements and may change their colors. Off keeps standard masked compositing. Choices: Auto; On; Off. |
-| **System Prompt** (`qwen_system_prompt`) | See editable text in node | Instruction used only by Improve Prompt. Qwen is text-only and cannot inspect the source image. |
-| **Maximum New Tokens** (`qwen_max_tokens`) | 192 | Limit how much text Qwen can generate. Lower values are faster on CPU. |
-| **Prompt Timeout (s)** (`qwen_timeout`) | 600 | Stop prompt improvement and unload its worker when this time limit is reached. |
-| **Temperature** (`qwen_temperature`) | 0.6 | Text sampling randomness. Zero selects deterministic greedy decoding. |
-| **Top P** (`qwen_top_p`) | 0.9 | Restrict text sampling to the smallest token set reaching this cumulative probability. |
-| **Reset System Prompt** (`reset_qwen_system`) | Action | Restore the default prompt-refinement instruction without changing the image prompt. |
-| **Last Improved Prompt** (`improved_prompt`) | Empty | Last Qwen result, including results saved when a newer artist edit prevented automatic replacement. |
-
-## Generative Fill / FLUX.2 Klein 4B Base Q4 + LanPaint (Preview)
-
-[Task guide](GENERATIVE_FILL.md)
-
-Inputs: `0` Mask, `1` Source.
-
-| Control | Initial value / action | What it does |
-| --- | --- | --- |
-| **Prompt** (`prompt`) | Empty | Describe the edit: remove, add, replace or modify. Russian is translated automatically. The mask limits where pixels may change. |
-| **Improve Prompt** (`improve_prompt`) | Action | Rewrite the editing instruction locally with the selected model's Qwen encoder. No source image is sent to prompt improvement. |
-| **Restore Original** (`restore_prompt`) | Action | Restore the text that was present before the last successful Improve Prompt action. |
-| **Seed** (`seed`) | 42.0 | A fixed integer seed makes repeated generation reproducible with the same settings and runtime. |
-| **Model** (`model`) | FLUX.2 Klein 4B Base Q4 + LanPaint (Preview) | Selects Mage or FLUX for local masked image editing. Mage is the factory default; FLUX uses LanPaint, and Base is a slower preview option. Install / Repair Model prepares the selected backend. Choices: FLUX.2 Klein 4B Q4 + LanPaint; FLUX.2 Klein 4B Base Q4 + LanPaint (Preview); Mage-Flow Edit Turbo Q6. |
-| **Processing Resolution** (`working_size`) | 512 | Maximum side of the cropped region in pixels; the output retains Source resolution. Lower values are faster and use less VRAM. |
-| **Input Colorspace** (`in_colorspace`) | Linear (stored: RGB) | Colorspace of the source image entering the inpaint conversion. Match the actual incoming image so model input and returned RGB are converted correctly; a mismatch can shift brightness or color. Choices: gamma 1.80; gamma 2.20; gamma 2.40; gamma 2.60; rec709 (~1.95); sRGB (~2.20); Cineon; Linear; HSV; HSL; YPbPr; YCbCr; CIE-XYZ; CIE-Yxy; L*a*b*; CIE-LCH; Panalog; REDLog; ViperLog; AlexaV3LogC; PLogLin; SLog; SLog1; SLog2; SLog3; CLog; Log3G10; Log3G12; HybridLogGamma; Protune; BT1886; st2084; Blackmagic Film Generation 5; ARRILogC4. |
-| **Model Manager...** (`open_model_manager`) | Action | Opens the model and runtime manager. Use it to install the components required by the selected model and check their availability. |
-| **Install / Repair Model** (`install_fill_runtime`) | Action | Install or verify the selected model and all its required components. Existing verified weights are reused. |
-| **Preview Model Mask** (`preview_model_mask`) | False | Preview the sampling region, including model growth, Generation Overlap and any explicit Result Mask Grow. This can exceed the final edit permission. |
-| **Invert Input Mask** (`invert_mask`) | False | Invert the input alpha before interpreting the edit permission mask. |
-| **Result Edge Softness (px)** (`edge_softness`) | 4.0 | Feather the generated patch inward within the result permission mask. Mage's Result Mask Grow can explicitly expand that mask. |
-| **Color Matching** (`fill_color_mode`) | Auto | Auto matches clean Source context and, for explicit removal prompts, continuous flat backgrounds. Context preserves the new object's colors. Background forces removal matching. Off disables color correction. Choices: Auto; Context; Background; Off. |
-| **Color Match Strength** (`fill_color_match`) | 1.0 | 0 keeps generated colors; 1 applies full calibration from clean Source context. Source pixels inside the removal mask are never used as a color reference. |
-| **Color Match Radius (px)** (`fill_color_radius`) | 64 | Local background color matching around removal edges, in source pixels. 0 disables the local step. Texture and pixel positions are not warped. |
-| **Crop Mode** (`crop_mode`) | auto | Auto finds the useful mask area and adds Context Padding. Manual uses your Manual ROI rectangle. Full processes the entire source. A tighter crop can save work, but keep enough surrounding image for the model. Choices: auto; manual; full. |
-| **Context Padding (px)** (`context_padding`) | 256 | Extra source-image pixels around the automatically detected mask region. Increase to give the model more surrounding context; decrease for a tighter crop. Applies in Auto crop mode. |
-| **Reset ROI to Source** (`reset_roi`) | Action | Resets the manual processing rectangle to the full Source image. Use if the crop is misplaced or too small. |
-| **Generate Current Frame** (`process_frame`) | Action | Processes only the current timeline frame with these settings. Use this to judge the result before processing a whole range. |
-| **Cancel** (`cancel`) | Action | Requests cancellation of the current operation. Already completed cached frames are retained; cancellation may wait for the active processing step. |
-| **Range First** (`range_first`) | 1 | First frame of the processing and input-cache range, inclusive. Raise it to skip earlier frames. |
-| **Range Last** (`range_last`) | 100 | Last frame of the processing and input-cache range, inclusive. Lower it to process fewer frames while testing. |
-| **Input Frames** (`input_cache_scope`) | Frame Range | Chooses whether Cache Frames and Refresh Frames work on the full frame range or only the current timeline frame. It does not change the range used by Process Frame Range. Choices: Frame Range; Current Frame. |
-| **Cache Frames** (`cache_frames`) | Action | Saves missing or outdated input snapshots for the selected Input Frames scope. Reuses snapshots that are already valid. Run this before range processing. |
-| **Refresh Frames** (`refresh_frames`) | Action | Re-exports input snapshots for the selected Input Frames scope, including previously cached frames. Use after changing upstream images, masks, or vectors, then process again to update the results. |
-| **Generate Frame Range** (`process_range`) | Action | Processes every frame from Range First through Range Last, including both endpoints. Prepare input snapshots with Cache Frames; use Refresh Frames after upstream edits. |
-| **Output** (`output_mode`) | Result | Result keeps Source alpha and auxiliary channels. Result + Mask Alpha uses the result permission alpha; Result Premult also premultiplies RGB. Generated Patch exposes replacement RGB with permission alpha. Difference shows the RGB change; Source bypasses generation. Choices: Result; Result + Mask Alpha; Result Premult; Generated Patch; Difference; Source. |
-| **Cache Folder** (`cache_root`) | Empty | Base directory for input snapshots and generated results. Cache files are organized under Folder / Name / Version. Choose a writable location with enough free space. |
-| **Fill Name** (`inpaint_name`) | generative_fill | Nodes with the same Name and Version share this cache. |
-| **Version** (`cache_version`) | v001 | Selects the cache version, for example v001. Folder, Name and Version identify the files used by this node. Use New Cache Version to keep an earlier result while making another pass. |
-| **New Cache Version** (`new_cache_version`) | Action | Switches to a new cache version so another pass can be stored separately. Earlier cache files remain on disk. |
-| **Create Result Read** (`create_result_read`) | Action | Creates a separate Nuke Read node for the cached result sequence. Process frames first; moving or deleting the cache will break this Read. |
-| **Delete Node Cache** (`delete_node_cache`) | Action | Deletes cached files for this node's cache. Results must be regenerated afterward, and nodes or Reads sharing that cache may lose their files. |
-| **Status** (`kyven_status`) | Ready | Reports readiness, processing progress or the latest error. If a result does not update, read this field for the next action. |
-| **Start Server** (`start_server_control`) | Action | Starts or connects to the local Kyven inference server used by the nodes. Use if the server is stopped or unavailable. |
-| **Stop Server** (`stop_server_control`) | Action | Stops the local Kyven server. Other Kyven nodes using that server will also be affected; start it again before further inference. |
-| **Generation Overlap** (`fill_mask_overlap`) | 32 | Generate extra source pixels beyond the sampling region to move model transitions away from the composite edge. This does not expand result permission. |
-| **Diffusion Steps** (`steps`) | 20 | Mage and distilled Klein use 4 steps. Base starts at 20. More steps cost time. |
-| **LanPaint Thinking Steps** (`thinking_steps`) | 2 | Extra conditional sampling iterations. More improves some edits but increases generation time. |
-| **Early Stop** (`lanpaint_early_stop`) | 1 | Skip thinking iterations during this many final diffusion steps. Must be smaller than Diffusion Steps. |
-| **VAE Tile Size** (`vae_tile_size`) | 256 | Smaller decode tiles reduce temporary GPU memory. |
-| **Generation Timeout (s)** (`generation_timeout`) | 1800 | Cancel and unload the worker if a generation exceeds this limit. |
-| **Retry Smaller After GPU OOM** (`oom_retry`) | True | Retry once with a smaller working crop. The original output mask stays unchanged. |
-| **Base Guidance** (`moss_guidance`) | 4.0 | Advanced LanPaint solver parameter. Restore defaults if the result becomes unstable. |
-| **Langevin Step Size** (`lanpaint_step_size`) | 0.2 | Advanced LanPaint solver parameter. Restore defaults if the result becomes unstable. |
-| **Friction** (`lanpaint_friction`) | 15.0 | Advanced LanPaint solver parameter. Restore defaults if the result becomes unstable. |
-| **Constraint Strength** (`lanpaint_strength`) | 8.0 | Advanced LanPaint solver parameter. Restore defaults if the result becomes unstable. |
-| **Noise Beta** (`lanpaint_beta`) | 1.0 | Advanced LanPaint solver parameter. Restore defaults if the result becomes unstable. |
-| **Memory Profile** (`profile`) | balanced | Controls the inference memory/performance configuration. Start with balanced; try low_memory if GPU memory runs out. Quality may require more memory. This is not a guarantee of better results for every model. Choices: low_memory; balanced; quality. |
-| **Threshold** (`mask_threshold`) | 0.0 | Ignore alpha below this cutoff. Retained fractional alpha controls the final blend; the model's sampling mask is binary. |
-| **Model Mask Grow** (`mask_grow`) | 0.0 | Grow the inference region only. This does not expand the result permission; Mage's separate Result Mask Grow explicitly allows edits in an extra band. |
+| **Model Mask Grow** (`mask_grow`) | 0.0 | Grow the FLUX inference region only. Does not expand the result blend alpha. Mage uses input alpha directly and hides this control. |
 | **Seamless Blend** (`fill_seamless_blend`) | Auto | Auto matches boundaries for removals and all Base edits. On also applies it to other additions/replacements and may change their colors. Off keeps standard masked compositing. Choices: Auto; On; Off. |
 | **System Prompt** (`qwen_system_prompt`) | See editable text in node | Instruction used only by Improve Prompt. Qwen is text-only and cannot inspect the source image. |
 | **Maximum New Tokens** (`qwen_max_tokens`) | 192 | Limit how much text Qwen can generate. Lower values are faster on CPU. |
@@ -364,14 +279,11 @@ Inputs: `0` Source, `1` Motion, `2` Depth, `3` Mask.
 | **History Buffer** (`history_frames`) | 3 | Number of previous correction frames to retain, excluding the current frame. More history can improve stability but uses more CPU memory and depends on accurate motion. The memory budget may reduce the actual count. Choices: 1; 2; 3; 4. |
 | **Temporal Stability** (`temporal_strength`) | 0.35 | How strongly accepted previous corrections influence the current correction. Increase to reduce flicker; decrease if moving edges smear or lag. Requires temporal processing and valid external vectors. |
 | **Live Current Frame** (`live_mode`) | True | Automatically processes the current frame when the timeline or relevant settings change. Useful for adjusting a result interactively; turn off to avoid background processing while working elsewhere. |
+| **Frame Scope** (`input_cache_scope`) | Current Frame | Current Frame is the default: only the current-frame action is shown. Select Frame Range explicitly to reveal range processing and range bounds. Cache Frames and Refresh Frames use the same scope. Choices: Current Frame; Frame Range. |
 | **Process Current Frame** (`process_frame`) | Action | Processes only the current timeline frame with these settings. Use this to judge the result before processing a whole range. |
 | **Cancel** (`cancel`) | Action | Requests cancellation of the current operation. Already completed cached frames are retained; cancellation may wait for the active processing step. |
-| **Range First** (`first_frame`) | 1 | First frame of the processing and input-cache range, inclusive. Raise it to skip earlier frames. |
-| **Range Last** (`last_frame`) | 100 | Last frame of the processing and input-cache range, inclusive. Lower it to process fewer frames while testing. |
-| **Input Frames** (`input_cache_scope`) | Frame Range | Chooses whether Cache Frames and Refresh Frames work on the full frame range or only the current timeline frame. It does not change the range used by Process Frame Range. Choices: Frame Range; Current Frame. |
 | **Cache Frames** (`cache_frames`) | Action | Saves missing or outdated input snapshots for the selected Input Frames scope. Reuses snapshots that are already valid. Run this before range processing. |
 | **Refresh Frames** (`refresh_frames`) | Action | Re-exports input snapshots for the selected Input Frames scope, including previously cached frames. Use after changing upstream images, masks, or vectors, then process again to update the results. |
-| **Process Frame Range** (`process_range`) | Action | Processes every frame from Range First through Range Last, including both endpoints. Prepare input snapshots with Cache Frames; use Refresh Frames after upstream edits. |
 | **Reset History** (`reset_history`) | Action | Clears temporal history so the next frame starts without previous corrections. Use after a discontinuity or when testing temporal artifacts. |
 | **Output** (`output_mode`) | Result | Result shows reconstructed RGB while preserving source alpha and auxiliary channels. Source shows the original image for comparison. Choices: Result; Source. |
 | **Cache Folder** (`cache_root`) | Empty | Base directory for input snapshots and generated results. Cache files are organized under Folder / Name / Version. Choose a writable location with enough free space. |

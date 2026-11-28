@@ -19,6 +19,16 @@ restarting when you need to report a reproducible failure.
 - [Read or cache is wrong](#read-or-cache-problems)
 - [Inpaint has a rectangular color shift](#inpaint-result-has-a-rectangular-color-shift)
 
+## Mage reports RAM graph capacity exceeded
+
+This is an inference memory allocation failure, before a patch is produced.
+The managed runtime checks system RAM and pending device commit as well as VRAM.
+The worker recognizes this error and retries once at a smaller working size when
+**Retry Smaller After Memory Error** is enabled. Try Processing Resolution 512 or
+256 and close unused memory-heavy applications if both attempts fail. Full details
+remain in `.runtime/mage-fill/worker.log`. Result mask grow/blur do not affect it.
+After updating, unload the idle model or restart the server to load the new worker.
+
 ## WAFT is missing or fails
 
 - Use Nuke 16 and restart after connecting `Kyven/hosts/nuke`. Look for
@@ -68,8 +78,8 @@ The Nuke adapter launches `python.exe -I -m kyven.server.bootstrap`. On Windows 
 the DLL directory inherited from Nuke before importing PyTorch; this prevents the common
 `c10.dll` / `WinError 1114` startup failure.
 
-Kyven API 48 uses port `18788`. Older development servers may remain on 8765-8769 or 18768-18787,
-but the adapter asks authenticated older servers to unload their models before starting API 48.
+Kyven API 49 uses port `18788`. Older development servers may remain on 8765-8769 or 18768-18787,
+but the adapter asks authenticated older servers to unload their models before starting API 49.
 The Windows launcher now checks `netstat` once and contacts only ports that are actually listening;
 it no longer waits through every historical port. While starting, the node Status shows the current
 phase plus elapsed and timeout seconds. A failure includes the path to `.runtime/server.log`.

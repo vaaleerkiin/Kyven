@@ -45,6 +45,15 @@ for kind, create in factories:
     for x, y in ((2.5, 3.5), (24.5, 16.5), (45.5, 27.5)):
         for channel in ("rgba.red", "rgba.green", "rgba.blue", "rgba.alpha"):
             assert current.sample(channel, x, y) == source.sample(channel, x, y), (kind, channel)
+    assert current["input_cache_scope"].value() == "Current Frame", kind
+    assert current["process_frame"].visible() and not current["process_range"].visible(), kind
+    current["input_cache_scope"].setValue("Frame Range")
+    assert current["process_range"].visible() and not current["process_frame"].visible(), kind
+    from kyven_nuke.input_cache import ensure_controls
+    ensure_controls(current)
+    assert current["input_cache_scope"].value() == "Frame Range", kind
+    current["input_cache_scope"].setValue("Current Frame")
+    assert not current["process_range"].visible() and current["process_frame"].visible(), kind
     assert segment._begin_node_operation(current), kind
     assert not current["process_frame"].enabled() and current["cancel"].enabled(), kind
     segment._set_busy(current.fullName(), False)

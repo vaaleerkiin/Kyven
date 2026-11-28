@@ -237,6 +237,9 @@ def _poll_live(node: Any, identity: str) -> None:
 def knob_changed() -> None:
     nuke = _nuke()
     node, name = nuke.thisNode(), nuke.thisKnob().name()
+    from kyven_nuke.input_cache import scope_changed
+    if scope_changed(node, name):
+        return
     if _mutations.get(str(node.fullName()), 0):
         return
     if name == "mask_source":

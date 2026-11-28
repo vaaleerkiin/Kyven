@@ -45,6 +45,7 @@ class FillSettings:
     seam_repair: str = "off"
     seam_width: int = 24
     moss_guidance: float = 4.0
+    native_postprocess: bool = False
 
     def validate(self) -> None:
         if not isinstance(self.prompt, str) or not self.prompt.strip() or len(self.prompt) > 16000:
@@ -74,6 +75,8 @@ class FillSettings:
             _invalid("LanPaint early stop must be smaller than the diffusion step count.")
         if type(self.oom_retry) is not bool:
             _invalid("OOM retry must be a boolean.")
+        if type(self.native_postprocess) is not bool:
+            _invalid("Native postprocessing must be a boolean.")
         if self.color_match_mode not in {"auto", "context", "background", "off"}:
             _invalid("Color matching must be auto, context, background or off.")
         if self.seamless_blend not in {"auto", "on", "off"}:
@@ -112,9 +115,14 @@ class GenerativeFillRequest(InpaintRequest):
             _invalid("Generative Fill model mask grow cannot be negative.")
         if not self.preprocess_mask:
             _invalid("Generative Fill requires mask preprocessing; grow remains independent of compositing.")
+        if self.fill.native_postprocess and (
+                self.provider_id != MAGE_PROVIDER_ID or self.patch_output is None):
+            _invalid("Native postprocessing requires Mage and a patch output path.")
 
     def canonical(self) -> dict[str, Any]:
         settings = asdict(self.fill)
+        if not self.fill.native_postprocess:
+            settings.pop("native_postprocess")
         if self.provider_id == PROVIDER_ID:
             settings.pop("moss_guidance")
         return {**InpaintRequest.canonical(self), "fill": settings,

@@ -8,6 +8,7 @@ from typing import Any
 
 from kyven import input_index
 from kyven.hashing import cached_file_sha256
+from kyven_nuke.knob_tools import suspend_callbacks
 
 
 def _receipt(path: Path) -> Path:
@@ -20,6 +21,10 @@ def _state(node: Any, frame: int) -> dict:
              "in_colorspace", "generate_trimap")
     from kyven_nuke.node import _knob_value_at
     state = {name: _knob_value_at(node[name], frame) for name in names if name in node.knobs()}
+    if "fill_is_mage" in node.knobs() and node["fill_is_mage"].value():
+        # Hidden legacy model-mask controls have no effect on Mage exports.
+        state.update(mask_grow=0, mask_threshold=0, preprocess_mask=True)
+        state["fill_model_mask_contract"] = "mage-input-alpha-positive-v2"
     if "kyven_kind" in node.knobs() and node["kyven_kind"].value() in {"refine", "inpaint"}:
         state["mask_input_contract"] = "alpha-only-positive-v1"
         if node["kyven_kind"].value() == "refine":
@@ -110,18 +115,58 @@ def current_input(nuke: Any, node: Any, writer: Any, frame: int) -> None:
     use_input(nuke, node, writer, frame)
 
 
+
+def scope_changed(node: Any, knob_name: str) -> bool:
+    if knob_name != "input_cache_scope":
+        return False
+    update_scope_controls(node)
+    return True
+
+
+@suspend_callbacks
+def update_scope_controls(node: Any) -> None:
+    """Range actions require an explicit scope selection; no confirmation dialog."""
+    if "input_cache_scope" not in node.knobs():
+        return
+    ranged = str(node["input_cache_scope"].value()) == "Frame Range"
+    for name in ("process_range", "range_first", "range_last", "first_frame", "last_frame",
+                 "range_processing_label"):
+        if name in node.knobs():
+            node[name].setVisible(ranged)
+    for name in ("process_frame", "current_processing_label"):
+        if name in node.knobs():
+            node[name].setVisible(not ranged)
+    from kyven_nuke.node import _place_knob_after
+    anchor = "live_help" if "live_help" in node.knobs() else "live_mode"
+    _place_knob_after(node, "input_cache_scope", anchor)
+
+
+@suspend_callbacks
 def ensure_controls(node: Any) -> None:
     from kyven_nuke.node import _nuke, _place_knob_after
     nuke = _nuke()
     definitions = [
-        ("Enumeration_Knob", "input_cache_scope", "Input Frames", ["Frame Range", "Current Frame"]),
+        ("Enumeration_Knob", "input_cache_scope", "Frame Scope", ["Current Frame", "Frame Range"]),
         ("PyScript_Knob", "cache_frames", "Cache Frames", None),
         ("PyScript_Knob", "refresh_frames", "Refresh Frames", None),
     ]
+    # Old Input Frames only affected snapshots. Migrate to safe current-frame scope.
+    if "frame_scope_version" not in node.knobs():
+        marker = nuke.Int_Knob("frame_scope_version", "Frame Scope Version")
+        marker.setValue(1)
+        marker.setVisible(False)
+        node.addKnob(marker)
+        if "input_cache_scope" in node.knobs():
+            node["input_cache_scope"].setValue("Current Frame")
     for kind, name, label, choices in definitions:
         if name not in node.knobs():
             knob = getattr(nuke, kind)(name, label, choices) if choices else getattr(nuke, kind)(name, label)
             node.addKnob(knob)
+        if choices is not None:
+            previous = str(node[name].value())
+            node[name].setValues(choices)
+            node[name].setValue(previous if previous in choices else choices[0])
+            node[name].setLabel(label)
         if choices is None:
             refresh = name == "refresh_frames"
             node[name].setCommand("__import__('kyven_nuke.input_cache', fromlist=['cache_frames'])"
@@ -139,6 +184,7 @@ def ensure_controls(node: Any) -> None:
         anchor = name
     from kyven_nuke.tooltips import apply_tooltips
     apply_tooltips(node)
+    update_scope_controls(node)
 
 
 def _specs(node: Any, frame: int, first: int, last: int) -> list:

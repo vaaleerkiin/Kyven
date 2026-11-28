@@ -2,7 +2,7 @@
 
 **Local AI tools for Foundry Nuke: object mattes, soft alpha, object removal, generative edits, optical flow and RTX neural reconstruction.**
 
-[Choose a tool](#real-examples) · [Combine the tools](#combine-the-tools) · [Install](#start-here) · [Documentation](docs/README.md)
+[Website](https://vaaleerkiin.github.io/Kyven/) · [Choose a tool](#real-examples) · [Combine the tools](#combine-the-tools) · [Install](#start-here) · [Documentation](docs/README.md)
 
 **Status:** active pre-alpha, developed primarily for Nuke on Windows. Inference
 stays on your workstation. Five nodes use a shared local server; standalone WAFT
@@ -93,10 +93,14 @@ the permission mask were verified unchanged. Compare the two removal examples
 to see how their background estimates differ.
 
 **Start:** connect Source and Mask alpha, enter Prompt, use **Install / Repair
-Model** on first use, then **Generate Current Frame**. Keep **Result Mask Grow
-0** for the original mask boundary. **Result** preserves Source alpha and other
+Model** on first use, then **Generate Current Frame**. Keep **Grow / Erode 0** and **Mask Blur 0** for the original mask boundary. **Result** preserves Source alpha and other
 channels; **Generated Patch** supports an external composite. Test a frame
 before a range: a fixed seed does not provide temporal consistency.
+
+After one generation, tune **Color Match Strength**, **Match Luminance**, **Match
+Chroma**, **Grow / Erode** and **Mask Blur** live in Nuke. **Preview Blend Mask** shows
+the final blend alpha. Result mask controls run after generation and leave the model mask unchanged. Processing Resolution is a dropdown up to **2048** for Mage.
+Use a normal Write on the Group to save the adjusted look.
 
 [Generative Fill guide: prompts, masks and outputs](docs/GENERATIVE_FILL.md) · [Mage setup](docs/MAGE_FILL.md)
 
@@ -169,7 +173,7 @@ See the [visual workflow guide](docs/NODES.md) and
 | WAFT SmartVector | Complete Cattery folder and two Git LFS models | Clone with Git LFS, connect the Nuke plugin path; no server or Model Manager |
 | DLSS | Kyven worker, shim and runtime metadata | Install **Kyven DLSS Runtime** in Model Manager; a plain Git clone downloads the NVIDIA component during that setup |
 | Segment, Refine, Inpaint | Node code and selectable model catalogs | Install the desired model variants through the installer or Model Manager |
-| Generative Fill | Mage-Flow Edit Turbo with Color Match, FLUX.2 Klein and Base | Mage is the default; Install / Repair Model prepares its complete setup; see [Mage](docs/MAGE_FILL.md) |
+| Generative Fill | Mage-Flow Edit Turbo with live Lab Color Match and FLUX.2 Klein | Mage is the default; Install / Repair Model prepares its complete setup; see [Mage](docs/MAGE_FILL.md) |
 
 Full preview ZIP/wheel bundles can include the NVIDIA DLSS component locally.
 They still use the managed runtime setup. WAFT remains an independent native
@@ -255,7 +259,7 @@ Atomic artist cache -> ordinary Nuke Read
 
 ## Working with cached frames
 
-In the Nuke nodes, choose **Input Frames** and click **Cache Frames** to prepare source inputs. Current-frame processing prepares missing inputs automatically; range processing prepares any missing frames before inference. After changing an upstream image, mask, or motion vector, use **Refresh Frames** for the affected scope and process again. Cached input snapshots and results are stored under the selected cache folder, name, and version. Hover over node controls for English explanations and adjustment guidance. See the [Nuke workflow](docs/NUKE.md) for details and existing-node upgrades.
+In the Nuke nodes, choose **Frame Scope** (Current Frame by default) and click **Cache Frames** to prepare source inputs. Current-frame processing prepares missing inputs automatically; range processing prepares any missing frames before inference. After changing an upstream image, mask, or motion vector, use **Refresh Frames** for the affected scope and process again. Cached input snapshots and results are stored under the selected cache folder, name, and version. Hover over node controls for English explanations and adjustment guidance. See the [Nuke workflow](docs/NUKE.md) for details and existing-node upgrades.
 
 ## Privacy and licenses
 

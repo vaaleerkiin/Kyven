@@ -251,6 +251,7 @@
     },
     {
       "model_id": "flux2-klein-base-4b-q4-lanpaint",
+      "retired": true,
       "task": "generative_fill",
       "display_name": "FLUX.2 Klein 4B Base Q4 + LanPaint (Preview)",
       "provider": "flux2-klein-lanpaint-worker",

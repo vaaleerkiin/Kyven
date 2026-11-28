@@ -164,7 +164,7 @@ It contains the deterministic cache key and result metadata. A repeated request 
 manifest and every required image/NPZ before returning a cache hit; missing or corrupt media forces
 a safe recalculation.
 
-API version 48 is the current Nuke/server contract. `GET /v1/jobs/{id}` returns `progress`
+API version 49 is the current Nuke/server contract. `GET /v1/jobs/{id}` returns `progress`
 (0.0-1.0) and `progress_message`. Segment video requests may include `rois`, with exactly one
 `{frame, x0, y0, x1, y1}` entry per range frame. The server crops inference inputs and restores
 returned masks to the original dimensions. Restart Nuke after updating Kyven so the adapter does not
