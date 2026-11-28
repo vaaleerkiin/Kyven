@@ -1,0 +1,104 @@
+site_name: Kyven Tools
+site_description: Local AI tools for Foundry Nuke. Real examples, artist guides and technical documentation.
+site_url: https://vaaleerkiin.github.io/Kyven/
+repo_url: https://github.com/vaaleerkiin/Kyven
+repo_name: vaaleerkiin/Kyven
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: .runtime/site
+strict: true
+hooks:
+  - website/hooks.py
+theme:
+  name: material
+  custom_dir: website/overrides
+  logo: assets/kyven-logo.png
+  favicon: assets/kyven-logo.png
+  font: false
+  palette:
+    - scheme: slate
+      primary: custom
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - scheme: default
+      primary: custom
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+plugins:
+  - search
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: '#'
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+extra_css:
+  - assets/site.css
+extra:
+  generator: false
+nav:
+  - Overview: index.md
+  - Start here:
+      - Documentation: guide.md
+      - Installation: INSTALLATION.md
+      - Nuke workflow: NUKE.md
+      - Choose a tool: NODES.md
+      - Examples and settings: EXAMPLES.md
+      - Troubleshooting: TROUBLESHOOTING.md
+  - Tools:
+      - Segment: SEGMENT.md
+      - Refine: REFINE.md
+      - Inpaint: INPAINT.md
+      - Generative Fill: GENERATIVE_FILL.md
+      - Mage: MAGE_FILL.md
+      - DLSS: DLSS.md
+      - DLSS temporal: DLSS_TEMPORAL.md
+      - WAFT SmartVector: WAFT.md
+      - Controls: NODE_CONTROLS.md
+  - Models:
+      - Model catalog: MODELS.md
+      - Benchmarks: BENCHMARKS.md
+      - Experimental MOSS: MOSS_FILL.md
+  - Development:
+      - Server API: SERVER.md
+      - Testing: TESTING.md
+      - Documentation website: WEBSITE.md
+      - Architecture decisions:
+          - Model catalog: adr/0001-selectable-model-catalog.md
+          - Optional DLSS: adr/0002-optional-dlss-worker.md
+          - DLSS runtime: adr/0003-managed-dlss-runtime.md
+          - HDR and guides: adr/0004-dlss-hdr-and-control-guides.md
+          - Live processing: adr/0005-dlss-live-frame-and-settings-only.md
+          - Temporal buffer: adr/0006-dlss-finite-temporal-buffer.md
+          - Input snapshots: adr/0007-explicit-input-frame-cache.md
+          - Standalone WAFT: adr/0008-standalone-waft.md
+          - Generative Fill: adr/0009-generative-fill.md
+          - Mage compositing: adr/0010-mage-live-compositing.md
+validation:
+  links:
+    anchors: warn

@@ -1,0 +1,38 @@
+/* Repository-local theme. All examples and copy come from the project Markdown. */
+:root { --md-primary-fg-color: #0e141a; --md-accent-fg-color: #34d9d0; --md-text-font: "Segoe UI", system-ui, sans-serif; --md-code-font: "Cascadia Code", Consolas, monospace; }
+[data-md-color-scheme="slate"] { --md-default-bg-color: #11171d; --md-default-fg-color: #e4eaf0; --md-default-fg-color--light: #a1b1be; --md-code-bg-color: #19232d; --md-typeset-a-color: #54d7d0; --md-footer-bg-color: #0b1015; }
+[data-md-color-scheme="default"] { --md-typeset-a-color: #087e7b; --md-accent-fg-color: #087e7b; }
+.md-header { box-shadow: none; border-bottom: 1px solid #26333e; }
+.md-header__title { font-weight: 650; letter-spacing: -.025em; }
+.md-tabs { border-bottom: 1px solid #26333e; background: #0e141a; }
+.md-grid { max-width: 1440px; }
+.md-typeset { font-size: .85rem; line-height: 1.8; }
+.md-typeset h1 { font-weight: 700; letter-spacing: -.045em; color: var(--md-default-fg-color); }
+.md-typeset h2 { margin-top: 2.5em; font-weight: 650; letter-spacing: -.025em; }
+.md-typeset h3 { font-weight: 600; }
+.md-typeset img { border-radius: 6px; }
+.md-typeset table:not([class]) { font-size: .75rem; line-height: 1.65; }
+.md-typeset table:not([class]) th { background: rgba(90,120,140,.12); }
+.md-typeset pre > code { border: 1px solid rgba(120,150,170,.18); border-radius: 6px; }
+.md-nav__link { font-size: .75rem; }
+.md-footer { margin-top: 4rem; }
+.kyven-hero { display: grid; grid-template-columns: .9fr 1.1fr; gap: 3rem; align-items: center; padding: 3rem 0 3.5rem; border-bottom: 1px solid rgba(120,150,170,.25); }
+.kyven-eyebrow { font: 600 .65rem/1.5 var(--md-code-font); letter-spacing: .12em; color: var(--md-typeset-a-color); }
+.md-typeset .kyven-hero h1 { margin: .6rem 0 1rem; font-size: clamp(3rem, 6vw, 5rem); line-height: .98; letter-spacing: -.065em; }
+.kyven-hero h1 span { display: block; color: var(--md-typeset-a-color); }
+.kyven-hero p { max-width: 32rem; color: var(--md-default-fg-color--light); font-size: .95rem; line-height: 1.7; }
+.kyven-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1.6rem 0 1rem; }
+.md-typeset .kyven-button { display: inline-block; padding: .6rem 1rem; border: 1px solid var(--md-typeset-a-color); border-radius: 4px; background: var(--md-typeset-a-color); color: var(--md-default-bg-color); font-size: .75rem; font-weight: 700; }
+.md-typeset .kyven-button--quiet { background: transparent; color: var(--md-default-fg-color); border-color: rgba(120,150,170,.5); }
+.kyven-caption { display: block; font-size: .65rem; color: var(--md-default-fg-color--light); }
+.kyven-hero__image { display: block; overflow: hidden; border: 1px solid rgba(120,150,170,.35); border-radius: 8px; background: rgba(90,120,140,.08); transition: border-color .2s; }
+.kyven-hero__image:hover { border-color: var(--md-typeset-a-color); }
+.kyven-hero__image img { display: block; width: 100%; height: auto; border-radius: 0; }
+.kyven-hero__image > span { display: flex; justify-content: space-between; padding: .75rem 1rem; font: .6rem/1.4 var(--md-code-font); color: var(--md-default-fg-color--light); }
+.kyven-hero__image b { color: var(--md-typeset-a-color); font-weight: 500; }
+.kyven-home-content > h2 { font-size: 1.8rem; }
+.kyven-home-content > h3 { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid rgba(120,150,170,.25); font-size: 1.3rem; }
+@media (max-width: 900px) { .kyven-hero { grid-template-columns: 1fr; gap: 2rem; padding-top: 1.5rem; } .kyven-hero h1 span { display: inline; margin-left: .2em; } .kyven-hero__copy p { max-width: 40rem; } }
+@media (prefers-reduced-motion: reduce) { .kyven-hero__image { transition: none; } }
+
+.kyven-home-content > h1 { display: none; }

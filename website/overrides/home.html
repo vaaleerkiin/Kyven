@@ -1,0 +1,20 @@
+{% extends "main.html" %}
+{% block content %}
+<section class="kyven-hero">
+  <div class="kyven-hero__copy">
+    <span class="kyven-eyebrow">LOCAL AI / FOUNDRY NUKE</span>
+    <h1>Kyven<span>Tools.</span></h1>
+    <p>{{ page.meta.lead }}</p>
+    <div class="kyven-actions">
+      <a class="kyven-button" href="{{ 'INSTALLATION/' | url }}">Install Kyven</a>
+      <a class="kyven-button kyven-button--quiet" href="#real-examples">Explore the tools</a>
+    </div>
+    <span class="kyven-caption">Five server-backed nodes. Standalone WAFT. All on your workstation.</span>
+  </div>
+  <a class="kyven-hero__image" href="{{ 'MAGE_FILL/' | url }}" aria-label="Explore Mage Generative Fill">
+    <img src="{{ 'images/nodes/generative-fill.png' | url }}" alt="Actual Mage Generative Fill: source photograph, edit mask and generated result" width="1536" height="570">
+    <span>GENERATIVE FILL <b>Real model output</b></span>
+  </a>
+</section>
+<div class="kyven-home-content">{{ super() }}</div>
+{% endblock %}
