@@ -35,13 +35,16 @@ def test_base_guidance_changes_cache_but_distilled_ignores_it(tmp_path):
 
 def test_overlap_expansion_matches_reference_at_large_radius():
     import numpy as np
-    from PIL import Image, ImageFilter
 
     from kyven.inpaint.masks import expand_binary_mask
     mask = np.zeros((43, 53), dtype=np.uint8)
     mask[0, 0] = mask[20:23, 25:29] = 255
-    for radius in (0, 4, 32, 64):
-        expected = np.asarray(Image.fromarray(mask).filter(ImageFilter.MaxFilter(radius * 2 + 1)))
+    for radius in (0, 4, 32, 64, 128):
+        # Independent union-of-squares reference. Some Windows Pillow builds
+        # crash in MaxFilter when the kernel exceeds the tiny fixture dimensions.
+        expected = np.zeros_like(mask)
+        for y, x in zip(*np.nonzero(mask), strict=True):
+            expected[max(0, y-radius):y+radius+1, max(0, x-radius):x+radius+1] = 255
         np.testing.assert_array_equal(expand_binary_mask(mask, radius), expected)
 
 
